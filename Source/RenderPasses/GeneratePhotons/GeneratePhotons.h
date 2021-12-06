@@ -27,7 +27,7 @@
  **************************************************************************/
 #pragma once
 #include "Falcor.h"
-#include "FalcorExperimental.h"
+#include "Utils/Sampling/SampleGenerator.h"
 
 using namespace Falcor;
 
@@ -49,10 +49,31 @@ public:
     virtual void compile(RenderContext* pContext, const CompileData& compileData) override {}
     virtual void execute(RenderContext* pRenderContext, const RenderData& renderData) override;
     virtual void renderUI(Gui::Widgets& widget) override;
-    virtual void setScene(RenderContext* pRenderContext, const Scene::SharedPtr& pScene) override {}
+    virtual void setScene(RenderContext* pRenderContext, const Scene::SharedPtr& pScene) override;
     virtual bool onMouseEvent(const MouseEvent& mouseEvent) override { return false; }
     virtual bool onKeyEvent(const KeyboardEvent& keyEvent) override { return false; }
 
 private:
-    GeneratePhotons() = default;
+    GeneratePhotons();
+    void prepareVars();
+
+    // Internal state
+    Scene::SharedPtr            mpScene;                    ///< Current scene.
+    SampleGenerator::SharedPtr  mpSampleGenerator;          ///< GPU sample generator.
+
+    // Configuration
+    uint                        mMaxBounces = 3;            ///< Max number of indirect bounces (0 = none).
+    uint                        mNumPhotons = 500000;       ///< Number of Photons shot
+
+    // Runtime data
+    uint                        mFrameCount = 0;            ///< Frame count since scene was loaded.
+    bool                        mOptionsChanged = false;
+
+    // Ray tracing program.
+    struct
+    {
+        RtProgram::SharedPtr pProgram;
+        RtBindingTable::SharedPtr pBindingTable;
+        RtProgramVars::SharedPtr pVars;
+    } mTracer;
 };

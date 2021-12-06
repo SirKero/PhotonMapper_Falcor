@@ -6,4 +6,7 @@
   <ItemGroup>
     <ClInclude Include="GeneratePhotons.h" />
   </ItemGroup>
+  <ItemGroup>
+    <ShaderSource Include="GeneratePhotons.rt.slang" />
+  </ItemGroup>
 </Project>
