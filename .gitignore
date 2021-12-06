@@ -1,1 +1,14 @@
+# All file/folders are blacklisted
 /*
+
+!.gitignore
+!.gitattributes
+!LICENSE.md
+
+!Source/
+Source/*
+!Source/RenderPasses/
+Source/RenderPasses/*
+!Source/RenderPasses/CollectPhotons/
+!Source/RenderPasses/GeneratePhotons/
+!Source/Data/
