@@ -146,6 +146,7 @@ void GeneratePhotons::execute(RenderContext* pRenderContext, const RenderData& r
     // Set constants.
     auto var = mTracer.pVars->getRootVar();
     var["CB"]["gFrameCount"] = mFrameCount;
+    
 
     // Bind Output buffers. These needs to be done per-frame as the buffers may change anytime.
     auto bind = [&](const ChannelDesc& desc)
@@ -208,7 +209,7 @@ void GeneratePhotons::setScene(RenderContext* pRenderContext, const Scene::Share
         desc.setMaxTraceRecursionDepth(kMaxRecursionDepth);
         desc.addDefines(mpScene->getSceneDefines());
 
-        mTracer.pBindingTable = RtBindingTable::create(2, 2, mpScene->getGeometryCount());
+        mTracer.pBindingTable = RtBindingTable::create(1, 1, mpScene->getGeometryCount());
         auto& sbt = mTracer.pBindingTable;
         sbt->setRayGen(desc.addRayGen("rayGen"));
         sbt->setMiss(0, desc.addMiss("miss"));

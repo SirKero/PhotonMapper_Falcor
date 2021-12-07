@@ -9,6 +9,5 @@
 Source/*
 !Source/RenderPasses/
 Source/RenderPasses/*
-!Source/RenderPasses/CollectPhotons/
-!Source/RenderPasses/GeneratePhotons/
+!Source/RenderPasses/PhotonReStir/
 !Source/Data/
