@@ -30,7 +30,8 @@
 
 namespace
 {
-    const char kShaderFile[] = "RenderPasses/PhotonReStir/PhotonReStir.rt.slang";
+    const char kShaderGeneratePhoton[] = "RenderPasses/PhotonReStir/PhotonReStirGenerate.rt.slang";
+    const char kShaderCollectPhoton[] = "RenderPasses/PhotonReStir/PhotonReStirCollect.rt.slang";
     const char kDesc[] = "Shoots Photons and then gathers them";
 
     // Ray tracing settings that affect the traversal stack size.
@@ -73,6 +74,7 @@ PhotonReStir::PhotonReStir()
 {
     mpSampleGenerator = SampleGenerator::create(SAMPLE_GENERATOR_DEFAULT);
     assert(mpSampleGenerator);
+    
 }
 
 
@@ -122,26 +124,31 @@ void PhotonReStir::execute(RenderContext* pRenderContext, const RenderData& rend
         mpScene->getLightCollection(pRenderContext);
     }
 
-    // Specialize program.
+    //
+    // Generate Ray Pass
+    //
+
+
+   // Specialize the Generate program.
    // These defines should not modify the program vars. Do not trigger program vars re-creation.
-    mTracer.pProgram->addDefine("MAX_BOUNCES", std::to_string(mMaxBounces));
-    mTracer.pProgram->addDefine("USE_ANALYTIC_LIGHTS", mpScene->useAnalyticLights() ? "1" : "0");
-    mTracer.pProgram->addDefine("USE_EMISSIVE_LIGHTS", mpScene->useEmissiveLights() ? "1" : "0");
-    mTracer.pProgram->addDefine("USE_ENV_LIGHT", mpScene->useEnvLight() ? "1" : "0");
-    mTracer.pProgram->addDefine("USE_ENV_BACKGROUND", mpScene->useEnvBackground() ? "1" : "0");
+    mTracerGenerate.pProgram->addDefine("MAX_BOUNCES", std::to_string(mMaxBounces));
+    mTracerGenerate.pProgram->addDefine("USE_ANALYTIC_LIGHTS", mpScene->useAnalyticLights() ? "1" : "0");
+    mTracerGenerate.pProgram->addDefine("USE_EMISSIVE_LIGHTS", mpScene->useEmissiveLights() ? "1" : "0");
+    mTracerGenerate.pProgram->addDefine("USE_ENV_LIGHT", mpScene->useEnvLight() ? "1" : "0");
+    mTracerGenerate.pProgram->addDefine("USE_ENV_BACKGROUND", mpScene->useEnvBackground() ? "1" : "0");
 
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
     // TODO: This should be moved to a more general mechanism using Slang.
-    //mTracer.pProgram->addDefines(getValidResourceDefines(kInputChannels, renderData));
-    mTracer.pProgram->addDefines(getValidResourceDefines(kOutputChannels, renderData));
+    //mTracerGenerate.pProgram->addDefines(getValidResourceDefines(kInputChannels, renderData));
+    mTracerGenerate.pProgram->addDefines(getValidResourceDefines(kOutputChannels, renderData));
 
     // Prepare program vars. This may trigger shader compilation.
     // The program should have all necessary defines set at this point.
-    if (!mTracer.pVars) prepareVars();
-    assert(mTracer.pVars);
+    if (!mTracerGenerate.pVars) prepareVars();
+    assert(mTracerGenerate.pVars);
 
     // Set constants.
-    auto var = mTracer.pVars->getRootVar();
+    auto var = mTracerGenerate.pVars->getRootVar();
     var["CB"]["gFrameCount"] = mFrameCount;
 
 
@@ -159,8 +166,13 @@ void PhotonReStir::execute(RenderContext* pRenderContext, const RenderData& rend
     const uint2 targetDim = uint2(static_cast<uint>(sqrt(mNumPhotons)));
     assert(targetDim.x > 0 && targetDim.y > 0);
 
-    // Spawn the rays.
-    mpScene->raytrace(pRenderContext, mTracer.pProgram.get(), mTracer.pVars, uint3(targetDim, 1));
+    // Trace the photons
+    mpScene->raytrace(pRenderContext, mTracerGenerate.pProgram.get(), mTracerGenerate.pVars, uint3(targetDim, 1));
+
+    //flush
+
+    //Gather the photons with short rays
+    
 
     mFrameCount++;
 }
@@ -181,9 +193,9 @@ void PhotonReStir::setScene(RenderContext* pRenderContext, const Scene::SharedPt
 {
     // Clear data for previous scene.
    // After changing scene, the raytracing program should to be recreated.
-    mTracer.pProgram = nullptr;
-    mTracer.pBindingTable = nullptr;
-    mTracer.pVars = nullptr;
+    mTracerGenerate.pProgram = nullptr;
+    mTracerGenerate.pBindingTable = nullptr;
+    mTracerGenerate.pVars = nullptr;
     mFrameCount = 0;
 
     // Set new scene.
@@ -198,35 +210,69 @@ void PhotonReStir::setScene(RenderContext* pRenderContext, const Scene::SharedPt
 
         // Create ray tracing program.
         RtProgram::Desc desc;
-        desc.addShaderLibrary(kShaderFile);
+        desc.addShaderLibrary(kShaderGeneratePhoton);
         desc.setMaxPayloadSize(kMaxPayloadSizeBytes);
         desc.setMaxAttributeSize(kMaxAttributeSizeBytes);
         desc.setMaxTraceRecursionDepth(kMaxRecursionDepth);
         desc.addDefines(mpScene->getSceneDefines());
 
-        mTracer.pBindingTable = RtBindingTable::create(1, 1, mpScene->getGeometryCount());
-        auto& sbt = mTracer.pBindingTable;
+        mTracerGenerate.pBindingTable = RtBindingTable::create(1, 1, mpScene->getGeometryCount());
+        auto& sbt = mTracerGenerate.pBindingTable;
         sbt->setRayGen(desc.addRayGen("rayGen"));
         sbt->setMiss(0, desc.addMiss("miss"));
         sbt->setHitGroupByType(0, mpScene, Scene::GeometryType::TriangleMesh, desc.addHitGroup("closestHit"));
 
-        mTracer.pProgram = RtProgram::create(desc);
+        mTracerGenerate.pProgram = RtProgram::create(desc);
     }
 }
 
 void PhotonReStir::prepareVars()
 {
-    assert(mTracer.pProgram);
+    assert(mTracerGenerate.pProgram);
 
     // Configure program.
-    mTracer.pProgram->addDefines(mpSampleGenerator->getDefines());
+    mTracerGenerate.pProgram->addDefines(mpSampleGenerator->getDefines());
 
     // Create program variables for the current program.
     // This may trigger shader compilation. If it fails, throw an exception to abort rendering.
-    mTracer.pVars = RtProgramVars::create(mTracer.pProgram, mTracer.pBindingTable);
+    mTracerGenerate.pVars = RtProgramVars::create(mTracerGenerate.pProgram, mTracerGenerate.pBindingTable);
 
     // Bind utility classes into shared data.
-    auto var = mTracer.pVars->getRootVar();
+    auto var = mTracerGenerate.pVars->getRootVar();
     bool success = mpSampleGenerator->setShaderData(var);
     if (!success) throw std::exception("Failed to bind sample generator");
+}
+
+void PhotonReStir::preparePhotonBuffers()
+{
+    //caustic
+    
+    //if size is not initilized give it a standard value
+    if (mCausticBuffers.maxSize == 0)
+        mCausticBuffers.maxSize = mNumPhotons * 0.2f;
+    mCausticBuffers.aabb = Buffer::createStructured(sizeof(D3D12_RAYTRACING_AABB), mCausticBuffers.maxSize);
+    mCausticBuffers.aabb->setName("PhotonReStir::mCausticBuffers.aabb");
+    mCausticBuffers.info = Buffer::createStructured(sizeof(PhotonInfo), mCausticBuffers.maxSize);
+    mCausticBuffers.info->setName("PhotonReStir::mCausticBuffers.info");
+
+    assert(mCausticBuffers.aabb);   assert(mCausticBuffers.info);
+
+    //global
+
+     //if size is not initilized give it a standard value
+    if (mGlobalBuffers.maxSize == 0)
+        mGlobalBuffers.maxSize = mNumPhotons * 0.4f;
+
+    //only set aabb buffer if it is used
+    if (mUsePhotonReStir) {
+        mGlobalBuffers.aabb = Buffer::createStructured(sizeof(D3D12_RAYTRACING_AABB), mGlobalBuffers.maxSize);
+        mGlobalBuffers.aabb->setName("PhotonReStir::mGlobalBuffers.aabb");
+
+        assert(mGlobalBuffers.aabb);
+    }
+
+    mGlobalBuffers.info = Buffer::createStructured(sizeof(PhotonInfo), mGlobalBuffers.maxSize);
+    mGlobalBuffers.info->setName("PhotonReStir::mGlobalBuffers.info");
+
+    assert(mGlobalBuffers.info);
 }

@@ -2,8 +2,14 @@
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <ClCompile Include="PhotonReStir.cpp" />
+    <ClCompile Include="AccelerationStructureBuilder.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="PhotonReStir.h" />
+    <ClInclude Include="AccelerationStructureBuilder.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ShaderSource Include="PhotonReStirGenerate.rt.slang" />
+    <ShaderSource Include="PhotonReStirCollect.rt.slang" />
   </ItemGroup>
 </Project>

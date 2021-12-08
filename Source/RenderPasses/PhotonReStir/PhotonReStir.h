@@ -57,6 +57,7 @@ public:
 private:
     PhotonReStir();
     void prepareVars();
+    void preparePhotonBuffers();
 
     // Internal state
     Scene::SharedPtr            mpScene;                    ///< Current scene.
@@ -65,16 +66,41 @@ private:
     // Configuration
     uint                        mMaxBounces = 3;            ///< Max number of indirect bounces (0 = none).
     uint                        mNumPhotons = 500000;       ///< Number of Photons shot
+    bool                        mUsePhotonReStir = false;   ///< Activates ReStir for global photons
 
     // Runtime data
     uint                        mFrameCount = 0;            ///< Frame count since scene was loaded.
     bool                        mOptionsChanged = false;
 
     // Ray tracing program.
-    struct
+    struct RayTraceProgramHelper
     {
         RtProgram::SharedPtr pProgram;
         RtBindingTable::SharedPtr pBindingTable;
         RtProgramVars::SharedPtr pVars;
-    } mTracer;
+    };
+
+    RayTraceProgramHelper mTracerGenerate;          ///<Description for the Generate Photon pass 
+    RayTraceProgramHelper mTracerCollect;           ///<Collect pass collects the photons that where shot
+
+    //
+    //Photon Buffers
+    //
+
+    //Struct for the buffers that are needed for global and caustic photons
+    struct PhotonBuffers {
+        uint maxSize = 0;
+        Buffer::SharedPtr info;
+        Buffer::SharedPtr aabb;
+    };
+
+    struct PhotonInfo {
+        float3 pos;
+        float pad1;
+        float3 flux;
+        float pad2;
+    };
+
+    PhotonBuffers mCausticBuffers;              ///< Buffers for the caustic photons
+    PhotonBuffers mGlobalBuffers;               ///< Buffers for the global photons
 };
