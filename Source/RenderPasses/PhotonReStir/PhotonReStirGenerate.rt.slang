@@ -23,6 +23,24 @@ static struct Data
 // Inputs
 
 // Outputs
+RWTexture2D<float4> gPhotonImage;
+
+//Internal Buffer Structs
+
+struct PhotonInfo {
+        float3 pos;
+        float pad1;
+        float3 flux;
+        float pad2;
+ };
+
+ //Internal Buffer Structs
+
+RWStructuredBuffer<PhotonInfo> gCaustic;
+RWStructuredBuffer<PhotonInfo> gGlobal;
+RWStructuredBuffer<AABB> gCausticAABB;
+RWStructuredBuffer<AABB> gGlobalAABB;
+
 
 // Static configuration based on defines set from the host.
 #define is_valid(name) (is_valid_##name != 0)
@@ -64,3 +82,29 @@ struct ScatterRayData
         return d;
     }
 };
+
+[shader("miss")]
+void miss(inout ScatterRayData rayData : SV_RayPayload)
+{
+    rayData.terminated = true;
+
+    //TODO: Add enviroment map color if ray misses scene 
+}
+
+[shader("closesthit")]
+void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleIntersectionAttributes attribs: SV_IntersectionAttributes)
+{
+    
+}
+
+
+[shader("raygeneration")]
+void rayGen()
+{
+    uint2 launchIndex = DispatchRaysIndex().xy;
+
+    if(launchIndex.x < 100 && launchIndex.y < 100)
+        gPhotonImage[launchIndex] = float4(1, 0, 1, 1) * 0.4;
+    else
+        gPhotonImage[launchIndex] = float4(0, 1, 1, 1) * 0.4;
+}

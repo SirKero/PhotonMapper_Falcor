@@ -43,14 +43,19 @@ namespace
 
     const ChannelList kInputChannels =
     {
-        { "WPos",          "gWPos",               " World Position "                        },
-        { "WNormal",       "gWNormals",           " World Normals "                        },
+        { "WPos",          "gWPos",               " World Position "                   ,true }, ///< optional for now
+        { "WNormal",       "gWNormals",           " World Normals "                    ,true }, ///< optional for now
     };
 
     const ChannelList kOutputChannels =
     {
         { "PhotonImage",          "gPhotonImage",               "An image that shows the caustics and indirect light from global photons"                        },
     };
+
+    const char kCausticAABBSName[] = "gCausticAABB";
+    const char kCausticInfoSName[] = "gCaustic";
+    const char kGlobalAABBSName[] = "gGlobalAABB";
+    const char kGlobalInfoSName[] = "gGlobal";
 }
 
 // Don't remove this. it's required for hot-reload to function properly
@@ -124,6 +129,7 @@ void PhotonReStir::execute(RenderContext* pRenderContext, const RenderData& rend
         mpScene->getLightCollection(pRenderContext);
     }
 
+   
     //
     // Generate Ray Pass
     //
@@ -139,7 +145,7 @@ void PhotonReStir::execute(RenderContext* pRenderContext, const RenderData& rend
 
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
     // TODO: This should be moved to a more general mechanism using Slang.
-    //mTracerGenerate.pProgram->addDefines(getValidResourceDefines(kInputChannels, renderData));
+    mTracerGenerate.pProgram->addDefines(getValidResourceDefines(kInputChannels, renderData));
     mTracerGenerate.pProgram->addDefines(getValidResourceDefines(kOutputChannels, renderData));
 
     // Prepare program vars. This may trigger shader compilation.
@@ -151,15 +157,21 @@ void PhotonReStir::execute(RenderContext* pRenderContext, const RenderData& rend
     auto var = mTracerGenerate.pVars->getRootVar();
     var["CB"]["gFrameCount"] = mFrameCount;
 
+    //set the buffers
+    var[kCausticAABBSName] = mCausticBuffers.aabb->asBuffer();
+    var[kCausticInfoSName] = mCausticBuffers.info->asBuffer();
+    var[kGlobalAABBSName] = mGlobalBuffers.aabb->asBuffer();
+    var[kGlobalInfoSName] = mGlobalBuffers.info->asBuffer();
 
     // Bind Output buffers. These needs to be done per-frame as the buffers may change anytime.
     auto bind = [&](const ChannelDesc& desc)
     {
         if (!desc.texname.empty())
         {
-            var[desc.texname] = renderData[desc.name]->asBuffer();
+            var[desc.texname] = renderData[desc.name]->asTexture();
         }
     };
+    //for (auto channel : kInputChannels) bind(channel);
     for (auto channel : kOutputChannels) bind(channel);
 
     // Get dimensions of ray dispatch.
@@ -170,6 +182,7 @@ void PhotonReStir::execute(RenderContext* pRenderContext, const RenderData& rend
     mpScene->raytrace(pRenderContext, mTracerGenerate.pProgram.get(), mTracerGenerate.pVars, uint3(targetDim, 1));
 
     //flush
+    //pRenderContext->flush();
 
     //Gather the photons with short rays
     
@@ -215,6 +228,7 @@ void PhotonReStir::setScene(RenderContext* pRenderContext, const Scene::SharedPt
         desc.setMaxAttributeSize(kMaxAttributeSizeBytes);
         desc.setMaxTraceRecursionDepth(kMaxRecursionDepth);
         desc.addDefines(mpScene->getSceneDefines());
+        
 
         mTracerGenerate.pBindingTable = RtBindingTable::create(1, 1, mpScene->getGeometryCount());
         auto& sbt = mTracerGenerate.pBindingTable;
@@ -249,7 +263,7 @@ void PhotonReStir::preparePhotonBuffers()
     
     //if size is not initilized give it a standard value
     if (mCausticBuffers.maxSize == 0)
-        mCausticBuffers.maxSize = mNumPhotons * 0.2f;
+        mCausticBuffers.maxSize = static_cast<uint>(mNumPhotons * 0.2f);
     mCausticBuffers.aabb = Buffer::createStructured(sizeof(D3D12_RAYTRACING_AABB), mCausticBuffers.maxSize);
     mCausticBuffers.aabb->setName("PhotonReStir::mCausticBuffers.aabb");
     mCausticBuffers.info = Buffer::createStructured(sizeof(PhotonInfo), mCausticBuffers.maxSize);
@@ -261,7 +275,7 @@ void PhotonReStir::preparePhotonBuffers()
 
      //if size is not initilized give it a standard value
     if (mGlobalBuffers.maxSize == 0)
-        mGlobalBuffers.maxSize = mNumPhotons * 0.4f;
+        mGlobalBuffers.maxSize = static_cast<uint>(mNumPhotons * 0.4f);
 
     //only set aabb buffer if it is used
     if (mUsePhotonReStir) {
@@ -275,4 +289,5 @@ void PhotonReStir::preparePhotonBuffers()
     mGlobalBuffers.info->setName("PhotonReStir::mGlobalBuffers.info");
 
     assert(mGlobalBuffers.info);
+
 }
