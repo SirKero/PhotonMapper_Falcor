@@ -79,7 +79,6 @@ PhotonReStir::PhotonReStir()
 {
     mpSampleGenerator = SampleGenerator::create(SAMPLE_GENERATOR_DEFAULT);
     assert(mpSampleGenerator);
-    
 }
 
 
@@ -129,6 +128,8 @@ void PhotonReStir::execute(RenderContext* pRenderContext, const RenderData& rend
         mpScene->getLightCollection(pRenderContext);
     }
 
+    if (!mPhotonBuffersReady)
+        mPhotonBuffersReady = preparePhotonBuffers();
    
     //
     // Generate Ray Pass
@@ -158,10 +159,10 @@ void PhotonReStir::execute(RenderContext* pRenderContext, const RenderData& rend
     var["CB"]["gFrameCount"] = mFrameCount;
 
     //set the buffers
-    var[kCausticAABBSName] = mCausticBuffers.aabb->asBuffer();
-    var[kCausticInfoSName] = mCausticBuffers.info->asBuffer();
-    var[kGlobalAABBSName] = mGlobalBuffers.aabb->asBuffer();
-    var[kGlobalInfoSName] = mGlobalBuffers.info->asBuffer();
+    var[kCausticAABBSName] = mCausticBuffers.aabb;
+    var[kCausticInfoSName] = mCausticBuffers.info;
+    var[kGlobalAABBSName] = mGlobalBuffers.aabb;
+    var[kGlobalInfoSName] = mGlobalBuffers.info;
 
     // Bind Output buffers. These needs to be done per-frame as the buffers may change anytime.
     auto bind = [&](const ChannelDesc& desc)
@@ -257,13 +258,15 @@ void PhotonReStir::prepareVars()
     if (!success) throw std::exception("Failed to bind sample generator");
 }
 
-void PhotonReStir::preparePhotonBuffers()
+bool PhotonReStir::preparePhotonBuffers()
 {
     //caustic
     
     //if size is not initilized give it a standard value
     if (mCausticBuffers.maxSize == 0)
-        mCausticBuffers.maxSize = static_cast<uint>(mNumPhotons * 0.2f);
+        mCausticBuffers.maxSize = mNumPhotons;
+
+    //TODO: Change Buffer Generation to initilize with program
     mCausticBuffers.aabb = Buffer::createStructured(sizeof(D3D12_RAYTRACING_AABB), mCausticBuffers.maxSize);
     mCausticBuffers.aabb->setName("PhotonReStir::mCausticBuffers.aabb");
     mCausticBuffers.info = Buffer::createStructured(sizeof(PhotonInfo), mCausticBuffers.maxSize);
@@ -275,7 +278,7 @@ void PhotonReStir::preparePhotonBuffers()
 
      //if size is not initilized give it a standard value
     if (mGlobalBuffers.maxSize == 0)
-        mGlobalBuffers.maxSize = static_cast<uint>(mNumPhotons * 0.4f);
+        mGlobalBuffers.maxSize = mNumPhotons;
 
     //only set aabb buffer if it is used
     if (mUsePhotonReStir) {
@@ -290,4 +293,5 @@ void PhotonReStir::preparePhotonBuffers()
 
     assert(mGlobalBuffers.info);
 
+    return true;
 }

@@ -57,7 +57,7 @@ public:
 private:
     PhotonReStir();
     void prepareVars();
-    void preparePhotonBuffers();
+    bool preparePhotonBuffers();
 
     // Internal state
     Scene::SharedPtr            mpScene;                    ///< Current scene.
@@ -88,6 +88,8 @@ private:
     //
 
     //Struct for the buffers that are needed for global and caustic photons
+    bool mPhotonBuffersReady = false;
+
     struct PhotonBuffers {
         uint maxSize = 0;
         Buffer::SharedPtr info;

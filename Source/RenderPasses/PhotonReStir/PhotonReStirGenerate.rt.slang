@@ -102,9 +102,17 @@ void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleInt
 void rayGen()
 {
     uint2 launchIndex = DispatchRaysIndex().xy;
+    uint2 launchDim = DispatchRaysDimensions().xy;
 
-    if(launchIndex.x < 100 && launchIndex.y < 100)
-        gPhotonImage[launchIndex] = float4(1, 0, 1, 1) * 0.4;
-    else
-        gPhotonImage[launchIndex] = float4(0, 1, 1, 1) * 0.4;
+    uint currentIndex = launchIndex.x + launchDim.x * launchIndex.y;
+    uint indexMax = launchDim.x * launchDim.y;
+    
+    AABB test;
+    test.minPoint = float3(float(currentIndex) / float(indexMax), 0, 0);
+    test.maxPoint = float3(2, 1, 1);
+
+    gCausticAABB[currentIndex] = test;
+    
+    //gPhotonImage[launchIndex] = float4(float(currentIndex) / float(indexMax), 0, 0, 1);
+    gPhotonImage[launchIndex] = float4(gCausticAABB[currentIndex].minPoint.x, 0, 0, 1);
 }
