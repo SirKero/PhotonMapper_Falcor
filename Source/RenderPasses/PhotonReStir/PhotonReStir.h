@@ -90,6 +90,8 @@ private:
     //Struct for the buffers that are needed for global and caustic photons
     bool mPhotonBuffersReady = false;
 
+    bool mTestInit = false;
+
     struct PhotonBuffers {
         uint maxSize = 0;
         Buffer::SharedPtr info;

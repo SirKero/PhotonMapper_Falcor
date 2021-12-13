@@ -52,6 +52,14 @@ namespace
         { "PhotonImage",          "gPhotonImage",               "An image that shows the caustics and indirect light from global photons"                        },
     };
 
+    const ChannelList kBufferOutputChannels =
+    {
+        {"CausticAABB" ,            "gCausticAABB",            "A buffer holding the AABB Data for the caustic Photons"},
+        {"CausticInfo" ,            "gCaustic",                "A buffer holding the Photon Info Data for the caustic Photons"},
+        {"GlobalAABB" ,             "gGlobalAABB",             "A buffer holding the AABB Data for the global Photons"},
+        {"GlobalInfo" ,             "gGlobal",                 "A buffer holding the Photon Info Data for the global Photons"},
+    };
+
     const char kCausticAABBSName[] = "gCausticAABB";
     const char kCausticInfoSName[] = "gCaustic";
     const char kGlobalAABBSName[] = "gGlobalAABB";
@@ -98,6 +106,9 @@ RenderPassReflection PhotonReStir::reflect(const CompileData& compileData)
     addRenderPassInputs(reflector, kInputChannels);
     addRenderPassOutputs(reflector, kOutputChannels);
 
+    for(const auto& desc: kBufferOutputChannels)
+        reflector.addOutput(desc.name, desc.desc).rawBuffer(mNumPhotons * sizeof(AABB));
+
     return reflector;
 }
 
@@ -128,9 +139,11 @@ void PhotonReStir::execute(RenderContext* pRenderContext, const RenderData& rend
         mpScene->getLightCollection(pRenderContext);
     }
 
+    /*
     if (!mPhotonBuffersReady)
         mPhotonBuffersReady = preparePhotonBuffers();
-   
+    */
+
     //
     // Generate Ray Pass
     //
@@ -151,21 +164,31 @@ void PhotonReStir::execute(RenderContext* pRenderContext, const RenderData& rend
 
     // Prepare program vars. This may trigger shader compilation.
     // The program should have all necessary defines set at this point.
+    
     if (!mTracerGenerate.pVars) prepareVars();
     assert(mTracerGenerate.pVars);
+    
 
     // Set constants.
     auto var = mTracerGenerate.pVars->getRootVar();
     var["CB"]["gFrameCount"] = mFrameCount;
 
     //set the buffers
+    /*
     var[kCausticAABBSName] = mCausticBuffers.aabb;
     var[kCausticInfoSName] = mCausticBuffers.info;
     var[kGlobalAABBSName] = mGlobalBuffers.aabb;
     var[kGlobalInfoSName] = mGlobalBuffers.info;
+    */
+    // Bind Output Buffers. These needs to be done per-frame as the buffers may change anytime.
+    auto bindAsBuffer = [&](const ChannelDesc& desc) {
+        if (!desc.texname.empty())
+            var[desc.texname] = renderData[desc.name]->asBuffer();
+    };
+    for (auto channel : kBufferOutputChannels) bindAsBuffer(channel);
 
-    // Bind Output buffers. These needs to be done per-frame as the buffers may change anytime.
-    auto bind = [&](const ChannelDesc& desc)
+    // Bind Output Textures. These needs to be done per-frame as the buffers may change anytime.
+    auto bindAsTex = [&](const ChannelDesc& desc)
     {
         if (!desc.texname.empty())
         {
@@ -173,7 +196,7 @@ void PhotonReStir::execute(RenderContext* pRenderContext, const RenderData& rend
         }
     };
     //for (auto channel : kInputChannels) bind(channel);
-    for (auto channel : kOutputChannels) bind(channel);
+    for (auto channel : kOutputChannels) bindAsTex(channel);
 
     // Get dimensions of ray dispatch.
     const uint2 targetDim = uint2(static_cast<uint>(sqrt(mNumPhotons)));

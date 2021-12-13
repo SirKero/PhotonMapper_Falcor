@@ -40,6 +40,7 @@ RWStructuredBuffer<PhotonInfo> gCaustic;
 RWStructuredBuffer<PhotonInfo> gGlobal;
 RWStructuredBuffer<AABB> gCausticAABB;
 RWStructuredBuffer<AABB> gGlobalAABB;
+RWStructuredBuffer<AABB> gTestAABB;
 
 
 // Static configuration based on defines set from the host.
