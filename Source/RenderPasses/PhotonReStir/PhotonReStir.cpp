@@ -52,13 +52,11 @@ namespace
         { "PhotonImage",          "gPhotonImage",               "An image that shows the caustics and indirect light from global photons"                        },
     };
 
-    const ChannelList kBufferOutputChannels =
-    {
-        {"CausticAABB" ,            "gCausticAABB",            "A buffer holding the AABB Data for the caustic Photons"},
-        {"CausticInfo" ,            "gCaustic",                "A buffer holding the Photon Info Data for the caustic Photons"},
-        {"GlobalAABB" ,             "gGlobalAABB",             "A buffer holding the AABB Data for the global Photons"},
-        {"GlobalInfo" ,             "gGlobal",                 "A buffer holding the Photon Info Data for the global Photons"},
-    };
+    
+    const char kCausticAABBDesc[] = "A buffer holding the AABB Data for the caustic Photons";
+    const char kCausticInfoDesc[] = "A buffer holding the Photon Info Data for the caustic Photons";
+    const char kGlobalAABBDesc[] = "A buffer holding the AABB Data for the global Photons";
+    const char kGlobalInfoDesc[] = "A buffer holding the Photon Info Data for the global Photons";
 
     const char kCausticAABBSName[] = "gCausticAABB";
     const char kCausticInfoSName[] = "gCaustic";
@@ -106,10 +104,18 @@ RenderPassReflection PhotonReStir::reflect(const CompileData& compileData)
     addRenderPassInputs(reflector, kInputChannels);
     addRenderPassOutputs(reflector, kOutputChannels);
 
-    for(const auto& desc: kBufferOutputChannels)
-        reflector.addOutput(desc.name, desc.desc).rawBuffer(mNumPhotons * sizeof(AABB));
+    reflector.addOutput("CausticAABB", kCausticAABBDesc).rawBuffer(mNumPhotons * sizeof(AABB));
+    reflector.addOutput("CausticInfo", kCausticInfoDesc).rawBuffer(mNumPhotons * sizeof(AABB));
+    reflector.addOutput("GlobalAABB", kGlobalAABBDesc).rawBuffer(mNumPhotons * sizeof(AABB));
+    reflector.addOutput("GlobalInfo", kGlobalInfoDesc).rawBuffer(mNumPhotons * sizeof(AABB));
 
     return reflector;
+}
+
+void PhotonReStir::compile(RenderContext* pContext, const CompileData& compileData)
+{
+    // put reflector outputs here and create again if needed
+    
 }
 
 void PhotonReStir::execute(RenderContext* pRenderContext, const RenderData& renderData)
@@ -181,12 +187,13 @@ void PhotonReStir::execute(RenderContext* pRenderContext, const RenderData& rend
     var[kGlobalInfoSName] = mGlobalBuffers.info;
     */
     // Bind Output Buffers. These needs to be done per-frame as the buffers may change anytime.
-    auto bindAsBuffer = [&](const ChannelDesc& desc) {
-        if (!desc.texname.empty())
-            var[desc.texname] = renderData[desc.name]->asBuffer();
-    };
-    for (auto channel : kBufferOutputChannels) bindAsBuffer(channel);
 
+    var[kCausticAABBSName] = renderData["CausticAABB"]->asBuffer();
+    var[kCausticInfoSName] = renderData["CausticInfo"]->asBuffer();
+    var[kGlobalAABBSName] = renderData["GlobalAABB"]->asBuffer();
+    var[kGlobalInfoSName] = renderData["GlobalInfo"]->asBuffer();
+    
+    
     // Bind Output Textures. These needs to be done per-frame as the buffers may change anytime.
     auto bindAsTex = [&](const ChannelDesc& desc)
     {
