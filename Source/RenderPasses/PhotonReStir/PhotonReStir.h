@@ -58,6 +58,7 @@ private:
     PhotonReStir();
     void prepareVars();
     bool preparePhotonBuffers();
+    void generatePhotons(RenderContext* pRenderContext, const RenderData& renderData);
 
     // Internal state
     Scene::SharedPtr            mpScene;                    ///< Current scene.
@@ -91,6 +92,11 @@ private:
     bool mPhotonBuffersReady = false;
 
     bool mTestInit = false;
+
+    struct {
+        Buffer::SharedPtr counter;
+        Buffer::SharedPtr reset;
+    }mPhotonCounterBuffer;
 
     struct PhotonBuffers {
         uint maxSize = 0;

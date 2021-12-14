@@ -104,10 +104,12 @@ RenderPassReflection PhotonReStir::reflect(const CompileData& compileData)
     addRenderPassInputs(reflector, kInputChannels);
     addRenderPassOutputs(reflector, kOutputChannels);
 
+    /*
     reflector.addOutput("CausticAABB", kCausticAABBDesc).rawBuffer(mNumPhotons * sizeof(AABB));
     reflector.addOutput("CausticInfo", kCausticInfoDesc).rawBuffer(mNumPhotons * sizeof(AABB));
     reflector.addOutput("GlobalAABB", kGlobalAABBDesc).rawBuffer(mNumPhotons * sizeof(AABB));
     reflector.addOutput("GlobalInfo", kGlobalInfoDesc).rawBuffer(mNumPhotons * sizeof(AABB));
+    */
 
     return reflector;
 }
@@ -145,17 +147,36 @@ void PhotonReStir::execute(RenderContext* pRenderContext, const RenderData& rend
         mpScene->getLightCollection(pRenderContext);
     }
 
-    /*
+    
     if (!mPhotonBuffersReady)
         mPhotonBuffersReady = preparePhotonBuffers();
-    */
 
     //
     // Generate Ray Pass
     //
 
 
-   // Specialize the Generate program.
+   
+
+
+    generatePhotons(pRenderContext, renderData);
+    
+
+    //flush
+    //pRenderContext->flush();
+
+    //Gather the photons with short rays
+    
+
+    mFrameCount++;
+}
+
+void PhotonReStir::generatePhotons(RenderContext* pRenderContext, const RenderData& renderData)
+{
+    //Reset counter Buffers
+    pRenderContext->copyBufferRegion(mPhotonCounterBuffer.counter.get(), 0, mPhotonCounterBuffer.reset.get(), 0, sizeof(uint64_t));
+
+    // Specialize the Generate program.
    // These defines should not modify the program vars. Do not trigger program vars re-creation.
     mTracerGenerate.pProgram->addDefine("MAX_BOUNCES", std::to_string(mMaxBounces));
     mTracerGenerate.pProgram->addDefine("USE_ANALYTIC_LIGHTS", mpScene->useAnalyticLights() ? "1" : "0");
@@ -170,30 +191,30 @@ void PhotonReStir::execute(RenderContext* pRenderContext, const RenderData& rend
 
     // Prepare program vars. This may trigger shader compilation.
     // The program should have all necessary defines set at this point.
-    
+
     if (!mTracerGenerate.pVars) prepareVars();
     assert(mTracerGenerate.pVars);
-    
 
     // Set constants.
     auto var = mTracerGenerate.pVars->getRootVar();
     var["CB"]["gFrameCount"] = mFrameCount;
 
     //set the buffers
-    /*
+
     var[kCausticAABBSName] = mCausticBuffers.aabb;
     var[kCausticInfoSName] = mCausticBuffers.info;
     var[kGlobalAABBSName] = mGlobalBuffers.aabb;
     var[kGlobalInfoSName] = mGlobalBuffers.info;
-    */
-    // Bind Output Buffers. These needs to be done per-frame as the buffers may change anytime.
 
+    var["gPhotonCounter"] = mPhotonCounterBuffer.counter;
+    // Bind Output Buffers. These needs to be done per-frame as the buffers may change anytime.
+    /*
     var[kCausticAABBSName] = renderData["CausticAABB"]->asBuffer();
     var[kCausticInfoSName] = renderData["CausticInfo"]->asBuffer();
     var[kGlobalAABBSName] = renderData["GlobalAABB"]->asBuffer();
     var[kGlobalInfoSName] = renderData["GlobalInfo"]->asBuffer();
-    
-    
+    */
+
     // Bind Output Textures. These needs to be done per-frame as the buffers may change anytime.
     auto bindAsTex = [&](const ChannelDesc& desc)
     {
@@ -202,7 +223,6 @@ void PhotonReStir::execute(RenderContext* pRenderContext, const RenderData& rend
             var[desc.texname] = renderData[desc.name]->asTexture();
         }
     };
-    //for (auto channel : kInputChannels) bind(channel);
     for (auto channel : kOutputChannels) bindAsTex(channel);
 
     // Get dimensions of ray dispatch.
@@ -211,14 +231,6 @@ void PhotonReStir::execute(RenderContext* pRenderContext, const RenderData& rend
 
     // Trace the photons
     mpScene->raytrace(pRenderContext, mTracerGenerate.pProgram.get(), mTracerGenerate.pVars, uint3(targetDim, 1));
-
-    //flush
-    //pRenderContext->flush();
-
-    //Gather the photons with short rays
-    
-
-    mFrameCount++;
 }
 
 void PhotonReStir::renderUI(Gui::Widgets& widget)
@@ -311,7 +323,7 @@ bool PhotonReStir::preparePhotonBuffers()
         mGlobalBuffers.maxSize = mNumPhotons;
 
     //only set aabb buffer if it is used
-    if (mUsePhotonReStir) {
+    if (!mUsePhotonReStir) {
         mGlobalBuffers.aabb = Buffer::createStructured(sizeof(D3D12_RAYTRACING_AABB), mGlobalBuffers.maxSize);
         mGlobalBuffers.aabb->setName("PhotonReStir::mGlobalBuffers.aabb");
 
@@ -322,6 +334,12 @@ bool PhotonReStir::preparePhotonBuffers()
     mGlobalBuffers.info->setName("PhotonReStir::mGlobalBuffers.info");
 
     assert(mGlobalBuffers.info);
+
+    //photon counter
+    mPhotonCounterBuffer.counter = Buffer::createStructured(sizeof(uint), 2);
+    mPhotonCounterBuffer.counter->setName("PhotonReStir::PhotonCounter");
+    uint64_t zeroInit = 0;
+    mPhotonCounterBuffer.reset = Buffer::create(sizeof(uint64_t), ResourceBindFlags::None, Buffer::CpuAccess::None, &zeroInit);
 
     return true;
 }

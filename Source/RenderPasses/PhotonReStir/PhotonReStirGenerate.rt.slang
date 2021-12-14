@@ -42,6 +42,12 @@ RWStructuredBuffer<AABB> gCausticAABB;
 RWStructuredBuffer<AABB> gGlobalAABB;
 RWStructuredBuffer<AABB> gTestAABB;
 
+struct PhotonCounter
+{
+    uint global;
+    uint caustic;
+};
+RWStructuredBuffer<PhotonCounter> gPhotonCounter;
 
 // Static configuration based on defines set from the host.
 #define is_valid(name) (is_valid_##name != 0)
@@ -112,6 +118,10 @@ void rayGen()
     test.minPoint = float3(float(currentIndex) / float(indexMax), 0, 0);
     test.maxPoint = float3(2, 1, 1);
 
+    
+    uint test2 = 0;
+    InterlockedAdd(gPhotonCounter[0].caustic, 1u, test2);
+    
     gCausticAABB[currentIndex] = test;
     
     //gPhotonImage[launchIndex] = float4(float(currentIndex) / float(indexMax), 0, 0, 1);
