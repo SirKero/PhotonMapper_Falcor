@@ -33,15 +33,6 @@ struct PhotonInfo {
         float radius;
         float3 flux;
         float pad2;
-
-    static PhotonInfo create()
-    {
-        PhotonInfo photon;
-        photon.pos = float3(0.f);
-        photon.radius = 1.f;
-        photon.flux = float3(1.f);
-        return photon;
-    }
 };
 
  //Internal Buffer Structs
@@ -122,7 +113,7 @@ void calcHemispehreDir(in LightData light,in SampleGenerator sg, inout float3 ne
 
 AABB calcPhotonAABB(in PhotonInfo photon)
 {
-    AABB aabb = aabb.create(photon.pos - photon.radius, photon.pos + photon.radius);
+    AABB aabb = AABB.create(photon.pos - photon.radius, photon.pos + photon.radius);
     return aabb;
 }
 
@@ -197,7 +188,11 @@ void rayGen()
     calcHemispehreDir(currentLight, sg, ray.Direction);
 
     //create photon
-    PhotonInfo photon = PhotonInfo.create();
+    PhotonInfo photon;
+    photon.pos = float3(0, 0, 0);
+    photon.radius = 0.f;
+    photon.flux = float3(0, 0, 0);
+    photon.pad2 = 0.f;
     
     //light flux
     float3 lightFlux = currentLight.intensity * 2 * M_PI * invPdf;
@@ -225,33 +220,34 @@ void rayGen()
         //save photon
         //TODO: Add russian roulette
         //TODO: Add radius
+        
         if (reflectedDiffuse)
         {
             //caustic photon
             if (wasReflectedSpecular)
             {
-                uint photonIndex;
-                InterlockedAdd(gPhotonCounter.caustic, 1, photonIndex);
+                uint photonIndex = 0;
+                InterlockedAdd(gPhotonCounter[0].caustic, 1u, photonIndex);
                 AABB photonAABB = calcPhotonAABB(photon);
-                gCaustic[photonIndex] = photon;
+                gCaustic[photonIndex] = photon;           //this causes error for some reason    
                 gCausticAABB[photonIndex] = photonAABB;
             }
             //Global photon
             else
             {
-                uint photonIndex;
-                InterlockedAdd(gPhotonCounter.global, 1, photonIndex);
+                uint photonIndex = 0;
+                InterlockedAdd(gPhotonCounter[0].global, 1u, photonIndex);
                 AABB photonAABB = calcPhotonAABB(photon);
-                gCaustic[photonIndex] = photon;
-                gCausticAABB[photonIndex] = photonAABB;
+                gGlobal[photonIndex] = photon;
+                gGlobalAABB[photonIndex] = photonAABB;
             }
         }
-
+        
         //Update photon energy
         float avgThroughput = (rayData.thp.x + rayData.thp.y + rayData.thp.z) / 3;
 
-        float rnd = sampleNext2D(sg);
-        if (avgThroughput < rand)
+        float rnd = sampleNext1D(sg);
+        if (avgThroughput < rnd)
         {
             break;      //Photon is absorbed
         }

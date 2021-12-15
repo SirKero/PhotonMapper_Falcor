@@ -107,7 +107,7 @@ private:
 
     struct PhotonInfo {
         float3 pos;
-        float pad1;
+        float radius;
         float3 flux;
         float pad2;
     };
