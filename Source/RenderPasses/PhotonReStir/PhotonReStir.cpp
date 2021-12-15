@@ -156,9 +156,6 @@ void PhotonReStir::execute(RenderContext* pRenderContext, const RenderData& rend
     //
 
 
-   
-
-
     generatePhotons(pRenderContext, renderData);
     
 
@@ -173,11 +170,12 @@ void PhotonReStir::execute(RenderContext* pRenderContext, const RenderData& rend
 
 void PhotonReStir::generatePhotons(RenderContext* pRenderContext, const RenderData& renderData)
 {
+
     //Reset counter Buffers
     pRenderContext->copyBufferRegion(mPhotonCounterBuffer.counter.get(), 0, mPhotonCounterBuffer.reset.get(), 0, sizeof(uint64_t));
 
     // Specialize the Generate program.
-   // These defines should not modify the program vars. Do not trigger program vars re-creation.
+    // These defines should not modify the program vars. Do not trigger program vars re-creation.
     mTracerGenerate.pProgram->addDefine("MAX_BOUNCES", std::to_string(mMaxBounces));
     mTracerGenerate.pProgram->addDefine("USE_ANALYTIC_LIGHTS", mpScene->useAnalyticLights() ? "1" : "0");
     mTracerGenerate.pProgram->addDefine("USE_EMISSIVE_LIGHTS", mpScene->useEmissiveLights() ? "1" : "0");
@@ -195,9 +193,12 @@ void PhotonReStir::generatePhotons(RenderContext* pRenderContext, const RenderDa
     if (!mTracerGenerate.pVars) prepareVars();
     assert(mTracerGenerate.pVars);
 
+    
+
     // Set constants.
     auto var = mTracerGenerate.pVars->getRootVar();
     var["CB"]["gFrameCount"] = mFrameCount;
+    var["CB"]["gDirLightWorldPos"] = mDirLightWorldPos;
 
     //set the buffers
 
@@ -239,6 +240,8 @@ void PhotonReStir::renderUI(Gui::Widgets& widget)
 
     dirty |= widget.var("Max bounces", mMaxBounces, 0u, 1u << 16);
     widget.tooltip("Maximum path length for Photon Bounces");
+    dirty |= widget.var("DirLightPos", mDirLightWorldPos, -FLT_MAX, FLT_MAX, 0.001f);
+    widget.tooltip("Position where all Dir lights come from");
 
     //set flag to indicate that settings have changed and the pass has to be rebuild
     if (dirty)

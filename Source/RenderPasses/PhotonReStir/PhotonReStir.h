@@ -68,6 +68,7 @@ private:
     uint                        mMaxBounces = 3;            ///< Max number of indirect bounces (0 = none).
     uint                        mNumPhotons = 500000;       ///< Number of Photons shot
     bool                        mUsePhotonReStir = false;   ///< Activates ReStir for global photons
+    float3                      mDirLightWorldPos = float3(0.f, 10.f, 0.f); ///< Testing purposes only
 
     // Runtime data
     uint                        mFrameCount = 0;            ///< Frame count since scene was loaded.
