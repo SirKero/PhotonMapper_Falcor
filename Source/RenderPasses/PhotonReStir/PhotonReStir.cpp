@@ -355,3 +355,14 @@ bool PhotonReStir::preparePhotonBuffers()
 
     return true;
 }
+
+
+void PhotonReStir::createAccelerationStructure() {
+
+}
+void PhotonReStir::createTopLevelAS() {
+
+}
+void PhotonReStir::createBottomLevelAS() {
+
+}

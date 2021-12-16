@@ -60,6 +60,10 @@ private:
     bool preparePhotonBuffers();
     void generatePhotons(RenderContext* pRenderContext, const RenderData& renderData);
 
+    void createAccelerationStructure();
+    void createTopLevelAS();
+    void createBottomLevelAS();
+
     // Internal state
     Scene::SharedPtr            mpScene;                    ///< Current scene.
     SampleGenerator::SharedPtr  mpSampleGenerator;          ///< GPU sample generator.
