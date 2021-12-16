@@ -138,16 +138,22 @@ void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleInt
     float3 rayOrigin = sd.computeNewRayOrigin();
 
     float pdf = 0.f;
-    float2 u = sampleNext2D(rayData.sg);
-    float3 wi = sample_cosine_hemisphere_concentric(u, pdf);    //TODO:Check if right
-    wi = sd.fromLocal(wi);
+    uint lobe = 0;
+    float3 wiLocal = sd.toLocal(sd.V);
+    float3 woLocal = { }, weight = { };
 
+    FalcorBSDF bsdf;
+    bsdf.setup(sd);
+    bool valid = bsdf.sample(wiLocal, woLocal, pdf, weight, lobe, rayData.sg);
+
+    float3 res = bsdf.eval(wiLocal, woLocal);   //TODO: Check if order is correct
+
+
+    //set ray data
     rayData.origin = rayOrigin;
-    rayData.direction = wi;
-    //TODO: Seperate in diffuse and specular and save which way we did go
-    // Maybe use the sample function of the FalcorBRDF in BxDF.slang
-    rayData.thp = pdf > 0.f ? gData.standardMaterial.eval(sd, wi) / pdf : float3(0);
-
+    rayData.direction = sd.fromLocal(woLocal);
+    rayData.thp = valid ? res / pdf : float3(0);
+    rayData.specularRef = (lobe & (uint)LobeType::Specular) > 0;    //was reflected specular or diffuse
     //if throughput is 0, return
     if(!any(rayData.thp > 0.f))
         rayData.terminated = true;
