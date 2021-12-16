@@ -13,6 +13,8 @@ cbuffer CB
 {
     uint        gFrameCount;        // Frame count since scene was loaded.
     float3      gDirLightWorldPos;  // world pos for a dir light if given
+    float       gCausticRadius;     // Radius for the caustic photons
+    float       gGlobalRadius;      // Radius for the global photons
 }
 
 static struct Data
@@ -225,13 +227,13 @@ void rayGen()
         reflectedDiffuse = !rayData.specularRef;
         //save photon
         //TODO: Add russian roulette
-        //TODO: Add radius
         
         if (reflectedDiffuse)
         {
             //caustic photon
             if (wasReflectedSpecular)
             {
+                photon.radius = gCausticRadius;
                 uint photonIndex = 0;
                 InterlockedAdd(gPhotonCounter[0].caustic, 1u, photonIndex);
                 AABB photonAABB = calcPhotonAABB(photon);
@@ -241,6 +243,7 @@ void rayGen()
             //Global photon
             else
             {
+                photon.radius = gGlobalRadius;
                 uint photonIndex = 0;
                 InterlockedAdd(gPhotonCounter[0].global, 1u, photonIndex);
                 AABB photonAABB = calcPhotonAABB(photon);

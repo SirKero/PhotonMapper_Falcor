@@ -199,6 +199,8 @@ void PhotonReStir::generatePhotons(RenderContext* pRenderContext, const RenderDa
     auto var = mTracerGenerate.pVars->getRootVar();
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gDirLightWorldPos"] = mDirLightWorldPos;
+    var["CB"]["gCausticRadius"] = mCausticRadius;
+    var["CB"]["gGlobalRadius"] = mGlobalRadius;
 
     //set the buffers
 
@@ -232,6 +234,9 @@ void PhotonReStir::generatePhotons(RenderContext* pRenderContext, const RenderDa
 
     // Trace the photons
     mpScene->raytrace(pRenderContext, mTracerGenerate.pProgram.get(), mTracerGenerate.pVars, uint3(targetDim, 1));
+
+
+    //TODO: Add progressive if activated
 }
 
 void PhotonReStir::renderUI(Gui::Widgets& widget)
@@ -242,7 +247,11 @@ void PhotonReStir::renderUI(Gui::Widgets& widget)
     widget.tooltip("Maximum path length for Photon Bounces");
     dirty |= widget.var("DirLightPos", mDirLightWorldPos, -FLT_MAX, FLT_MAX, 0.001f);
     widget.tooltip("Position where all Dir lights come from");
-
+    //Radius settings
+    dirty |= widget.var("CausticRadius", mCausticRadius, -FLT_MAX, FLT_MAX, 0.001f);
+    widget.tooltip("Radius for the caustic Photons");
+    dirty |= widget.var("GlobalRadius", mGlobalRadius, -FLT_MAX, FLT_MAX, 0.001f);
+    widget.tooltip("Radius for the global Photons");
     //set flag to indicate that settings have changed and the pass has to be rebuild
     if (dirty)
         mOptionsChanged = true;

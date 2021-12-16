@@ -66,6 +66,9 @@ private:
 
     // Configuration
     uint                        mMaxBounces = 3;            ///< Max number of indirect bounces (0 = none).
+    float                       mCausticRadius = 0.1f;      ///< Radius for caustic Photons
+    float                       mGlobalRadius = 0.4f;      ///< Radius for global Photons
+    bool                        mUseProgressivePM = false;  ///< Activate Progressive Photon Mapping
     uint                        mNumPhotons = 500000;       ///< Number of Photons shot
     bool                        mUsePhotonReStir = false;   ///< Activates ReStir for global photons
     float3                      mDirLightWorldPos = float3(0.f, 10.f, 0.f); ///< Testing purposes only
