@@ -357,12 +357,95 @@ bool PhotonReStir::preparePhotonBuffers()
 }
 
 
-void PhotonReStir::createAccelerationStructure() {
-
+void PhotonReStir::createAccelerationStructure(RenderContext* pContext, const std::vector<uint>& aabbCount) {
+    createBottomLevelAS(pContext, aabbCount);
 }
 void PhotonReStir::createTopLevelAS() {
 
 }
-void PhotonReStir::createBottomLevelAS() {
+void PhotonReStir::createBottomLevelAS(RenderContext* pContext, const std::vector<uint>& aabbCount) {
 
+    //Init the blas with a maximum size for scratch and result buffer
+    if (mBlasData.empty()) {
+        mBlasData.resize(mUsePhotonReStir ? 1 : 2);
+        uint64_t maxScratchSize = 0;
+        //Prebuild
+        for (size_t i = 0; i < mBlasData.size(); i++) {
+            auto& blas = mBlasData[i];
+            //Create geometry description
+            D3D12_RAYTRACING_GEOMETRY_DESC& desc = blas.geomDescs;
+            desc.Type = D3D12_RAYTRACING_GEOMETRY_TYPE_PROCEDURAL_PRIMITIVE_AABBS;
+            desc.Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_NONE;       //TODO: Check if opaque is needed
+            desc.AABBs.AABBCount = mNumPhotons;                     //TODO: Put at max for the respective side (caustic or global)
+            desc.AABBs.AABBs.StartAddress = i == 0 ? mCausticBuffers.aabb->getGpuAddress() : mGlobalBuffers.aabb->getGpuAddress();
+            desc.AABBs.AABBs.StrideInBytes = sizeof(D3D12_RAYTRACING_AABB);
+
+            //Create input for blas
+            D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS& inputs = blas.buildInputs;
+            inputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL;
+            inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
+            inputs.NumDescs = 1;
+            inputs.pGeometryDescs = &blas.geomDescs;
+            inputs.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_BUILD;
+
+            //get prebuild Info
+            GET_COM_INTERFACE(gpDevice->getApiHandle(), ID3D12Device5, pDevice5);
+            pDevice5->GetRaytracingAccelerationStructurePrebuildInfo(&blas.buildInputs, &blas.prebuildInfo);
+
+            // Figure out the padded allocation sizes to have proper alignment.
+            assert(blas.prebuildInfo.ResultDataMaxSizeInBytes > 0);
+            blas.blasByteSize = align_to(D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT, blas.prebuildInfo.ResultDataMaxSizeInBytes);
+
+            uint64_t scratchByteSize = std::max(blas.prebuildInfo.ScratchDataSizeInBytes, blas.prebuildInfo.UpdateScratchDataSizeInBytes);
+            blas.scratchByteSize = align_to(D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT, scratchByteSize);
+
+            maxScratchSize = std::max(blas.scratchByteSize, maxScratchSize);
+        }
+
+        //Create the scratch and blas buffers
+        mBlasScratch = Buffer::create(maxScratchSize, Buffer::BindFlags::UnorderedAccess, Buffer::CpuAccess::None);
+        mBlasScratch->setName("PhotonReStir::BlasScratch");
+
+        mCausticBuffers.blas = Buffer::create(mBlasData[0].blasByteSize, Buffer::BindFlags::AccelerationStructure, Buffer::CpuAccess::None);
+        mCausticBuffers.blas->setName("PhotonReStir::CausticBlasBuffer");
+
+        if (!mUsePhotonReStir) {    //create a global buffer if they are not used as light
+            mCausticBuffers.blas = Buffer::create(mBlasData[1].blasByteSize, Buffer::BindFlags::AccelerationStructure, Buffer::CpuAccess::None);
+            mCausticBuffers.blas->setName("PhotonReStir::GlobalBlasBuffer");
+        }
+    }
+
+    //Update size of the blas
+    for (size_t i = 0; i < mBlasData.size(); i++) {
+        mBlasData[i].geomDescs.AABBs.AABBCount = aabbCount[i];
+    }
+
+    PROFILE("buildPhotonBlas");
+    if (!gpDevice->isFeatureSupported(Device::SupportedFeatures::Raytracing))
+    {
+        throw std::exception("Raytracing is not supported by the current device");
+    }
+
+    //aabb buffers need to be ready
+    pContext->uavBarrier(mCausticBuffers.aabb.get());
+    if(!mUsePhotonReStir)  pContext->uavBarrier(mGlobalBuffers.aabb.get());
+
+    for (size_t i = 0; i < mBlasData.size(); i++) {
+        auto& blas = mBlasData[i];
+
+        //barriers for the scratch and blas buffer
+        pContext->uavBarrier(mBlasScratch.get());
+        pContext->uavBarrier(i == 0 ? mCausticBuffers.blas.get() : mGlobalBuffers.blas.get());
+
+        D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC asDesc = {};
+        asDesc.Inputs = blas.buildInputs;
+        asDesc.ScratchAccelerationStructureData = mBlasScratch->getGpuAddress();
+        asDesc.DestAccelerationStructureData = i == 0 ? mCausticBuffers.blas->getGpuAddress(): mGlobalBuffers.blas->getGpuAddress();
+
+        GET_COM_INTERFACE(pContext->getLowLevelData()->getCommandList(), ID3D12GraphicsCommandList4, pList4);
+        pList4->BuildRaytracingAccelerationStructure(&asDesc, 0, nullptr);
+
+        //Barrier for the blas
+        pContext->uavBarrier(i == 0 ? mCausticBuffers.blas.get() : mGlobalBuffers.blas.get());
+    }
 }

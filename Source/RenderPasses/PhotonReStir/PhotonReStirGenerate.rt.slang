@@ -227,6 +227,7 @@ void rayGen()
         reflectedDiffuse = !rayData.specularRef;
         //save photon
         //TODO: Add russian roulette
+        //TODO: Add max for photon insertion
         
         if (reflectedDiffuse)
         {

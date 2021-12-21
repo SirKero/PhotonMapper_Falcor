@@ -60,9 +60,9 @@ private:
     bool preparePhotonBuffers();
     void generatePhotons(RenderContext* pRenderContext, const RenderData& renderData);
 
-    void createAccelerationStructure();
+    void createAccelerationStructure(RenderContext* pContext, const std::vector<uint>& aabbCount);
     void createTopLevelAS();
-    void createBottomLevelAS();
+    void createBottomLevelAS(RenderContext* pContext, const std::vector<uint>& aabbCount);
 
     // Internal state
     Scene::SharedPtr            mpScene;                    ///< Current scene.
@@ -110,6 +110,7 @@ private:
         uint maxSize = 0;
         Buffer::SharedPtr info;
         Buffer::SharedPtr aabb;
+        Buffer::SharedPtr blas;
     };
 
     struct PhotonInfo {
@@ -121,4 +122,18 @@ private:
 
     PhotonBuffers mCausticBuffers;              ///< Buffers for the caustic photons
     PhotonBuffers mGlobalBuffers;               ///< Buffers for the global photons
+
+
+    struct BlasData
+    {
+        D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO prebuildInfo;
+        D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS buildInputs;
+        D3D12_RAYTRACING_GEOMETRY_DESC geomDescs;
+
+        uint64_t blasByteSize = 0;                    ///< Maximum result data size for the BLAS build, including padding.
+        uint64_t scratchByteSize = 0;                   ///< Maximum scratch data size for the BLAS build, including padding.
+    };
+
+    std::vector<BlasData> mBlasData;
+    Buffer::SharedPtr mBlasScratch;
 };
