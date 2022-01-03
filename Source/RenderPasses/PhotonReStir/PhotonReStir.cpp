@@ -159,8 +159,8 @@ void PhotonReStir::execute(RenderContext* pRenderContext, const RenderData& rend
     generatePhotons(pRenderContext, renderData);
     
 
-    //flush
-    //pRenderContext->flush();
+    //barrier for the aabb buffers and copying the needed datas
+    syncPasses(pRenderContext, renderData);
 
     //Gather the photons with short rays
     
@@ -237,6 +237,11 @@ void PhotonReStir::generatePhotons(RenderContext* pRenderContext, const RenderDa
 
 
     //TODO: Add progressive if activated
+}
+
+void PhotonReStir::syncPasses(RenderContext* pRenderContext, const RenderData& renderData)
+{
+
 }
 
 void PhotonReStir::renderUI(Gui::Widgets& widget)
@@ -351,7 +356,11 @@ bool PhotonReStir::preparePhotonBuffers()
     mPhotonCounterBuffer.counter = Buffer::createStructured(sizeof(uint), 2);
     mPhotonCounterBuffer.counter->setName("PhotonReStir::PhotonCounter");
     uint64_t zeroInit = 0;
-    mPhotonCounterBuffer.reset = Buffer::create(sizeof(uint64_t), ResourceBindFlags::None, Buffer::CpuAccess::None, &zeroInit);
+    mPhotonCounterBuffer.reset = Buffer::create(sizeof(uint64_t), ResourceBindFlags::Constant, Buffer::CpuAccess::None, &zeroInit);
+    mPhotonCounterBuffer.reset->setName("PhotonReStir::PhotonCounterReset");
+
+    mPhotonCounterBuffer.cpuCopy = Buffer::create(sizeof(uint64_t), ResourceBindFlags::None, Buffer::CpuAccess::Read, &zeroInit);
+    mPhotonCounterBuffer.cpuCopy->setName("PhotonReStir::PhotonCounterCPU");
 
     return true;
 }

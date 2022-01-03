@@ -57,11 +57,30 @@ public:
 private:
     PhotonReStir();
     void prepareVars();
+
+    /** Prepares all buffers neede for the generate photon pass
+    */
     bool preparePhotonBuffers();
+
+    /** Creates the Generate Photon pass, where the photons are shot through the scene and saved in an AABB and information buffer
+    */
     void generatePhotons(RenderContext* pRenderContext, const RenderData& renderData);
 
+    /** Sync Pass which syncs the resources which were used by the generate Photon Pass and are nedded by the Trace Photon Pass.
+    * It also will create the Acceleration Structure which is needed for the next pass
+    */
+    void syncPasses(RenderContext* pRenderContext, const RenderData& renderData);
+
+    /** Creates the AS. Calls the createTopLevelAS(..) and createBottomLevelAS(..) functions
+    */
     void createAccelerationStructure(RenderContext* pContext, const std::vector<uint>& aabbCount);
+
+    /** Creates the TLAS for the Photon AABBs
+    */
     void createTopLevelAS(RenderContext* pContext);
+
+    /** Creates the BLAS for the Photon AABBs
+   */
     void createBottomLevelAS(RenderContext* pContext, const std::vector<uint>& aabbCount);
 
     // Internal state
@@ -104,6 +123,7 @@ private:
     struct {
         Buffer::SharedPtr counter;
         Buffer::SharedPtr reset;
+        Buffer::SharedPtr cpuCopy;
     }mPhotonCounterBuffer;
 
     struct PhotonBuffers {
