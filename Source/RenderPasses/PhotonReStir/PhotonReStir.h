@@ -61,7 +61,7 @@ private:
     void generatePhotons(RenderContext* pRenderContext, const RenderData& renderData);
 
     void createAccelerationStructure(RenderContext* pContext, const std::vector<uint>& aabbCount);
-    void createTopLevelAS();
+    void createTopLevelAS(RenderContext* pContext);
     void createBottomLevelAS(RenderContext* pContext, const std::vector<uint>& aabbCount);
 
     // Internal state
@@ -136,4 +136,6 @@ private:
 
     std::vector<BlasData> mBlasData;
     Buffer::SharedPtr mBlasScratch;
+    std::vector<D3D12_RAYTRACING_INSTANCE_DESC> mPhotonInstanceDesc;
+    Buffer::SharedPtr mPhotonTlas;
 };

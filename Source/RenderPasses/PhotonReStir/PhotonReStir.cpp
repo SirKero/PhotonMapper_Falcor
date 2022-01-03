@@ -360,7 +360,26 @@ bool PhotonReStir::preparePhotonBuffers()
 void PhotonReStir::createAccelerationStructure(RenderContext* pContext, const std::vector<uint>& aabbCount) {
     createBottomLevelAS(pContext, aabbCount);
 }
-void PhotonReStir::createTopLevelAS() {
+void PhotonReStir::createTopLevelAS(RenderContext* pContext) {
+    //fill the instance description if empty
+    if (mPhotonInstanceDesc.empty()) {
+        for (int i = 0; i < 2; i++) {
+            D3D12_RAYTRACING_INSTANCE_DESC desc = {};
+            desc.AccelerationStructure = i == 0 ? mCausticBuffers.blas->getGpuAddress() : mGlobalBuffers.blas->getGpuAddress();
+            desc.Flags = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
+            desc.InstanceID = i;
+            desc.InstanceMask = i + 1;  //0b01 for Caustic and 0b10 for Global
+            desc.InstanceContributionToHitGroupIndex = 0;
+
+            //Create a identity matrix for the transform and copy it to the instance desc
+            glm::mat4 transform4x4 = glm::identity<glm::mat4>();
+            std::memcpy(desc.Transform, &transform4x4, sizeof(desc.Transform));
+            mPhotonInstanceDesc.push_back(desc);
+        }
+    }
+
+    PROFILE("buildPhotonTlas");
+
 
 }
 void PhotonReStir::createBottomLevelAS(RenderContext* pContext, const std::vector<uint>& aabbCount) {
@@ -414,6 +433,8 @@ void PhotonReStir::createBottomLevelAS(RenderContext* pContext, const std::vecto
             mCausticBuffers.blas->setName("PhotonReStir::GlobalBlasBuffer");
         }
     }
+
+    assert(mBlasData.size() <= aabbCount.size()); //size of the blas data has to be equal or smaller than the aabbCounts 
 
     //Update size of the blas
     for (size_t i = 0; i < mBlasData.size(); i++) {
