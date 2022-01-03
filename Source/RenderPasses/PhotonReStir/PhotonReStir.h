@@ -134,8 +134,17 @@ private:
         uint64_t scratchByteSize = 0;                   ///< Maximum scratch data size for the BLAS build, including padding.
     };
 
+    struct TlasData
+    {
+        Buffer::SharedPtr pTlas;
+        ShaderResourceView::SharedPtr pSrv;             ///< Shader Resource View for binding the TLAS.
+        Buffer::SharedPtr pInstanceDescs;               ///< Buffer holding instance descs for the TLAS.
+    };
+
     std::vector<BlasData> mBlasData;
     Buffer::SharedPtr mBlasScratch;
     std::vector<D3D12_RAYTRACING_INSTANCE_DESC> mPhotonInstanceDesc;
-    Buffer::SharedPtr mPhotonTlas;
+    D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO mTlasPrebuildInfo;
+    Buffer::SharedPtr mTlasScratch;
+    TlasData mPhotonTlas;
 };

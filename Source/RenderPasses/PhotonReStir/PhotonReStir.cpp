@@ -359,8 +359,11 @@ bool PhotonReStir::preparePhotonBuffers()
 
 void PhotonReStir::createAccelerationStructure(RenderContext* pContext, const std::vector<uint>& aabbCount) {
     createBottomLevelAS(pContext, aabbCount);
+    createTopLevelAS(pContext);
 }
 void PhotonReStir::createTopLevelAS(RenderContext* pContext) {
+    //TODO:: Update instead of bilding new
+
     //fill the instance description if empty
     if (mPhotonInstanceDesc.empty()) {
         for (int i = 0; i < 2; i++) {
@@ -380,6 +383,46 @@ void PhotonReStir::createTopLevelAS(RenderContext* pContext) {
 
     PROFILE("buildPhotonTlas");
 
+    D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS inputs = {};
+    inputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL;
+    inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
+    inputs.NumDescs = (uint32_t)mPhotonInstanceDesc.size();
+    inputs.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_BUILD;
+
+    //if scratch is empty, create one
+    if (mTlasScratch == nullptr) {
+        //Prebuild
+        GET_COM_INTERFACE(gpDevice->getApiHandle(), ID3D12Device5, pDevice5);
+        pDevice5->GetRaytracingAccelerationStructurePrebuildInfo(&inputs, &mTlasPrebuildInfo);
+        mTlasScratch = Buffer::create(mTlasPrebuildInfo.ScratchDataSizeInBytes, Buffer::BindFlags::UnorderedAccess, Buffer::CpuAccess::None);
+        mTlasScratch->setName("PhotonReStir::TLAS_Scratch");
+    }
+
+    //if buffers for the tlas are empty create them
+    if (mPhotonTlas.pTlas == nullptr) {
+        assert(mPhotonTlas.pInstanceDescs == nullptr); //the instance descriptions should also be null
+        mPhotonTlas.pTlas = Buffer::create(mTlasPrebuildInfo.ResultDataMaxSizeInBytes, Buffer::BindFlags::AccelerationStructure, Buffer::CpuAccess::None);
+        mPhotonTlas.pTlas->setName("PhotonReStir::TLAS");
+        mPhotonTlas.pInstanceDescs = Buffer::create((uint32_t)mPhotonInstanceDesc.size() * sizeof(D3D12_RAYTRACING_INSTANCE_DESC), Buffer::BindFlags::None, Buffer::CpuAccess::Write, mPhotonInstanceDesc.data());
+        mPhotonTlas.pInstanceDescs->setName("PhotonReStir:: TLAS Instance Description");
+    }
+
+    D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC asDesc = {};
+    asDesc.Inputs = inputs;
+    asDesc.Inputs.InstanceDescs = mPhotonTlas.pInstanceDescs->getGpuAddress();
+    asDesc.ScratchAccelerationStructureData = mTlasScratch->getGpuAddress();
+    asDesc.DestAccelerationStructureData = mPhotonTlas.pTlas->getGpuAddress();
+
+    // Create TLAS
+    GET_COM_INTERFACE(pContext->getLowLevelData()->getCommandList(), ID3D12GraphicsCommandList4, pList4);
+    pContext->resourceBarrier(mPhotonTlas.pInstanceDescs.get(), Resource::State::NonPixelShader);
+    pList4->BuildRaytracingAccelerationStructure(&asDesc, 0, nullptr);
+    pContext->uavBarrier(mPhotonTlas.pTlas.get());
+
+    //Create TLAS Shader Ressource View
+    if (mPhotonTlas.pSrv == nullptr) {
+        mPhotonTlas.pSrv = ShaderResourceView::createViewForAccelerationStructure(mPhotonTlas.pTlas);
+    }
 
 }
 void PhotonReStir::createBottomLevelAS(RenderContext* pContext, const std::vector<uint>& aabbCount) {
