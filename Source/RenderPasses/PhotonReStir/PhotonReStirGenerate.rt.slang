@@ -46,8 +46,8 @@ RWStructuredBuffer<AABB> gGlobalAABB;
 
 struct PhotonCounter
 {
-    uint global;
     uint caustic;
+    uint global;
 };
 RWStructuredBuffer<PhotonCounter> gPhotonCounter;
 

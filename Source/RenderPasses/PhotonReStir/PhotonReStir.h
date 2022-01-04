@@ -126,6 +126,8 @@ private:
         Buffer::SharedPtr cpuCopy;
     }mPhotonCounterBuffer;
 
+    GpuFence::SharedPtr mFence;     //fence for GPU/CPU sync
+
     struct PhotonBuffers {
         uint maxSize = 0;
         Buffer::SharedPtr info;

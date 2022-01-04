@@ -148,21 +148,26 @@ void PhotonReStir::execute(RenderContext* pRenderContext, const RenderData& rend
     }
 
     
-    if (!mPhotonBuffersReady)
+    if (!mPhotonBuffersReady) {
         mPhotonBuffersReady = preparePhotonBuffers();
+    }
+        
 
     //
     // Generate Ray Pass
     //
 
-
     generatePhotons(pRenderContext, renderData);
+
+    if(mFrameCount > 0)
+    {
+        
+        //barrier for the aabb buffers and copying the needed datas
+        syncPasses(pRenderContext, renderData);
+
+        //Gather the photons with short rays
+    }
     
-
-    //barrier for the aabb buffers and copying the needed datas
-    syncPasses(pRenderContext, renderData);
-
-    //Gather the photons with short rays
     
 
     mFrameCount++;
@@ -173,7 +178,7 @@ void PhotonReStir::generatePhotons(RenderContext* pRenderContext, const RenderDa
 
     //Reset counter Buffers
     pRenderContext->copyBufferRegion(mPhotonCounterBuffer.counter.get(), 0, mPhotonCounterBuffer.reset.get(), 0, sizeof(uint64_t));
-
+    pRenderContext->resourceBarrier(mPhotonCounterBuffer.counter.get(), Resource::State::ShaderResource);
     // Specialize the Generate program.
     // These defines should not modify the program vars. Do not trigger program vars re-creation.
     mTracerGenerate.pProgram->addDefine("MAX_BOUNCES", std::to_string(mMaxBounces));
@@ -235,13 +240,26 @@ void PhotonReStir::generatePhotons(RenderContext* pRenderContext, const RenderDa
     // Trace the photons
     mpScene->raytrace(pRenderContext, mTracerGenerate.pProgram.get(), mTracerGenerate.pVars, uint3(targetDim, 1));
 
+    
 
     //TODO: Add progressive if activated
 }
 
 void PhotonReStir::syncPasses(RenderContext* pRenderContext, const RenderData& renderData)
 {
+    //Copy the photonConter to a CPU Buffer
+    pRenderContext->uavBarrier(mPhotonCounterBuffer.counter.get());
+    pRenderContext->copyBufferRegion(mPhotonCounterBuffer.cpuCopy.get(),0, mPhotonCounterBuffer.counter.get(),0, sizeof(uint32_t) * 2);
 
+    //TODO:: Implement a better way than a full flush
+    pRenderContext->flush(true);
+
+    std::vector<uint> photonCounter{ 0,0 };
+    void* data = mPhotonCounterBuffer.cpuCopy->map(Buffer::MapType::Read);
+    std::memcpy(photonCounter.data(), data, sizeof(uint) * 2);
+    mPhotonCounterBuffer.cpuCopy->unmap();
+
+    //createAccelerationStructure(pRenderContext, photonCounter);
 }
 
 void PhotonReStir::renderUI(Gui::Widgets& widget)
@@ -356,11 +374,14 @@ bool PhotonReStir::preparePhotonBuffers()
     mPhotonCounterBuffer.counter = Buffer::createStructured(sizeof(uint), 2);
     mPhotonCounterBuffer.counter->setName("PhotonReStir::PhotonCounter");
     uint64_t zeroInit = 0;
-    mPhotonCounterBuffer.reset = Buffer::create(sizeof(uint64_t), ResourceBindFlags::Constant, Buffer::CpuAccess::None, &zeroInit);
+    mPhotonCounterBuffer.reset = Buffer::create(sizeof(uint64_t), ResourceBindFlags::None, Buffer::CpuAccess::None, &zeroInit);
     mPhotonCounterBuffer.reset->setName("PhotonReStir::PhotonCounterReset");
-
-    mPhotonCounterBuffer.cpuCopy = Buffer::create(sizeof(uint64_t), ResourceBindFlags::None, Buffer::CpuAccess::Read, &zeroInit);
+    uint32_t oneInit[2] = { 1,1 };
+    mPhotonCounterBuffer.cpuCopy = Buffer::create(sizeof(uint64_t), ResourceBindFlags::None, Buffer::CpuAccess::Read, oneInit);
     mPhotonCounterBuffer.cpuCopy->setName("PhotonReStir::PhotonCounterCPU");
+
+    //create fence for the counter
+    mFence = GpuFence::create();
 
     return true;
 }
