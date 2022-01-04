@@ -69,7 +69,12 @@ private:
     /** Sync Pass which syncs the resources which were used by the generate Photon Pass and are nedded by the Trace Photon Pass.
     * It also will create the Acceleration Structure which is needed for the next pass
     */
-    void syncPasses(RenderContext* pRenderContext, const RenderData& renderData);
+    void syncPasses(RenderContext* pRenderContext);
+
+    /** Pass that collect the photons. It will shoot a infinit small ray at the current camera position and collect all photons.
+    * The needed position etc. has to be provided by a gBuffer
+    */
+    void collectPhotons(RenderContext* pRenderContext, const RenderData& renderData);
 
     /** Creates the AS. Calls the createTopLevelAS(..) and createBottomLevelAS(..) functions
     */

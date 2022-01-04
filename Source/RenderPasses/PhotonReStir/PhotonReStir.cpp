@@ -161,7 +161,7 @@ void PhotonReStir::execute(RenderContext* pRenderContext, const RenderData& rend
 
          
    //barrier for the aabb buffers and copying the needed datas
-   syncPasses(pRenderContext, renderData);
+   syncPasses(pRenderContext);
 
     //Gather the photons with short rays
    
@@ -245,7 +245,7 @@ void PhotonReStir::generatePhotons(RenderContext* pRenderContext, const RenderDa
     //TODO: Add progressive if activated
 }
 
-void PhotonReStir::syncPasses(RenderContext* pRenderContext, const RenderData& renderData)
+void PhotonReStir::syncPasses(RenderContext* pRenderContext)
 {
     //Copy the photonConter to a CPU Buffer
     pRenderContext->uavBarrier(mPhotonCounterBuffer.counter.get());
@@ -260,6 +260,52 @@ void PhotonReStir::syncPasses(RenderContext* pRenderContext, const RenderData& r
     mPhotonCounterBuffer.cpuCopy->unmap();
 
     createAccelerationStructure(pRenderContext, photonCounter);
+}
+
+void PhotonReStir::collectPhotons(RenderContext* pRenderContext, const RenderData& renderData)
+{
+
+    // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
+    // TODO: This should be moved to a more general mechanism using Slang.
+    mTracerCollect.pProgram->addDefines(getValidResourceDefines(kInputChannels, renderData));
+    mTracerCollect.pProgram->addDefines(getValidResourceDefines(kOutputChannels, renderData));
+
+    // Prepare program vars. This may trigger shader compilation.
+    if (!mTracerCollect.pVars) mTracerCollect.pVars = RtProgramVars::create(mTracerCollect.pProgram, mTracerCollect.pBindingTable);;
+    assert(mTracerCollect.pVars);
+
+
+
+    // Set constants.
+    auto var = mTracerCollect.pVars->getRootVar();
+    var["CB"]["gFrameCount"] = mFrameCount;
+    var["CB"]["gCausticRadius"] = mCausticRadius;
+    var["CB"]["gGlobalRadius"] = mGlobalRadius;
+
+    //set the buffers
+
+    var[kCausticAABBSName] = mCausticBuffers.aabb;
+    var[kCausticInfoSName] = mCausticBuffers.info;
+    var[kGlobalAABBSName] = mGlobalBuffers.aabb;
+    var[kGlobalInfoSName] = mGlobalBuffers.info;
+
+    // Bind Output Textures. These needs to be done per-frame as the buffers may change anytime.
+    auto bindAsTex = [&](const ChannelDesc& desc)
+    {
+        if (!desc.texname.empty())
+        {
+            var[desc.texname] = renderData[desc.name]->asTexture();
+        }
+    };
+    for (auto channel : kOutputChannels) bindAsTex(channel);
+
+    // Get dimensions of ray dispatch.
+    const uint2 targetDim = renderData.getDefaultTextureDims();
+    assert(targetDim.x > 0 && targetDim.y > 0);
+
+    // Trace the photons
+    mpScene->raytrace(pRenderContext, mTracerGenerate.pProgram.get(), mTracerGenerate.pVars, uint3(targetDim, 1));
+
 }
 
 void PhotonReStir::renderUI(Gui::Widgets& widget)
@@ -302,21 +348,44 @@ void PhotonReStir::setScene(RenderContext* pRenderContext, const Scene::SharedPt
         }
 
         // Create ray tracing program.
-        RtProgram::Desc desc;
-        desc.addShaderLibrary(kShaderGeneratePhoton);
-        desc.setMaxPayloadSize(kMaxPayloadSizeBytes);
-        desc.setMaxAttributeSize(kMaxAttributeSizeBytes);
-        desc.setMaxTraceRecursionDepth(kMaxRecursionDepth);
-        desc.addDefines(mpScene->getSceneDefines());
+        {
+            RtProgram::Desc desc;
+            desc.addShaderLibrary(kShaderGeneratePhoton);
+            desc.setMaxPayloadSize(kMaxPayloadSizeBytes);
+            desc.setMaxAttributeSize(kMaxAttributeSizeBytes);
+            desc.setMaxTraceRecursionDepth(kMaxRecursionDepth);
+            desc.addDefines(mpScene->getSceneDefines());
+
+
+            mTracerGenerate.pBindingTable = RtBindingTable::create(1, 1, mpScene->getGeometryCount());
+            auto& sbt = mTracerGenerate.pBindingTable;
+            sbt->setRayGen(desc.addRayGen("rayGen"));
+            sbt->setMiss(0, desc.addMiss("miss"));
+            sbt->setHitGroupByType(0, mpScene, Scene::GeometryType::TriangleMesh, desc.addHitGroup("closestHit"));
+
+            mTracerGenerate.pProgram = RtProgram::create(desc);
+        }
         
 
-        mTracerGenerate.pBindingTable = RtBindingTable::create(1, 1, mpScene->getGeometryCount());
-        auto& sbt = mTracerGenerate.pBindingTable;
-        sbt->setRayGen(desc.addRayGen("rayGen"));
-        sbt->setMiss(0, desc.addMiss("miss"));
-        sbt->setHitGroupByType(0, mpScene, Scene::GeometryType::TriangleMesh, desc.addHitGroup("closestHit"));
+        //Create the photon collect programm
+        {
+            RtProgram::Desc desc;
+            desc.addShaderLibrary(kShaderCollectPhoton);
+            desc.setMaxPayloadSize(kMaxPayloadSizeBytes);
+            desc.setMaxAttributeSize(kMaxAttributeSizeBytes);
+            desc.setMaxTraceRecursionDepth(kMaxRecursionDepth);
 
-        mTracerGenerate.pProgram = RtProgram::create(desc);
+            mTracerCollect.pBindingTable = RtBindingTable::create(1, 1, mUsePhotonReStir ? 1 : 2);
+            auto& sbt = mTracerCollect.pBindingTable;
+            sbt->setRayGen(desc.addRayGen("rayGen"));
+            sbt->setMiss(0, desc.addMiss("miss"));
+            auto hitShader = desc.addHitGroup("closestHit", "anyHit", "intersection");
+            for (int i = 0; i < (mUsePhotonReStir ? 1 : 2); i++) {
+                sbt->setHitGroup(0, i, hitShader);
+            }
+
+            mTracerCollect.pProgram = RtProgram::create(desc);
+        }
     }
 }
 
@@ -446,7 +515,7 @@ void PhotonReStir::createTopLevelAS(RenderContext* pContext) {
     GET_COM_INTERFACE(pContext->getLowLevelData()->getCommandList(), ID3D12GraphicsCommandList4, pList4);
     pContext->resourceBarrier(mPhotonTlas.pInstanceDescs.get(), Resource::State::NonPixelShader);
     pList4->BuildRaytracingAccelerationStructure(&asDesc, 0, nullptr);
-    pContext->uavBarrier(mPhotonTlas.pTlas.get());
+    pContext->uavBarrier(mPhotonTlas.pTlas.get());                   //barrier for the tlas so we can use it savely after creation
 
     //Create TLAS Shader Ressource View
     if (mPhotonTlas.pSrv == nullptr) {
