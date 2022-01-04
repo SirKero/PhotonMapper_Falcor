@@ -104,3 +104,15 @@ void rayGen()
     uint2 launchDim = DispatchRaysDimensions().xy;
     
 }
+
+[shader("anyhit")]
+void anyHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleIntersectionAttributes attribs : SV_IntersectionAttributes)
+{
+    
+}
+
+[shader("intersection")]
+void intersection()
+{
+
+}
