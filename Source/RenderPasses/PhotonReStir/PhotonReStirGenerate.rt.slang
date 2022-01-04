@@ -15,6 +15,7 @@ cbuffer CB
     float3      gDirLightWorldPos;  // world pos for a dir light if given
     float       gCausticRadius;     // Radius for the caustic photons
     float       gGlobalRadius;      // Radius for the global photons
+    float gRussianRoulette;         // Probabilty that an global photon is saved
 }
 
 static struct Data
@@ -60,6 +61,7 @@ static const bool kUseEnvLight = USE_ENV_LIGHT;
 static const bool kUseEnvBackground = USE_ENV_BACKGROUND;
 static const float3 kDefaultBackgroundColor = float3(0, 0, 0);
 static const float kRayTMax = FLT_MAX;
+static const uint kMaxPhotonIndex = MAX_PHOTON_INDEX;
 
 /** Payload for scatter ray (80B).
 */
@@ -226,9 +228,8 @@ void rayGen()
         photon.pos = rayData.origin;
         reflectedDiffuse = !rayData.specularRef;
         //save photon
-        //TODO: Add russian roulette
         //TODO: Add max for photon insertion
-        
+        bool roulette = sampleNext1D(sg) <= gRussianRoulette;
         if (reflectedDiffuse)
         {
             //caustic photon
@@ -237,16 +238,19 @@ void rayGen()
                 photon.radius = gCausticRadius;
                 uint photonIndex = 0;
                 InterlockedAdd(gPhotonCounter[0].caustic, 1u, photonIndex);
+                photonIndex = max(photonIndex, kMaxPhotonIndex);
                 AABB photonAABB = calcPhotonAABB(photon);
                 gCaustic[photonIndex] = photon;           //this causes error for some reason    
                 gCausticAABB[photonIndex] = photonAABB;
             }
             //Global photon
-            else
+            else if(roulette)
             {
+                photon.flux = photon.flux / gRussianRoulette;
                 photon.radius = gGlobalRadius;
                 uint photonIndex = 0;
                 InterlockedAdd(gPhotonCounter[0].global, 1u, photonIndex);
+                photonIndex = max(photonIndex, kMaxPhotonIndex);
                 AABB photonAABB = calcPhotonAABB(photon);
                 gGlobal[photonIndex] = photon;
                 gGlobalAABB[photonIndex] = photonAABB;

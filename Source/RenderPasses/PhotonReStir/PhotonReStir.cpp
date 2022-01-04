@@ -159,14 +159,12 @@ void PhotonReStir::execute(RenderContext* pRenderContext, const RenderData& rend
 
     generatePhotons(pRenderContext, renderData);
 
-    if(mFrameCount > 0)
-    {
-        
-        //barrier for the aabb buffers and copying the needed datas
-        syncPasses(pRenderContext, renderData);
+         
+   //barrier for the aabb buffers and copying the needed datas
+   syncPasses(pRenderContext, renderData);
 
-        //Gather the photons with short rays
-    }
+    //Gather the photons with short rays
+   
     
     
 
@@ -186,6 +184,7 @@ void PhotonReStir::generatePhotons(RenderContext* pRenderContext, const RenderDa
     mTracerGenerate.pProgram->addDefine("USE_EMISSIVE_LIGHTS", mpScene->useEmissiveLights() ? "1" : "0");
     mTracerGenerate.pProgram->addDefine("USE_ENV_LIGHT", mpScene->useEnvLight() ? "1" : "0");
     mTracerGenerate.pProgram->addDefine("USE_ENV_BACKGROUND", mpScene->useEnvBackground() ? "1" : "0");
+    mTracerGenerate.pProgram->addDefine("MAX_PHOTON_INDEX", std::to_string(mNumPhotons));
 
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
     // TODO: This should be moved to a more general mechanism using Slang.
@@ -206,6 +205,7 @@ void PhotonReStir::generatePhotons(RenderContext* pRenderContext, const RenderDa
     var["CB"]["gDirLightWorldPos"] = mDirLightWorldPos;
     var["CB"]["gCausticRadius"] = mCausticRadius;
     var["CB"]["gGlobalRadius"] = mGlobalRadius;
+    var["CB"]["gRussianRoulette"] = mRussianRoulette;
 
     //set the buffers
 
@@ -259,7 +259,7 @@ void PhotonReStir::syncPasses(RenderContext* pRenderContext, const RenderData& r
     std::memcpy(photonCounter.data(), data, sizeof(uint) * 2);
     mPhotonCounterBuffer.cpuCopy->unmap();
 
-    //createAccelerationStructure(pRenderContext, photonCounter);
+    createAccelerationStructure(pRenderContext, photonCounter);
 }
 
 void PhotonReStir::renderUI(Gui::Widgets& widget)
@@ -275,6 +275,8 @@ void PhotonReStir::renderUI(Gui::Widgets& widget)
     widget.tooltip("Radius for the caustic Photons");
     dirty |= widget.var("GlobalRadius", mGlobalRadius, -FLT_MAX, FLT_MAX, 0.001f);
     widget.tooltip("Radius for the global Photons");
+    dirty |= widget.var("Russian Roulette", mRussianRoulette, 0.001f, 1.f, 0.001f);
+    widget.tooltip("Probabilty that a Global Photon is saved");
     //set flag to indicate that settings have changed and the pass has to be rebuild
     if (dirty)
         mOptionsChanged = true;
@@ -379,9 +381,6 @@ bool PhotonReStir::preparePhotonBuffers()
     uint32_t oneInit[2] = { 1,1 };
     mPhotonCounterBuffer.cpuCopy = Buffer::create(sizeof(uint64_t), ResourceBindFlags::None, Buffer::CpuAccess::Read, oneInit);
     mPhotonCounterBuffer.cpuCopy->setName("PhotonReStir::PhotonCounterCPU");
-
-    //create fence for the counter
-    mFence = GpuFence::create();
 
     return true;
 }
@@ -502,8 +501,8 @@ void PhotonReStir::createBottomLevelAS(RenderContext* pContext, const std::vecto
         mCausticBuffers.blas->setName("PhotonReStir::CausticBlasBuffer");
 
         if (!mUsePhotonReStir) {    //create a global buffer if they are not used as light
-            mCausticBuffers.blas = Buffer::create(mBlasData[1].blasByteSize, Buffer::BindFlags::AccelerationStructure, Buffer::CpuAccess::None);
-            mCausticBuffers.blas->setName("PhotonReStir::GlobalBlasBuffer");
+            mGlobalBuffers.blas = Buffer::create(mBlasData[1].blasByteSize, Buffer::BindFlags::AccelerationStructure, Buffer::CpuAccess::None);
+            mGlobalBuffers.blas->setName("PhotonReStir::GlobalBlasBuffer");
         }
     }
 

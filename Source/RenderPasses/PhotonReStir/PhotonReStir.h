@@ -90,7 +90,8 @@ private:
     // Configuration
     uint                        mMaxBounces = 3;            ///< Max number of indirect bounces (0 = none).
     float                       mCausticRadius = 0.1f;      ///< Radius for caustic Photons
-    float                       mGlobalRadius = 0.4f;      ///< Radius for global Photons
+    float                       mGlobalRadius = 0.4f;       ///< Radius for global Photons
+    float                       mRussianRoulette = 0.3f;    ///< Probabilty that a Global photon is saved
     bool                        mUseProgressivePM = false;  ///< Activate Progressive Photon Mapping
     uint                        mNumPhotons = 500000;       ///< Number of Photons shot
     bool                        mUsePhotonReStir = false;   ///< Activates ReStir for global photons
@@ -125,8 +126,6 @@ private:
         Buffer::SharedPtr reset;
         Buffer::SharedPtr cpuCopy;
     }mPhotonCounterBuffer;
-
-    GpuFence::SharedPtr mFence;     //fence for GPU/CPU sync
 
     struct PhotonBuffers {
         uint maxSize = 0;
