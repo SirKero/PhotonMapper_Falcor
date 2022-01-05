@@ -38,14 +38,14 @@ namespace
    // These should be set as small as possible.
    //TODO: set them later to the right vals
     const uint32_t kMaxPayloadSizeBytes = 80u;
-    const uint32_t kMaxPayloadSizeBytesCollect = 16u;
+    const uint32_t kMaxPayloadSizeBytesCollect = 128u;
     const uint32_t kMaxAttributeSizeBytes = 8u;
     const uint32_t kMaxRecursionDepth = 2u;
 
     const ChannelList kInputChannels =
     {
         { "WPos",               "gWorldPosition",           "World Position"                    },
-        { "WNormal",            "gWorldNormal",             "World Normals"                     }, 
+        { "WNormal",            "gWorldNormal",             "World Normals"                     },
         {"WTangent",            "gWorldTangent",            "World Tangent"                     },
         {"TexC",                "gTextureCoordinate",       "Texture Coordinate"                },
         {"DiffuseOpacity",      "gDiffuseOpacity",          "Diffuse and Opacity (in z)"        },
@@ -294,6 +294,7 @@ void PhotonReStir::collectPhotons(RenderContext* pRenderContext, const RenderDat
     assert(pRenderContext && mTracerCollect.pProgram && mTracerCollect.pVars);
 
     //TODO bind TLAS
+    var["gPhotonAS"].setSrv(mPhotonTlas.pSrv);
 
     pRenderContext->raytrace(mTracerCollect.pProgram.get(), mTracerCollect.pVars.get(), targetDim.x , targetDim.y , 1);
 
