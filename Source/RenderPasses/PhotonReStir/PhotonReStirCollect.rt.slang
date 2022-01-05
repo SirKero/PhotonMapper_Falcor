@@ -2,11 +2,10 @@
 #include "Utils/Math/MathConstants.slangh"
 
 import Scene.Raytracing;
-importUtils.Math.MathHelpers;
-importUtils.Sampling.SampleGenerator;
-importExperimental.Scene.Material.StandardMaterial;
-importExperimental.Scene.Material.MaterialHelpers;
-importExperimental.Scene.Lights.LightHelpers;
+import Utils.Math.MathHelpers;
+import Experimental.Scene.Material.StandardMaterial;
+import Experimental.Scene.Material.MaterialHelpers;
+import Experimental.Scene.Lights.LightHelpers;
 
 
 cbuffer CB
@@ -16,14 +15,23 @@ cbuffer CB
     float gGlobalRadius; // Radius for the global photons
 }
 
-static
-struct Data
+static struct Data
 {
     // Materials
     StandardMaterial standardMaterial;
 } gData;
 
 // Inputs
+Texture2D<float4> gWorldPosition;
+Texture2D<float4> gWorldNormal;
+Texture2D<float4> gWorldTangent;
+Texture2D<float2> gTextureCoordinate;
+Texture2D<float4> gDiffuseOpacity;
+Texture2D<float4> gSpecularRoughness;
+Texture2D<float4> gEmissive;
+Texture2D<float4> gMaterialExtra;
+Texture2D<float4> gViewWorld;
+
 
 // Outputs
 RWTexture2D<float4> gPhotonImage;
@@ -46,52 +54,27 @@ RWStructuredBuffer<AABB> gCausticAABB;
 RWStructuredBuffer<AABB> gGlobalAABB;
 
 // Static configuration based on defines set from the host.
-#define is_valid(name) (is_valid_##name != 0)
-static const bool kUseEnvBackground = USE_ENV_BACKGROUND;
 static const float3 kDefaultBackgroundColor = float3(0, 0, 0);
 static const float kRayTMax = FLT_MAX;
 
-/** Payload for scatter ray (80B).
+/** Payload for ray (16B).
 */
-struct ScatterRayData
+struct RayData
 {
     float3 radiance; ///< Accumulated outgoing radiance from path.
     bool terminated; ///< Set to true when path is terminated.
-    float3 thp; ///< Current path throughput. This is updated at each path vertex.
-    uint pathLength; ///< Path length in number of path segments (0 at origin, 1 at first secondary hit, etc.). Max 2^31.
-    float3 origin; ///< Next path segment origin.
-    bool specularRef; ///< Set to true if the ray is reflected/transmitted specular
-    float3 direction; ///< Next path segment direction.
-    uint _pad1;
-
-    SampleGenerator sg; ///< Per-ray state for the sample generator (up to 16B).
-
-    /** Create ray payload with default parameters.
-    */
-    static ScatterRayData create(SampleGenerator sg)
-    {
-        ScatterRayData d;
-        d.terminated = false;
-        d.specularRef = false;
-        d.pathLength = 0;
-        d.radiance = float3(0, 0, 0);
-        d.thp = float3(1, 1, 1);
-        d.origin = float3(0, 0, 0);
-        d.direction = float3(0, 0, 0);
-        d.sg = sg;
-        return d;
-    }
+  
 };
 
 
 [shader("miss")]
-void miss(inout ScatterRayData rayData : SV_RayPayload)
+void miss(inout RayData rayData : SV_RayPayload)
 {
     rayData.terminated = true;
 }
 
 [shader("closesthit")]
-void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleIntersectionAttributes attribs : SV_IntersectionAttributes)
+void closestHit(inout RayData rayData : SV_RayPayload, BuiltInTriangleIntersectionAttributes attribs : SV_IntersectionAttributes)
 {
     
 }
@@ -102,11 +85,12 @@ void rayGen()
 {
     uint2 launchIndex = DispatchRaysIndex().xy;
     uint2 launchDim = DispatchRaysDimensions().xy;
-    
+
+    gPhotonImage[launchIndex] = float4(1,0.0,0.0,1);
 }
 
 [shader("anyhit")]
-void anyHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleIntersectionAttributes attribs : SV_IntersectionAttributes)
+void anyHit(inout RayData rayData : SV_RayPayload, BuiltInTriangleIntersectionAttributes attribs : SV_IntersectionAttributes)
 {
     
 }

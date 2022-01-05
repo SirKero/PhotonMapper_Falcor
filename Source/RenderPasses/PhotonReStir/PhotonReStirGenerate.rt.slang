@@ -24,10 +24,6 @@ static struct Data
     StandardMaterial standardMaterial;
 } gData;
 
-// Inputs
-
-// Outputs
-RWTexture2D<float4> gPhotonImage;
 
 //Internal Buffer Structs
 
@@ -53,7 +49,6 @@ struct PhotonCounter
 RWStructuredBuffer<PhotonCounter> gPhotonCounter;
 
 // Static configuration based on defines set from the host.
-#define is_valid(name) (is_valid_##name != 0)
 static const uint kMaxBounces = MAX_BOUNCES;
 static const bool kUseAnalyticLights = USE_ANALYTIC_LIGHTS;
 static const bool kUseEmissiveLights = USE_EMISSIVE_LIGHTS;
@@ -275,9 +270,5 @@ void rayGen()
         //update ray for next iteration
         ray.Origin = rayData.origin;
         ray.Direction = rayData.direction;
-    }
-
-
-    gPhotonImage[launchIndex] = float4(float3(rayData.pathLength) / kMaxBounces, 1);
-    
+    }   
 }

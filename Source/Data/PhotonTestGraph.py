@@ -34,6 +34,17 @@ def render_graph_PhotonTestGraph():
     loadRenderPassLibrary('WhittedRayTracer.dll')
     PhotonReStir = createPass('PhotonReStir')
     g.addPass(PhotonReStir, 'PhotonReStir')
+    GBufferRT = createPass('GBufferRT', {'samplePattern': SamplePattern.Center, 'sampleCount': 16, 'useAlphaTest': True, 'adjustShadingNormals': True, 'forceCullMode': False, 'cull': CullMode.CullBack, 'texLOD': TexLODMode.Mip0, 'useTraceRayInline': False})
+    g.addPass(GBufferRT, 'GBufferRT')
+    g.addEdge('GBufferRT.posW', 'PhotonReStir.WPos')
+    g.addEdge('GBufferRT.normW', 'PhotonReStir.WNormal')
+    g.addEdge('GBufferRT.tangentW', 'PhotonReStir.WTangent')
+    g.addEdge('GBufferRT.texC', 'PhotonReStir.TexC')
+    g.addEdge('GBufferRT.diffuseOpacity', 'PhotonReStir.DiffuseOpacity')
+    g.addEdge('GBufferRT.specRough', 'PhotonReStir.SpecularRoughness')
+    g.addEdge('GBufferRT.emissive', 'PhotonReStir.Emissive')
+    g.addEdge('GBufferRT.matlExtra', 'PhotonReStir.MaterialExtra')
+    g.addEdge('GBufferRT.viewW', 'PhotonReStir.WView')
     g.markOutput('PhotonReStir.PhotonImage')
     return g
 
