@@ -112,6 +112,15 @@ private:
         RtProgram::SharedPtr pProgram;
         RtBindingTable::SharedPtr pBindingTable;
         RtProgramVars::SharedPtr pVars;
+
+        static const RayTraceProgramHelper create()
+        {
+            RayTraceProgramHelper r;
+            r.pProgram = nullptr;
+            r.pBindingTable = nullptr;
+            r.pVars = nullptr;
+            return r;
+        }
     };
 
     RayTraceProgramHelper mTracerGenerate;          ///<Description for the Generate Photon pass 

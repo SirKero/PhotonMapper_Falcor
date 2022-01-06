@@ -16,6 +16,7 @@ cbuffer CB
     float       gCausticRadius;     // Radius for the caustic photons
     float       gGlobalRadius;      // Radius for the global photons
     float       gRussianRoulette;         // Probabilty that an global photon is saved
+    uint        gMaxRecursion;
 }
 
 static struct Data
@@ -24,8 +25,23 @@ static struct Data
     StandardMaterial standardMaterial;
 } gData;
 
+// Inputs
+Texture2D<float4> gWorldPosition;
+Texture2D<float4> gWorldNormal;
+Texture2D<float4> gWorldTangent;
+Texture2D<float2> gTextureCoordinate;
+Texture2D<float4> gDiffuseOpacity;
+Texture2D<float4> gSpecularRoughness;
+Texture2D<float4> gEmissive;
+Texture2D<float4> gMaterialExtra;
+Texture2D<float4> gViewWorld;
+
+
 // Outputs
 RWTexture2D<float4> gPhotonImage;
+
+// Outputs
+RWTexture2D<float4> gPhotonTestImage;
 
 //Internal Buffer Structs
 
@@ -52,7 +68,6 @@ RWStructuredBuffer<PhotonCounter> gPhotonCounter;
 
 // Static configuration based on defines set from the host.
 #define is_valid(name) (is_valid_##name != 0)
-static const uint kMaxBounces = MAX_BOUNCES;
 static const bool kUseAnalyticLights = USE_ANALYTIC_LIGHTS;
 static const bool kUseEmissiveLights = USE_EMISSIVE_LIGHTS;
 static const bool kUseEnvLight = USE_ENV_LIGHT;
@@ -93,7 +108,7 @@ struct ScatterRayData
     }
 };
 
-void calcHemispehreDir(in LightData light,in SampleGenerator sg, inout float3 newDir)
+void calcHemispehreDir(in float3 lightDirW,in SampleGenerator sg, inout float3 newDir)
 {
     //get random pos in hemisphere
     float2 rnd = sampleNext2D(sg);  //random numbers for z and phi
@@ -103,14 +118,14 @@ void calcHemispehreDir(in LightData light,in SampleGenerator sg, inout float3 ne
 
     //transform from local space -> random dir vector in world space
     float3 tangent, bitangent;
-    if (abs(light.dirW.x) < 0.99)
-        tangent = cross(light.dirW, float3(1., 0., 0.));
+    if (abs(lightDirW.x) < 0.99)
+        tangent = cross(lightDirW, float3(1., 0., 0.));
     else
-        tangent = cross(light.dirW, float3(0., 1., 0.));
+        tangent = cross(lightDirW, float3(0., 1., 0.));
     //tangent = normalize(tangent);
-    bitangent = cross(tangent, light.dirW);
+    bitangent = cross(tangent, lightDirW);
 
-    newDir = rndDirL.x * tangent + rndDirL.y * bitangent + rndDirL.z * light.dirW;
+    newDir = rndDirL.x * tangent + rndDirL.y * bitangent + rndDirL.z * lightDirW;
 }
 
 AABB calcPhotonAABB(in PhotonInfo photon)
@@ -169,34 +184,64 @@ void rayGen()
 {
     uint2 launchIndex = DispatchRaysIndex().xy;
     uint2 launchDim = DispatchRaysDimensions().xy;
-
-    //gPhotonImage[launchIndex] = float4(0, 0, 0, 1);
-    
     
     SampleGenerator sg = SampleGenerator.create(launchIndex, gFrameCount);
 
     LightCollection lc = gScene.lightCollection;
        
-    const uint lightCount = gScene.getLightCount();
-    if (lightCount == 0)
+    const uint analyticLightCount = gScene.getLightCount();
+    const uint emissiveLightCount = lc.getTriangleCount();
+    const uint lightCount = analyticLightCount + emissiveLightCount;
+    
+    if (lightCount == 0)        //If that case happens we have a problem 
         return;
-
+    
     // Pick one of the analytic light sources randomly with equal probability.
     const uint lightIndex = min(uint(sampleNext1D(sg) * lightCount), lightCount - 1);
     float invPdf = lightCount; // Light selection pdf = 1.0 / lightCount.
-    
-    LightData currentLight = gScene.getLight(lightIndex);
+
+    float3 lightPos;
+    float3 lightDir;
+    float3 lightIntensity;
+
+    //Point or Dir light
+    if (lightIndex < analyticLightCount)
+    {
+        LightData currentLight = gScene.getLight(lightIndex);
 
     //set a pos for dir lights
-    if (currentLight.type == 1)
-    {
-        currentLight.posW = gDirLightWorldPos;
-    }
-    if (currentLight.type > 1)
-        return;
+        if (currentLight.type == 1)
+        {
+            currentLight.posW = gDirLightWorldPos;
+        }
 
+    //we only support point and dir lights
+        if (currentLight.type > 1)
+            return;
+
+        lightPos = currentLight.posW;
+        lightDir = currentLight.dirW;
+        lightIntensity = currentLight.intensity;
+    }
+    //emissive triangle light
+    else
+    {
+        const uint triIndex = lightIndex - analyticLightCount;
+        EmissiveTriangle emiTri = lc.getTriangle(triIndex); //get the random triangle
+        //random baycentric coordinates
+        float2 RS = sampleNext2D(sg);
+        if (RS.x + RS.y >= 1.0)            //make sure that it stays inside the triangle
+            RS = 1.0 - RS;
+        float3 bay = float3(RS.x, RS.y, 1.0 - (RS.x + RS.y));
+        lightPos = emiTri.getPosition(bay);
+        lightDir = emiTri.normal;
+        lightIntensity = lc.getAverageRadiance(triIndex);
+    }
+
+   
+    
     RayDesc ray;
-    calcHemispehreDir(currentLight, sg, ray.Direction);
+    calcHemispehreDir(lightDir, sg, ray.Direction);
 
     //create photon
     PhotonInfo photon;
@@ -206,11 +251,11 @@ void rayGen()
     photon.pad2 = 0.f;
     
     //light flux
-    float3 lightFlux = currentLight.intensity * 2 * M_PI * invPdf;
+    float3 lightFlux = lightIntensity * 2 * M_PI * invPdf;
     photon.flux = lightFlux / float3(launchDim.x * launchDim.y);
 
     //ray tracing vars
-    ray.Origin = currentLight.posW;
+    ray.Origin = lightPos + 0.001 * ray.Direction;
     ray.TMin = 0.01f;
     ray.TMax = 1000.f;
     uint rayFlags = 0;
@@ -220,15 +265,14 @@ void rayGen()
     
     // Prepare ray payload.
     ScatterRayData rayData = ScatterRayData.create(sg);
+
     
     //recursion where the photons are shot
-    for (uint i = 0; i < kMaxBounces && !rayData.terminated; i++)
+    for (uint i = 0; i < gMaxRecursion && !rayData.terminated; i++)
     {
-        gPhotonImage[launchIndex] = float4(0.1, 0, 0.1, 1);
         
         TraceRay(gScene.rtAccel, rayFlags, 0xff /* instanceInclusionMask */, 0 /* hitIdx */, rayTypeCount, 0 /* missIdx */, ray, rayData);
 
-        
         photon.pos = rayData.origin;
         reflectedDiffuse = !rayData.specularRef;
         //save photon
@@ -279,10 +323,9 @@ void rayGen()
         //update ray for next iteration
         ray.Origin = rayData.origin;
         ray.Direction = rayData.direction;
-
-        
     }
+
+
+    gPhotonTestImage[launchIndex] = float4(float3(rayData.pathLength) / gMaxRecursion, 1);
     
-    gPhotonImage[launchIndex] = float4(0.1, 0, 0.1, 1);
-   
 }

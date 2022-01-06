@@ -25,11 +25,9 @@
     <Import Project="..\..\Falcor\Falcor.props" />
   </ImportGroup>
   <ItemGroup>
-    <ClCompile Include="AccelerationStructureBuilder.cpp" />
     <ClCompile Include="PhotonReStir.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="AccelerationStructureBuilder.h" />
     <ClInclude Include="PhotonReStir.h" />
   </ItemGroup>
   <ItemGroup>

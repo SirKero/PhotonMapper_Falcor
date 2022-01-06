@@ -44,21 +44,28 @@ namespace
 
     const ChannelList kInputChannels =
     {
-        { "WPos",               "gWorldPosition",           "World Position"                    },
-        { "WNormal",            "gWorldNormal",             "World Normals"                     },
-        {"WTangent",            "gWorldTangent",            "World Tangent"                     },
-        {"TexC",                "gTextureCoordinate",       "Texture Coordinate"                },
-        {"DiffuseOpacity",      "gDiffuseOpacity",          "Diffuse and Opacity (in z)"        },
-        {"SpecularRoughness",   "gSpecularRoughness",       "The Specular and Roughness"        },
-        {"Emissive",            "gEmissive",                "Emissive"                          },
-        {"MaterialExtra",       "gMaterialExtra",           "Extra Material Data"               },
-        {"WView",               "gViewWorld",               "World View Direction"              }
+        { "WPos",               "gWorldPosition",           "World Position"                    ,true},
+        { "WNormal",            "gWorldNormal",             "World Normals"                     ,true},
+        {"WTangent",            "gWorldTangent",            "World Tangent"                     ,true},
+        {"TexC",                "gTextureCoordinate",       "Texture Coordinate"                ,true},
+        {"DiffuseOpacity",      "gDiffuseOpacity",          "Diffuse and Opacity (in z)"        ,true},
+        {"SpecularRoughness",   "gSpecularRoughness",       "The Specular and Roughness"        ,true},
+        {"Emissive",            "gEmissive",                "Emissive"                          ,true},
+        {"MaterialExtra",       "gMaterialExtra",           "Extra Material Data"               ,true},
+        {"WView",               "gViewWorld",               "World View Direction"              ,true}
     };
 
     const ChannelList kOutputChannels =
     {
-        { "PhotonImage",          "gPhotonImage",               "An image that shows the caustics and indirect light from global photons"                        }
+        { "PhotonImage",          "gPhotonImage",               "An image that shows the caustics and indirect light from global photons"                        },
+        {"PhotonTestImage",       "gPhotonTestImage",           "For testing purposes only"}
     };
+
+    
+    const char kCausticAABBDesc[] = "A buffer holding the AABB Data for the caustic Photons";
+    const char kCausticInfoDesc[] = "A buffer holding the Photon Info Data for the caustic Photons";
+    const char kGlobalAABBDesc[] = "A buffer holding the AABB Data for the global Photons";
+    const char kGlobalInfoDesc[] = "A buffer holding the Photon Info Data for the global Photons";
 
     const char kCausticAABBSName[] = "gCausticAABB";
     const char kCausticInfoSName[] = "gCaustic";
@@ -103,7 +110,7 @@ RenderPassReflection PhotonReStir::reflect(const CompileData& compileData)
     RenderPassReflection reflector;
 
     // Define our input/output channels.
-    //addRenderPassInputs(reflector, kInputChannels);
+    addRenderPassInputs(reflector, kInputChannels);
     addRenderPassOutputs(reflector, kOutputChannels);
 
 
@@ -160,7 +167,7 @@ void PhotonReStir::execute(RenderContext* pRenderContext, const RenderData& rend
    syncPasses(pRenderContext);
 
     //Gather the photons with short rays
-   //collectPhotons(pRenderContext, renderData);
+    collectPhotons(pRenderContext, renderData);
     
     
 
@@ -173,22 +180,26 @@ void PhotonReStir::generatePhotons(RenderContext* pRenderContext, const RenderDa
     //Reset counter Buffers
     pRenderContext->copyBufferRegion(mPhotonCounterBuffer.counter.get(), 0, mPhotonCounterBuffer.reset.get(), 0, sizeof(uint64_t));
     pRenderContext->resourceBarrier(mPhotonCounterBuffer.counter.get(), Resource::State::ShaderResource);
+
+    auto lights = mpScene->getLights();
+    auto lightCollection = mpScene->getLightCollection(pRenderContext);
+
     // Specialize the Generate program.
     // These defines should not modify the program vars. Do not trigger program vars re-creation.
-    mTracerGenerate.pProgram->addDefine("MAX_BOUNCES", std::to_string(mMaxBounces));
     mTracerGenerate.pProgram->addDefine("USE_ANALYTIC_LIGHTS", mpScene->useAnalyticLights() ? "1" : "0");
     mTracerGenerate.pProgram->addDefine("USE_EMISSIVE_LIGHTS", mpScene->useEmissiveLights() ? "1" : "0");
     mTracerGenerate.pProgram->addDefine("USE_ENV_LIGHT", mpScene->useEnvLight() ? "1" : "0");
     mTracerGenerate.pProgram->addDefine("USE_ENV_BACKGROUND", mpScene->useEnvBackground() ? "1" : "0");
     mTracerGenerate.pProgram->addDefine("MAX_PHOTON_INDEX", std::to_string(mNumPhotons));
 
+    
     // Prepare program vars. This may trigger shader compilation.
     // The program should have all necessary defines set at this point.
 
     if (!mTracerGenerate.pVars) prepareVars();
     assert(mTracerGenerate.pVars);
 
-   
+    
 
     // Set constants.
     auto var = mTracerGenerate.pVars->getRootVar();
@@ -197,6 +208,7 @@ void PhotonReStir::generatePhotons(RenderContext* pRenderContext, const RenderDa
     var["CB"]["gCausticRadius"] = mCausticRadius;
     var["CB"]["gGlobalRadius"] = mGlobalRadius;
     var["CB"]["gRussianRoulette"] = mRussianRoulette;
+    var["CB"]["gMaxRecursion"] = mMaxBounces;
 
     //set the buffers
 
@@ -205,9 +217,10 @@ void PhotonReStir::generatePhotons(RenderContext* pRenderContext, const RenderDa
     var[kGlobalAABBSName] = mGlobalBuffers.aabb;
     var[kGlobalInfoSName] = mGlobalBuffers.info;
 
-    var["gPhotonCounter"] = mPhotonCounterBuffer.counter;    
+    var["gPhotonCounter"] = mPhotonCounterBuffer.counter;
+   
 
-    // Lamda fpr binding textures. These needs to be done per-frame as the buffers may change anytime.
+    // Bind Output Textures. These needs to be done per-frame as the buffers may change anytime.
     auto bindAsTex = [&](const ChannelDesc& desc)
     {
         if (!desc.texname.empty())
@@ -215,8 +228,7 @@ void PhotonReStir::generatePhotons(RenderContext* pRenderContext, const RenderDa
             var[desc.texname] = renderData[desc.name]->asTexture();
         }
     };
-    //Bind input and output textures
-    for (auto& channel : kOutputChannels) bindAsTex(channel);
+    bindAsTex(kOutputChannels[1]);
 
     // Get dimensions of ray dispatch.
     const uint2 targetDim = uint2(static_cast<uint>(sqrt(mNumPhotons)));
@@ -224,6 +236,8 @@ void PhotonReStir::generatePhotons(RenderContext* pRenderContext, const RenderDa
 
     // Trace the photons
     mpScene->raytrace(pRenderContext, mTracerGenerate.pProgram.get(), mTracerGenerate.pVars, uint3(targetDim, 1));
+
+    
 
     //TODO: Add progressive if activated
 }
@@ -272,7 +286,7 @@ void PhotonReStir::collectPhotons(RenderContext* pRenderContext, const RenderDat
     var[kGlobalAABBSName] = mGlobalBuffers.aabb;
     var[kGlobalInfoSName] = mGlobalBuffers.info;
 
-    // Lamda fpr binding textures. These needs to be done per-frame as the buffers may change anytime.
+    // Lamda for binding textures. These needs to be done per-frame as the buffers may change anytime.
     auto bindAsTex = [&](const ChannelDesc& desc)
     {
         if (!desc.texname.empty())
@@ -282,7 +296,7 @@ void PhotonReStir::collectPhotons(RenderContext* pRenderContext, const RenderDat
     };
     //Bind input and output textures
     for (auto& channel : kInputChannels) bindAsTex(channel);
-    for (auto& channel : kOutputChannels) bindAsTex(channel);
+    bindAsTex(kOutputChannels[0]);
 
     // Get dimensions of ray dispatch.
     const uint2 targetDim = renderData.getDefaultTextureDims();
@@ -296,7 +310,7 @@ void PhotonReStir::collectPhotons(RenderContext* pRenderContext, const RenderDat
     //TODO bind TLAS
     assert(var["gPhotonAS"].setSrv(mPhotonTlas.pSrv));
 
-    pRenderContext->raytrace(mTracerCollect.pProgram.get(), mTracerCollect.pVars.get(), targetDim.x , targetDim.y , 1);
+    pRenderContext->raytrace(mTracerCollect.pProgram.get(), mTracerCollect.pVars.get(), targetDim.x, targetDim.y, 1);
 
 }
 
@@ -324,9 +338,8 @@ void PhotonReStir::setScene(RenderContext* pRenderContext, const Scene::SharedPt
 {
     // Clear data for previous scene.
    // After changing scene, the raytracing program should to be recreated.
-    mTracerGenerate.pProgram = nullptr;
-    mTracerGenerate.pBindingTable = nullptr;
-    mTracerGenerate.pVars = nullptr;
+    mTracerGenerate = RayTraceProgramHelper::create();
+    mTracerCollect = RayTraceProgramHelper::create();
     mFrameCount = 0;
 
     // Set new scene.
@@ -347,6 +360,7 @@ void PhotonReStir::setScene(RenderContext* pRenderContext, const Scene::SharedPt
             desc.setMaxAttributeSize(kMaxAttributeSizeBytes);
             desc.setMaxTraceRecursionDepth(kMaxRecursionDepth);
             desc.addDefines(mpScene->getSceneDefines());
+            
 
 
             mTracerGenerate.pBindingTable = RtBindingTable::create(1, 1, mpScene->getGeometryCount());
