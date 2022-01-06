@@ -103,7 +103,7 @@ RenderPassReflection PhotonReStir::reflect(const CompileData& compileData)
     RenderPassReflection reflector;
 
     // Define our input/output channels.
-    addRenderPassInputs(reflector, kInputChannels);
+    //addRenderPassInputs(reflector, kInputChannels);
     addRenderPassOutputs(reflector, kOutputChannels);
 
 
@@ -160,7 +160,7 @@ void PhotonReStir::execute(RenderContext* pRenderContext, const RenderData& rend
    syncPasses(pRenderContext);
 
     //Gather the photons with short rays
-   collectPhotons(pRenderContext, renderData);
+   //collectPhotons(pRenderContext, renderData);
     
     
 
@@ -188,7 +188,7 @@ void PhotonReStir::generatePhotons(RenderContext* pRenderContext, const RenderDa
     if (!mTracerGenerate.pVars) prepareVars();
     assert(mTracerGenerate.pVars);
 
-    
+   
 
     // Set constants.
     auto var = mTracerGenerate.pVars->getRootVar();
@@ -205,16 +205,18 @@ void PhotonReStir::generatePhotons(RenderContext* pRenderContext, const RenderDa
     var[kGlobalAABBSName] = mGlobalBuffers.aabb;
     var[kGlobalInfoSName] = mGlobalBuffers.info;
 
-    var["gPhotonCounter"] = mPhotonCounterBuffer.counter;
-    // Bind Output Buffers. These needs to be done per-frame as the buffers may change anytime.
-    /*
-    var[kCausticAABBSName] = renderData["CausticAABB"]->asBuffer();
-    var[kCausticInfoSName] = renderData["CausticInfo"]->asBuffer();
-    var[kGlobalAABBSName] = renderData["GlobalAABB"]->asBuffer();
-    var[kGlobalInfoSName] = renderData["GlobalInfo"]->asBuffer();
-    */
+    var["gPhotonCounter"] = mPhotonCounterBuffer.counter;    
 
-    
+    // Lamda fpr binding textures. These needs to be done per-frame as the buffers may change anytime.
+    auto bindAsTex = [&](const ChannelDesc& desc)
+    {
+        if (!desc.texname.empty())
+        {
+            var[desc.texname] = renderData[desc.name]->asTexture();
+        }
+    };
+    //Bind input and output textures
+    for (auto& channel : kOutputChannels) bindAsTex(channel);
 
     // Get dimensions of ray dispatch.
     const uint2 targetDim = uint2(static_cast<uint>(sqrt(mNumPhotons)));
@@ -222,8 +224,6 @@ void PhotonReStir::generatePhotons(RenderContext* pRenderContext, const RenderDa
 
     // Trace the photons
     mpScene->raytrace(pRenderContext, mTracerGenerate.pProgram.get(), mTracerGenerate.pVars, uint3(targetDim, 1));
-
-    
 
     //TODO: Add progressive if activated
 }
@@ -294,7 +294,7 @@ void PhotonReStir::collectPhotons(RenderContext* pRenderContext, const RenderDat
     assert(pRenderContext && mTracerCollect.pProgram && mTracerCollect.pVars);
 
     //TODO bind TLAS
-    var["gPhotonAS"].setSrv(mPhotonTlas.pSrv);
+    assert(var["gPhotonAS"].setSrv(mPhotonTlas.pSrv));
 
     pRenderContext->raytrace(mTracerCollect.pProgram.get(), mTracerCollect.pVars.get(), targetDim.x , targetDim.y , 1);
 

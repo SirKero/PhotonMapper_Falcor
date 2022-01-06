@@ -15,7 +15,7 @@ cbuffer CB
     float3      gDirLightWorldPos;  // world pos for a dir light if given
     float       gCausticRadius;     // Radius for the caustic photons
     float       gGlobalRadius;      // Radius for the global photons
-    float gRussianRoulette;         // Probabilty that an global photon is saved
+    float       gRussianRoulette;         // Probabilty that an global photon is saved
 }
 
 static struct Data
@@ -24,6 +24,8 @@ static struct Data
     StandardMaterial standardMaterial;
 } gData;
 
+// Outputs
+RWTexture2D<float4> gPhotonImage;
 
 //Internal Buffer Structs
 
@@ -49,6 +51,7 @@ struct PhotonCounter
 RWStructuredBuffer<PhotonCounter> gPhotonCounter;
 
 // Static configuration based on defines set from the host.
+#define is_valid(name) (is_valid_##name != 0)
 static const uint kMaxBounces = MAX_BOUNCES;
 static const bool kUseAnalyticLights = USE_ANALYTIC_LIGHTS;
 static const bool kUseEmissiveLights = USE_EMISSIVE_LIGHTS;
@@ -166,7 +169,10 @@ void rayGen()
 {
     uint2 launchIndex = DispatchRaysIndex().xy;
     uint2 launchDim = DispatchRaysDimensions().xy;
-     
+
+    //gPhotonImage[launchIndex] = float4(0, 0, 0, 1);
+    
+    
     SampleGenerator sg = SampleGenerator.create(launchIndex, gFrameCount);
 
     LightCollection lc = gScene.lightCollection;
@@ -218,8 +224,11 @@ void rayGen()
     //recursion where the photons are shot
     for (uint i = 0; i < kMaxBounces && !rayData.terminated; i++)
     {
+        gPhotonImage[launchIndex] = float4(0.1, 0, 0.1, 1);
+        
         TraceRay(gScene.rtAccel, rayFlags, 0xff /* instanceInclusionMask */, 0 /* hitIdx */, rayTypeCount, 0 /* missIdx */, ray, rayData);
 
+        
         photon.pos = rayData.origin;
         reflectedDiffuse = !rayData.specularRef;
         //save photon
@@ -270,5 +279,10 @@ void rayGen()
         //update ray for next iteration
         ray.Origin = rayData.origin;
         ray.Direction = rayData.direction;
-    }   
+
+        
+    }
+    
+    gPhotonImage[launchIndex] = float4(0.1, 0, 0.1, 1);
+   
 }

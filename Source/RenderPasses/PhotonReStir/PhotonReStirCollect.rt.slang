@@ -1,6 +1,7 @@
 
 #include "Utils/Math/MathConstants.slangh"
 
+import Scene.Scene;
 import Scene.Raytracing;
 import Utils.Math.MathHelpers;
 import Experimental.Scene.Material.StandardMaterial;
@@ -104,6 +105,7 @@ struct SphereAttribs
 [shader("miss")]
 void miss(inout RayData rayData : SV_RayPayload)
 {
+    rayData.radiance = float3(0.1);
     rayData.terminated = true;
 }
 
@@ -111,13 +113,15 @@ void miss(inout RayData rayData : SV_RayPayload)
 void closestHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_IntersectionAttributes)
 {
     // Nothing happens here. Just here for completions sake
+    rayData.radiance = float3(1);
 }
 
 
 [shader("anyhit")]
 void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_IntersectionAttributes)
 {
-    rayData.radiance = float3(1.0);
+    rayData.radiance = float3(1);
+    //rayData.radiance = float3(1.0);
 }
 
 //Checks if the ray start point is inside the sphere. 0 is returned if it is not in sphere and 1 if it is
@@ -136,6 +140,11 @@ float hitSphere(const float3 center, const float radius, const float3 p)
 [shader("intersection")]
 void intersection()
 {
+    SphereAttribs attribs;
+    attribs.pad = float2(0);
+
+    ReportHit(RayTCurrent(), 0, attribs);
+    /*
     //Check for Sphere intersection
     const float3 origin = ObjectRayOrigin();
     const uint primIndex = PrimitiveIndex();
@@ -160,6 +169,7 @@ void intersection()
     {
         ReportHit(0.01, 0, attribs);
     }
+    */
 }
 
 
@@ -182,14 +192,17 @@ void rayGen()
     rayData.specularRoughness = gSpecularRoughness[launchIndex];
     rayData.emissive = gEmissive[launchIndex];
     rayData.extraParams = gMaterialExtra[launchIndex];
-    
+
+    Ray camRay = gScene.camera.computeRayPinhole(launchIndex, launchDim);
+
     
     RayDesc ray;
-    ray.Origin = wPos.xyz;
-    ray.TMin = 0.00001f;
-    ray.TMax = 0.1f;
-    ray.Direction = rayData.wView;
-    uint rayFlags = RAY_FLAG_SKIP_CLOSEST_HIT_SHADER;
+    ray.Origin = camRay.origin;
+    ray.TMin = 0.1;
+    ray.TMax = 10000.0;
+    ray.Direction = camRay.dir;
+    
+    uint rayFlags = 0;
 
     TraceRay(gPhotonAS, rayFlags, 0xff /* instanceInclusionMask */, 0 /* hitIdx */, 0 /* rayType count */, 0 /* missIdx */, ray, rayData);
    
