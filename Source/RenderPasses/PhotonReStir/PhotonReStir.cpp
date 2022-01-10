@@ -542,7 +542,7 @@ void PhotonReStir::createBottomLevelAS(RenderContext* pContext, const std::vecto
             //Create geometry description
             D3D12_RAYTRACING_GEOMETRY_DESC& desc = blas.geomDescs;
             desc.Type = D3D12_RAYTRACING_GEOMETRY_TYPE_PROCEDURAL_PRIMITIVE_AABBS;
-            desc.Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_NONE;       //TODO: Check if opaque is needed
+            desc.Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_NO_DUPLICATE_ANYHIT_INVOCATION;       //TODO: Check if opaque is needed
             desc.AABBs.AABBCount = mNumPhotons;                     //TODO: Put at max for the respective side (caustic or global)
             desc.AABBs.AABBs.StartAddress = i == 0 ? mCausticBuffers.aabb->getGpuAddress() : mGlobalBuffers.aabb->getGpuAddress();
             desc.AABBs.AABBs.StrideInBytes = sizeof(D3D12_RAYTRACING_AABB);

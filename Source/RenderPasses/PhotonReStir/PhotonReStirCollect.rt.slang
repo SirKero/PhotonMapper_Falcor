@@ -105,7 +105,6 @@ struct SphereAttribs
 [shader("miss")]
 void miss(inout RayData rayData : SV_RayPayload)
 {
-    rayData.radiance = float3(0.1);
     rayData.terminated = true;
 }
 
@@ -113,7 +112,7 @@ void miss(inout RayData rayData : SV_RayPayload)
 void closestHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_IntersectionAttributes)
 {
     // Nothing happens here. Just here for completions sake
-    rayData.radiance = float3(1);
+   // rayData.radiance = float3(1);
 }
 
 
@@ -140,11 +139,6 @@ float hitSphere(const float3 center, const float radius, const float3 p)
 [shader("intersection")]
 void intersection()
 {
-    SphereAttribs attribs;
-    attribs.pad = float2(0);
-
-    ReportHit(RayTCurrent(), 0, attribs);
-    /*
     //Check for Sphere intersection
     const float3 origin = ObjectRayOrigin();
     const uint primIndex = PrimitiveIndex();
@@ -165,11 +159,10 @@ void intersection()
     SphereAttribs attribs;
     attribs.pad = float2(0);
     
-    //if (tHit > 0.0)
+    if (tHit > 0.0)
     {
         ReportHit(0.01, 0, attribs);
     }
-    */
 }
 
 
@@ -197,12 +190,12 @@ void rayGen()
 
     
     RayDesc ray;
-    ray.Origin = camRay.origin;
-    ray.TMin = 0.1;
-    ray.TMax = 10000.0;
-    ray.Direction = camRay.dir;
+    ray.Origin = wPos.xyz;
+    ray.TMin = 0.001;
+    ray.TMax = 0.1;
+    ray.Direction = rayData.wNormal;
     
-    uint rayFlags = 0;
+    uint rayFlags = RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | RAY_FLAG_SKIP_TRIANGLES;
 
     TraceRay(gPhotonAS, rayFlags, 0xff /* instanceInclusionMask */, 0 /* hitIdx */, 0 /* rayType count */, 0 /* missIdx */, ray, rayData);
    
