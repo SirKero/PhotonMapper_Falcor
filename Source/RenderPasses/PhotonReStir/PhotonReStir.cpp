@@ -210,6 +210,8 @@ void PhotonReStir::generatePhotons(RenderContext* pRenderContext, const RenderDa
     var["CB"]["gGlobalRadius"] = mGlobalRadius;
     var["CB"]["gRussianRoulette"] = mRussianRoulette;
     var["CB"]["gMaxRecursion"] = mMaxBounces;
+    var["CB"]["gIntensityScalar"] = mIntensityScalar;
+        
 
     //set the buffers
 
@@ -324,6 +326,9 @@ void PhotonReStir::renderUI(Gui::Widgets& widget)
     widget.tooltip("Maximum path length for Photon Bounces");
     dirty |= widget.var("DirLightPos", mDirLightWorldPos, -FLT_MAX, FLT_MAX, 0.001f);
     widget.tooltip("Position where all Dir lights come from");
+    //Light settings
+    dirty |= widget.var("IntensityScalar", mIntensityScalar, -FLT_MAX, FLT_MAX, 0.1f);
+    widget.tooltip("Scales the intensity of all Light Sources");
     //Radius settings
     dirty |= widget.var("CausticRadius", mCausticRadius, -FLT_MAX, FLT_MAX, 0.001f);
     widget.tooltip("Radius for the caustic Photons");

@@ -15,8 +15,10 @@ cbuffer CB
     float3      gDirLightWorldPos;  // world pos for a dir light if given
     float       gCausticRadius;     // Radius for the caustic photons
     float       gGlobalRadius;      // Radius for the global photons
-    float       gRussianRoulette;         // Probabilty that an global photon is saved
-    uint        gMaxRecursion;
+    float       gRussianRoulette;   // Probabilty that an global photon is saved
+    uint        gMaxRecursion;      // Number of max recusions
+    float       gIntensityScalar;   //scalar for the light intenity
+
 }
 
 static struct Data
@@ -198,7 +200,7 @@ void rayGen()
     
     // Pick one of the analytic light sources randomly with equal probability.
     const uint lightIndex = min(uint(sampleNext1D(sg) * lightCount), lightCount - 1);
-    float invPdf = lightCount; // Light selection pdf = 1.0 / lightCount.
+    float invPdf = 1.0/lightCount; // Light selection pdf = 1.0 / lightCount.
 
     float3 lightPos = float3(0);
     float3 lightDir = float3(0, 1, 0);
@@ -253,7 +255,7 @@ void rayGen()
     photon.pad2 = 0.f;
     
     //light flux
-    float3 lightFlux = lightIntensity * 2 * M_PI * invPdf;
+    float3 lightFlux = lightIntensity * 2 * M_PI * invPdf * gIntensityScalar;
     photon.flux = lightFlux / float3(launchDim.x * launchDim.y);
 
     //ray tracing vars
