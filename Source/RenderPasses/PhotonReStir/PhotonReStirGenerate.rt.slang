@@ -190,7 +190,7 @@ void rayGen()
     LightCollection lc = gScene.lightCollection;
        
     const uint analyticLightCount = gScene.getLightCount();
-    const uint emissiveLightCount = lc.getTriangleCount();
+    const uint emissiveLightCount = lc.getActiveTriangleCount();
     const uint lightCount = analyticLightCount + emissiveLightCount;
     
     if (lightCount == 0)        //If that case happens we have a problem 
@@ -200,9 +200,9 @@ void rayGen()
     const uint lightIndex = min(uint(sampleNext1D(sg) * lightCount), lightCount - 1);
     float invPdf = lightCount; // Light selection pdf = 1.0 / lightCount.
 
-    float3 lightPos;
-    float3 lightDir;
-    float3 lightIntensity;
+    float3 lightPos = float3(0);
+    float3 lightDir = float3(0, 1, 0);
+    float3 lightIntensity = float3(0);
 
     //Point or Dir light
     if (lightIndex < analyticLightCount)
@@ -226,7 +226,8 @@ void rayGen()
     //emissive triangle light
     else
     {
-        const uint triIndex = lightIndex - analyticLightCount;
+        const uint activeTriIndex = lightIndex - analyticLightCount;
+        const uint triIndex = lc.activeTriangles[activeTriIndex];
         EmissiveTriangle emiTri = lc.getTriangle(triIndex); //get the random triangle
         //random baycentric coordinates
         float2 RS = sampleNext2D(sg);
@@ -265,7 +266,6 @@ void rayGen()
     
     // Prepare ray payload.
     ScatterRayData rayData = ScatterRayData.create(sg);
-
     
     //recursion where the photons are shot
     for (uint i = 0; i < gMaxRecursion && !rayData.terminated; i++)
@@ -286,9 +286,9 @@ void rayGen()
                 photon.radius = gCausticRadius;
                 uint photonIndex = 0;
                 InterlockedAdd(gPhotonCounter[0].caustic, 1u, photonIndex);
-                photonIndex = max(photonIndex, kMaxPhotonIndex);
+                photonIndex = min(photonIndex, kMaxPhotonIndex);
                 AABB photonAABB = calcPhotonAABB(photon);
-                gCaustic[photonIndex] = photon;           //this causes error for some reason    
+                gCaustic[photonIndex] = photon; //this causes error for some reason    
                 gCausticAABB[photonIndex] = photonAABB;
             }
             //Global photon
@@ -298,7 +298,7 @@ void rayGen()
                 photon.radius = gGlobalRadius;
                 uint photonIndex = 0;
                 InterlockedAdd(gPhotonCounter[0].global, 1u, photonIndex);
-                photonIndex = max(photonIndex, kMaxPhotonIndex);
+                photonIndex = min(photonIndex, kMaxPhotonIndex);
                 AABB photonAABB = calcPhotonAABB(photon);
                 gGlobal[photonIndex] = photon;
                 gGlobalAABB[photonIndex] = photonAABB;
@@ -324,8 +324,7 @@ void rayGen()
         ray.Origin = rayData.origin;
         ray.Direction = rayData.direction;
     }
-
-
-    gPhotonTestImage[launchIndex] = float4(float3(rayData.pathLength) / gMaxRecursion, 1);
+    
+    gPhotonTestImage[launchIndex] = float4(gCaustic[0].pos, 1);
     
 }
