@@ -46,7 +46,7 @@ RWTexture2D<float4> gPhotonTestImage;
 //Internal Buffer Structs
 
 struct PhotonInfo {
-        float3 pos;
+        float3 dir;
         float radius;
         float3 flux;
         float pad2;
@@ -128,9 +128,9 @@ void calcHemispehreDir(in float3 lightDirW,in SampleGenerator sg, inout float3 n
     newDir = rndDirL.x * tangent + rndDirL.y * bitangent + rndDirL.z * lightDirW;
 }
 
-AABB calcPhotonAABB(in PhotonInfo photon)
+AABB calcPhotonAABB(in float3 center, in float radius)
 {
-    AABB aabb = AABB.create(photon.pos - photon.radius, photon.pos + photon.radius);
+    AABB aabb = AABB.create(center - radius, center + radius);
     return aabb;
 }
 
@@ -245,8 +245,9 @@ void rayGen()
     calcHemispehreDir(lightDir, sg, ray.Direction);
 
     //create photon
+    float3 photonPos = float3(0, 0, 0);
     PhotonInfo photon;
-    photon.pos = float3(0, 0, 0);
+    photon.dir = float3(0, 0, 0);
     photon.radius = 0.f;
     photon.flux = float3(0, 0, 0);
     photon.pad2 = 0.f;
@@ -256,7 +257,7 @@ void rayGen()
     photon.flux = lightFlux / float3(launchDim.x * launchDim.y);
 
     //ray tracing vars
-    ray.Origin = lightPos + 0.001 * ray.Direction;
+    ray.Origin = lightPos + 0.01 * ray.Direction;
     ray.TMin = 0.01f;
     ray.TMax = 1000.f;
     uint rayFlags = 0;
@@ -273,7 +274,8 @@ void rayGen()
         
         TraceRay(gScene.rtAccel, rayFlags, 0xff /* instanceInclusionMask */, 0 /* hitIdx */, rayTypeCount, 0 /* missIdx */, ray, rayData);
 
-        photon.pos = rayData.origin;
+        photonPos = rayData.origin;
+        photon.dir = ray.Direction;
         reflectedDiffuse = !rayData.specularRef;
         //save photon
         //TODO: Add max for photon insertion
@@ -287,7 +289,7 @@ void rayGen()
                 uint photonIndex = 0;
                 InterlockedAdd(gPhotonCounter[0].caustic, 1u, photonIndex);
                 photonIndex = min(photonIndex, kMaxPhotonIndex);
-                AABB photonAABB = calcPhotonAABB(photon);
+                AABB photonAABB = calcPhotonAABB(photonPos, gCausticRadius);
                 gCaustic[photonIndex] = photon; //this causes error for some reason    
                 gCausticAABB[photonIndex] = photonAABB;
             }
@@ -299,7 +301,7 @@ void rayGen()
                 uint photonIndex = 0;
                 InterlockedAdd(gPhotonCounter[0].global, 1u, photonIndex);
                 photonIndex = min(photonIndex, kMaxPhotonIndex);
-                AABB photonAABB = calcPhotonAABB(photon);
+                AABB photonAABB = calcPhotonAABB(photonPos, gGlobalRadius);
                 gGlobal[photonIndex] = photon;
                 gGlobalAABB[photonIndex] = photonAABB;
             }
@@ -324,7 +326,5 @@ void rayGen()
         ray.Origin = rayData.origin;
         ray.Direction = rayData.direction;
     }
-    
-    gPhotonTestImage[launchIndex] = float4(gCaustic[0].pos, 1);
     
 }

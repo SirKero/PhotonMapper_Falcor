@@ -52,7 +52,8 @@ namespace
         {"SpecularRoughness",   "gSpecularRoughness",       "The Specular and Roughness"        ,true},
         {"Emissive",            "gEmissive",                "Emissive"                          ,true},
         {"MaterialExtra",       "gMaterialExtra",           "Extra Material Data"               ,true},
-        {"WView",               "gViewWorld",               "World View Direction"              ,true}
+        {"WView",               "gViewWorld",               "World View Direction"              ,true},
+        {"WFaceNormal",         "gFaceNormal",              "Normal for the face"               ,true}
     };
 
     const ChannelList kOutputChannels =
@@ -278,6 +279,7 @@ void PhotonReStir::collectPhotons(RenderContext* pRenderContext, const RenderDat
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gCausticRadius"] = mCausticRadius;
     var["CB"]["gGlobalRadius"] = mGlobalRadius;
+    var["CB"]["gNoColorOutput"] = false;            //TODO: save as variable
 
     //set the buffers
 

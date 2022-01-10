@@ -11,9 +11,10 @@ import Experimental.Scene.Lights.LightHelpers;
 
 cbuffer CB
 {
-    uint gFrameCount; // Frame count since scene was loaded.
-    float gCausticRadius; // Radius for the caustic photons
-    float gGlobalRadius; // Radius for the global photons
+    uint gFrameCount;       // Frame count since scene was loaded.
+    float gCausticRadius;   // Radius for the caustic photons
+    float gGlobalRadius;    // Radius for the global photons
+    bool gNoColorOutput;    // Skips light calculation if activated and outputs 1 on all channels
 }
 
 static struct Data
@@ -32,6 +33,7 @@ Texture2D<float4> gSpecularRoughness;
 Texture2D<float4> gEmissive;
 Texture2D<float4> gMaterialExtra;
 Texture2D<float4> gViewWorld;
+Texture2D<float4> gFaceNormal;
 
 
 // Outputs
@@ -44,7 +46,7 @@ RaytracingAccelerationStructure gPhotonAS;
 
 struct PhotonInfo
 {
-    float3 pos;
+    float3 dir;
     float radius;
     float3 flux;
     float pad2;
@@ -112,15 +114,55 @@ void miss(inout RayData rayData : SV_RayPayload)
 void closestHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_IntersectionAttributes)
 {
     // Nothing happens here. Just here for completions sake
-   // rayData.radiance = float3(1);
 }
 
 
 [shader("anyhit")]
 void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_IntersectionAttributes)
 {
-    rayData.radiance = float3(1);
-    //rayData.radiance = float3(1.0);
+    //debug white output
+    if (gNoColorOutput)
+    {
+        rayData.radiance = float3(1);
+        return;
+    }
+
+    const uint primIndex = PrimitiveIndex();
+    //get caustic or global photon
+    PhotonInfo photon;
+    float radius = 0;
+     //Instance 0 is always the caustic buffer
+    if (InstanceIndex() == 0)
+    {
+        photon = gCaustic[primIndex];
+        radius = gCausticRadius;
+    }
+    else
+    {
+        photon = gGlobal[primIndex];
+        radius = gGlobalRadius;
+    }
+
+    //create shading data
+    MaterialParams matPara;
+    matPara.diffuseOpacity = rayData.diffuseOpacity;
+    matPara.specularRoughness = rayData.specularRoughness;
+    matPara.emissive = rayData.emissive;
+    matPara.extraParams = rayData.extraParams;
+    float3 faceNormal = gFaceNormal[DispatchRaysIndex().xy].xyz;    //TODO: encode that in the struct
+
+    GeometryParams geoPara = prepareGeometryParams(ObjectRayOrigin() /*wPos*/, rayData.wView, rayData.wNormal, rayData.wTangent, faceNormal, float2(rayData.texU, rayData.texV));
+
+    ShadingData sd = prepareShadingData(geoPara, matPara);
+    FalcorBSDF bsdf;
+    bsdf.setup(sd);
+    float3 wiLocal = sd.toLocal(sd.V);
+    float3 woLocal = float3(dot(-photon.dir, sd.T), dot(-photon.dir, sd.B), dot(-photon.dir, sd.N));
+
+    float3 f_r = bsdf.eval(wiLocal, woLocal);
+    float weight = 1 / (M_PI * radius * radius);
+    
+    rayData.radiance += f_r * photon.flux *weight;
 }
 
 //Checks if the ray start point is inside the sphere. 0 is returned if it is not in sphere and 1 if it is
@@ -143,18 +185,21 @@ void intersection()
     const float3 origin = ObjectRayOrigin();
     const uint primIndex = PrimitiveIndex();
     
-    PhotonInfo pInfo;
+    AABB photonAABB;
+    float radius = 0;
     //Instance 0 is always the caustic buffer
     if (InstanceIndex() == 0)
     {
-        pInfo = gCaustic[primIndex];
+        photonAABB = gCausticAABB[primIndex];
+        radius = gCausticRadius;
     }
     else
     {
-        pInfo = gGlobal[primIndex];
+        photonAABB = gGlobalAABB[primIndex];
+        radius = gGlobalRadius;
     }
-
-    float tHit = hitSphere(pInfo.pos, pInfo.radius, origin);
+        
+    float tHit = hitSphere(photonAABB.center(), radius, origin);
 
     SphereAttribs attribs;
     attribs.pad = float2(0);
@@ -185,9 +230,7 @@ void rayGen()
     rayData.specularRoughness = gSpecularRoughness[launchIndex];
     rayData.emissive = gEmissive[launchIndex];
     rayData.extraParams = gMaterialExtra[launchIndex];
-
-    Ray camRay = gScene.camera.computeRayPinhole(launchIndex, launchDim);
-
+    //rayData.wFaceNormal = gFaceNormal[launchIndex];
     
     RayDesc ray;
     ray.Origin = wPos.xyz;
