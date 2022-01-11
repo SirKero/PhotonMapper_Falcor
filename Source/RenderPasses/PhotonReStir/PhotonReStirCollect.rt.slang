@@ -240,12 +240,16 @@ void rayGen()
     
     uint rayFlags = RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | RAY_FLAG_SKIP_TRIANGLES;
 
-    TraceRay(gPhotonAS, rayFlags, 0xff /* instanceInclusionMask */, 0 /* hitIdx */, 0 /* rayType count */, 0 /* missIdx */, ray, rayData);
+    //It is faster to trace two times in the different instance mask becaus of divergence
+    
+    TraceRay(gPhotonAS, rayFlags, 1 /* instanceInclusionMask */, 0 /* hitIdx */, 0 /* rayType count */, 0 /* missIdx */, ray, rayData);
    
+    TraceRay(gPhotonAS, rayFlags, 2 /* instanceInclusionMask */, 0 /* hitIdx */, 0 /* rayType count */, 0 /* missIdx */, ray, rayData);
+
     float w = 1 / M_PI;
 
     float3 radiance = w * rayData.radiance;
-
+    
     if (gFrameCount > 0 )
     {
         float3 last = gPhotonImage[launchIndex].xyz;
