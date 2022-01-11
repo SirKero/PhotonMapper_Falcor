@@ -28,6 +28,13 @@
 #include "PhotonReStir.h"
 #include <RenderGraph/RenderPassHelpers.h>
 
+//for random seed generation
+#include <random>
+#include <ctime>
+#include <limits>
+
+constexpr float kUint32tMaxF = float((uint32_t)-1);
+
 namespace
 {
     const char kShaderGeneratePhoton[] = "RenderPasses/PhotonReStir/PhotonReStirGenerate.rt.slang";
@@ -62,11 +69,6 @@ namespace
         {"PhotonTestImage",       "gPhotonTestImage",           "For testing purposes only"}
     };
 
-    
-    const char kCausticAABBDesc[] = "A buffer holding the AABB Data for the caustic Photons";
-    const char kCausticInfoDesc[] = "A buffer holding the Photon Info Data for the caustic Photons";
-    const char kGlobalAABBDesc[] = "A buffer holding the AABB Data for the global Photons";
-    const char kGlobalInfoDesc[] = "A buffer holding the Photon Info Data for the global Photons";
 
     const char kCausticAABBSName[] = "gCausticAABB";
     const char kCausticInfoSName[] = "gCaustic";
@@ -134,11 +136,11 @@ void PhotonReStir::execute(RenderContext* pRenderContext, const RenderData& rend
         mOptionsChanged = false;
     }
 
-    if (mResetIterations || mAlwaysResetIterations) {
+    //Reset Frame Count if conditions are met
+    if (mResetIterations || mAlwaysResetIterations || is_set(mpScene->getUpdates(), Scene::UpdateFlags::CameraMoved)) {
         mFrameCount = 0;
         mResetIterations = false;
     }
-        
 
     //If we have no scene just return
     if (!mpScene)
@@ -162,7 +164,10 @@ void PhotonReStir::execute(RenderContext* pRenderContext, const RenderData& rend
         mPhotonBuffersReady = preparePhotonBuffers();
     }
 
-    
+    if (!mRandNumSeedBuffer) {
+        prepareRandomSeedBuffer(renderData.getDefaultTextureDims());
+    }
+
 
     //
     // Generate Ray Pass
@@ -195,6 +200,7 @@ void PhotonReStir::generatePhotons(RenderContext* pRenderContext, const RenderDa
     // Specialize the Generate program.
     // These defines should not modify the program vars. Do not trigger program vars re-creation.
     mTracerGenerate.pProgram->addDefine("MAX_RECURSION", std::to_string(mMaxBounces));
+    mTracerGenerate.pProgram->addDefine("MAX_UINT32F", std::to_string(kUint32tMaxF));
     mTracerGenerate.pProgram->addDefine("USE_ANALYTIC_LIGHTS", mpScene->useAnalyticLights() ? "1" : "0");
     mTracerGenerate.pProgram->addDefine("USE_EMISSIVE_LIGHTS", mpScene->useEmissiveLights() ? "1" : "0");
     mTracerGenerate.pProgram->addDefine("USE_ENV_LIGHT", mpScene->useEnvLight() ? "1" : "0");
@@ -226,6 +232,7 @@ void PhotonReStir::generatePhotons(RenderContext* pRenderContext, const RenderDa
     var[kCausticInfoSName] = mCausticBuffers.info;
     var[kGlobalAABBSName] = mGlobalBuffers.aabb;
     var[kGlobalInfoSName] = mGlobalBuffers.info;
+    var["gRndSeedBuffer"] = mRandNumSeedBuffer;
 
     var["gPhotonCounter"] = mPhotonCounterBuffer.counter;
    
@@ -280,8 +287,6 @@ void PhotonReStir::collectPhotons(RenderContext* pRenderContext, const RenderDat
     // Prepare program vars. This may trigger shader compilation.
     if (!mTracerCollect.pVars) mTracerCollect.pVars = RtProgramVars::create(mTracerCollect.pProgram, mTracerCollect.pBindingTable);;
     assert(mTracerCollect.pVars);
-
-
 
     // Set constants.
     auto var = mTracerCollect.pVars->getRootVar();
@@ -481,6 +486,21 @@ bool PhotonReStir::preparePhotonBuffers()
     return true;
 }
 
+void PhotonReStir::prepareRandomSeedBuffer(const uint2 screenDimensions)
+{
+    assert(screenDimensions.x > 0 && screenDimensions.y > 0);
+
+    //fill a std vector with random seed from the seed_seq
+    std::seed_seq seq{ time(0) };
+    std::vector<uint32_t> cpuSeeds(screenDimensions.x * screenDimensions.y);
+    seq.generate(cpuSeeds.begin(), cpuSeeds.end());
+
+    //create the gpu buffer
+    mRandNumSeedBuffer = Buffer::createStructured(sizeof(uint32_t), screenDimensions.x * screenDimensions.y, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, Buffer::CpuAccess::None, cpuSeeds.data());
+    mRandNumSeedBuffer->setName("PhotonReStir::RandomSeedBuffer");
+
+    assert(mRandNumSeedBuffer);
+}
 
 void PhotonReStir::createAccelerationStructure(RenderContext* pContext, const std::vector<uint>& aabbCount) {
     createBottomLevelAS(pContext, aabbCount);

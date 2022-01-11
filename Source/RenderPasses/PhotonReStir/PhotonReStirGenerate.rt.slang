@@ -59,6 +59,7 @@ RWStructuredBuffer<PhotonInfo> gCaustic;
 RWStructuredBuffer<PhotonInfo> gGlobal;
 RWStructuredBuffer<AABB> gCausticAABB;
 RWStructuredBuffer<AABB> gGlobalAABB;
+RWStructuredBuffer<uint> gRndSeedBuffer;
 
 struct PhotonCounter
 {
@@ -70,6 +71,7 @@ RWStructuredBuffer<PhotonCounter> gPhotonCounter;
 // Static configuration based on defines set from the host.
 #define is_valid(name) (is_valid_##name != 0)
 static const uint kMaxRecursion = MAX_RECURSION;
+static const float kMaxUintF = MAX_UINT32F;
 static const bool kUseAnalyticLights = USE_ANALYTIC_LIGHTS;
 static const bool kUseEmissiveLights = USE_EMISSIVE_LIGHTS;
 static const bool kUseEnvLight = USE_ENV_LIGHT;
@@ -186,8 +188,11 @@ void rayGen()
 {
     uint2 launchIndex = DispatchRaysIndex().xy;
     uint2 launchDim = DispatchRaysDimensions().xy;
+
+    uint launchIndex1D = launchIndex.x + launchIndex.y * launchDim.x;
+    uint seed = gRndSeedBuffer[launchIndex1D];
     
-    SampleGenerator sg = SampleGenerator.create(launchIndex, gFrameCount);
+    SampleGenerator sg = SampleGenerator.create(launchIndex, seed);
 
     LightCollection lc = gScene.lightCollection;
        
@@ -328,5 +333,11 @@ void rayGen()
         ray.Origin = rayData.origin;
         ray.Direction = rayData.direction;
     }
+
+
+    //update Rnd Seed buffer with new seed
+    float newSeedF = kMaxUintF * sampleNext1D(sg);
+    uint newSeed = uint(newSeedF);
+    gRndSeedBuffer[launchIndex1D] = newSeed;
     
 }

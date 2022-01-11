@@ -249,7 +249,9 @@ void rayGen()
     float w = 1 / M_PI;
 
     float3 radiance = w * rayData.radiance;
-    
+
+
+    //Accumulate the image
     if (gFrameCount > 0 )
     {
         float3 last = gPhotonImage[launchIndex].xyz;
