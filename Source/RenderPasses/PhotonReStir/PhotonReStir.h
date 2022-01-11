@@ -101,10 +101,12 @@ private:
     uint                        mNumPhotons = 500000;       ///< Number of Photons shot
     bool                        mUsePhotonReStir = false;   ///< Activates ReStir for global photons
     float3                      mDirLightWorldPos = float3(0.f, 10.f, 0.f); ///< Testing purposes only
-    float                       mIntensityScalar = 20.0;     ///<Scales the intensity of the light sources
+    float                       mIntensityScalar = 0.05f;     ///<Scales the intensity of the light sources
+    bool                        mResetIterations = false;           //Resets the iterations counter once
+    bool                        mAlwaysResetIterations = false;     //Resets the iteration counter every frame
 
     // Runtime data
-    uint                        mFrameCount = 0;            ///< Frame count since scene was loaded.
+    uint                        mFrameCount = 0;            ///< Frame count since last Reset
     bool                        mOptionsChanged = false;
 
     // Ray tracing program.

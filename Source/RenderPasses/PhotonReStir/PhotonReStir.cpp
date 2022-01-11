@@ -134,6 +134,12 @@ void PhotonReStir::execute(RenderContext* pRenderContext, const RenderData& rend
         mOptionsChanged = false;
     }
 
+    if (mResetIterations || mAlwaysResetIterations) {
+        mFrameCount = 0;
+        mResetIterations = false;
+    }
+        
+
     //If we have no scene just return
     if (!mpScene)
     {
@@ -155,7 +161,8 @@ void PhotonReStir::execute(RenderContext* pRenderContext, const RenderData& rend
     if (!mPhotonBuffersReady) {
         mPhotonBuffersReady = preparePhotonBuffers();
     }
-        
+
+    
 
     //
     // Generate Ray Pass
@@ -187,6 +194,7 @@ void PhotonReStir::generatePhotons(RenderContext* pRenderContext, const RenderDa
 
     // Specialize the Generate program.
     // These defines should not modify the program vars. Do not trigger program vars re-creation.
+    mTracerGenerate.pProgram->addDefine("MAX_RECURSION", std::to_string(mMaxBounces));
     mTracerGenerate.pProgram->addDefine("USE_ANALYTIC_LIGHTS", mpScene->useAnalyticLights() ? "1" : "0");
     mTracerGenerate.pProgram->addDefine("USE_EMISSIVE_LIGHTS", mpScene->useEmissiveLights() ? "1" : "0");
     mTracerGenerate.pProgram->addDefine("USE_ENV_LIGHT", mpScene->useEnvLight() ? "1" : "0");
@@ -209,7 +217,6 @@ void PhotonReStir::generatePhotons(RenderContext* pRenderContext, const RenderDa
     var["CB"]["gCausticRadius"] = mCausticRadius;
     var["CB"]["gGlobalRadius"] = mGlobalRadius;
     var["CB"]["gRussianRoulette"] = mRussianRoulette;
-    var["CB"]["gMaxRecursion"] = mMaxBounces;
     var["CB"]["gIntensityScalar"] = mIntensityScalar;
         
 
@@ -322,17 +329,23 @@ void PhotonReStir::renderUI(Gui::Widgets& widget)
 {
     bool dirty = false;
 
+    //Reset Iterations
+    widget.checkbox("Always Reset Iterations", mAlwaysResetIterations);
+    widget.tooltip("Always Resets the Iterations, currently good for moving the camera");
+    mResetIterations |= widget.button("Reset Iterations");
+    widget.tooltip("Resets the iterations");
+    dirty |= mResetIterations;
     dirty |= widget.var("Max bounces", mMaxBounces, 0u, 1u << 16);
     widget.tooltip("Maximum path length for Photon Bounces");
     dirty |= widget.var("DirLightPos", mDirLightWorldPos, -FLT_MAX, FLT_MAX, 0.001f);
     widget.tooltip("Position where all Dir lights come from");
     //Light settings
-    dirty |= widget.var("IntensityScalar", mIntensityScalar, -FLT_MAX, FLT_MAX, 0.1f);
+    dirty |= widget.var("IntensityScalar", mIntensityScalar, 0.0f, FLT_MAX, 0.001f);
     widget.tooltip("Scales the intensity of all Light Sources");
     //Radius settings
-    dirty |= widget.var("CausticRadius", mCausticRadius, -FLT_MAX, FLT_MAX, 0.001f);
+    dirty |= widget.var("CausticRadius", mCausticRadius, 0.0f, FLT_MAX, 0.001f);
     widget.tooltip("Radius for the caustic Photons");
-    dirty |= widget.var("GlobalRadius", mGlobalRadius, -FLT_MAX, FLT_MAX, 0.001f);
+    dirty |= widget.var("GlobalRadius", mGlobalRadius, 0.0f, FLT_MAX, 0.001f);
     widget.tooltip("Radius for the global Photons");
     dirty |= widget.var("Russian Roulette", mRussianRoulette, 0.001f, 1.f, 0.001f);
     widget.tooltip("Probabilty that a Global Photon is saved");

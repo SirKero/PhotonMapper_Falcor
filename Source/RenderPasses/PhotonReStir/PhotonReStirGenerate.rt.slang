@@ -16,7 +16,6 @@ cbuffer CB
     float       gCausticRadius;     // Radius for the caustic photons
     float       gGlobalRadius;      // Radius for the global photons
     float       gRussianRoulette;   // Probabilty that an global photon is saved
-    uint        gMaxRecursion;      // Number of max recusions
     float       gIntensityScalar;   //scalar for the light intenity
 
 }
@@ -70,6 +69,7 @@ RWStructuredBuffer<PhotonCounter> gPhotonCounter;
 
 // Static configuration based on defines set from the host.
 #define is_valid(name) (is_valid_##name != 0)
+static const uint kMaxRecursion = MAX_RECURSION;
 static const bool kUseAnalyticLights = USE_ANALYTIC_LIGHTS;
 static const bool kUseEmissiveLights = USE_EMISSIVE_LIGHTS;
 static const bool kUseEnvLight = USE_ENV_LIGHT;
@@ -200,7 +200,7 @@ void rayGen()
     
     // Pick one of the analytic light sources randomly with equal probability.
     const uint lightIndex = min(uint(sampleNext1D(sg) * lightCount), lightCount - 1);
-    float invPdf = 1.0/lightCount; // Light selection pdf = 1.0 / lightCount.
+    float invPdf = lightCount; // Light selection pdf = 1.0 / lightCount.
 
     float3 lightPos = float3(0);
     float3 lightDir = float3(0, 1, 0);
@@ -271,7 +271,7 @@ void rayGen()
     ScatterRayData rayData = ScatterRayData.create(sg);
     
     //recursion where the photons are shot
-    for (uint i = 0; i < gMaxRecursion && !rayData.terminated; i++)
+    for (uint i = 0; i < kMaxRecursion && !rayData.terminated; i++)
     {
         
         TraceRay(gScene.rtAccel, rayFlags, 0xff /* instanceInclusionMask */, 0 /* hitIdx */, rayTypeCount, 0 /* missIdx */, ray, rayData);

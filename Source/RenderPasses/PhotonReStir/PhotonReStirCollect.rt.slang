@@ -160,9 +160,9 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
     float3 woLocal = float3(dot(-photon.dir, sd.T), dot(-photon.dir, sd.B), dot(-photon.dir, sd.N));
 
     float3 f_r = bsdf.eval(wiLocal, woLocal);
-    float weight = 1 / (M_PI * radius * radius);
+    float w = 1 / radius;
     
-    rayData.radiance += f_r * photon.flux *weight;
+    rayData.radiance += f_r * photon.flux * w;
 }
 
 //Checks if the ray start point is inside the sphere. 0 is returned if it is not in sphere and 1 if it is
@@ -206,7 +206,7 @@ void intersection()
     
     if (tHit > 0.0)
     {
-        ReportHit(0.01, 0, attribs);
+        ReportHit(0.005, 0, attribs);
     }
 }
 
@@ -235,13 +235,25 @@ void rayGen()
     RayDesc ray;
     ray.Origin = wPos.xyz;
     ray.TMin = 0.001;
-    ray.TMax = 0.1;
+    ray.TMax = 0.01;
     ray.Direction = rayData.wNormal;
     
     uint rayFlags = RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | RAY_FLAG_SKIP_TRIANGLES;
 
     TraceRay(gPhotonAS, rayFlags, 0xff /* instanceInclusionMask */, 0 /* hitIdx */, 0 /* rayType count */, 0 /* missIdx */, ray, rayData);
    
-    
-    gPhotonImage[launchIndex] = float4(rayData.radiance, 1);
+    float w = 1 / M_PI;
+
+    float3 radiance = w * rayData.radiance;
+
+    if (gFrameCount > 0 )
+    {
+        float3 last = gPhotonImage[launchIndex].xyz;
+        float frameCountF = float(gFrameCount);
+        last *= frameCountF;
+        radiance += last;
+        radiance /= frameCountF + 1.0;
+    }
+
+    gPhotonImage[launchIndex] = float4(radiance, 1);
 }
