@@ -95,7 +95,7 @@ PhotonReStir::SharedPtr PhotonReStir::create(RenderContext* pRenderContext, cons
 
 PhotonReStir::PhotonReStir()
 {
-    mpSampleGenerator = SampleGenerator::create(SAMPLE_GENERATOR_DEFAULT);
+    mpSampleGenerator = SampleGenerator::create(SAMPLE_GENERATOR_UNIFORM);
     assert(mpSampleGenerator);
 }
 
@@ -214,7 +214,7 @@ void PhotonReStir::generatePhotons(RenderContext* pRenderContext, const RenderDa
     if (!mTracerGenerate.pVars) prepareVars();
     assert(mTracerGenerate.pVars);
 
-    
+    auto& dict = renderData.getDictionary();
 
     // Set constants.
     auto var = mTracerGenerate.pVars->getRootVar();
@@ -224,6 +224,7 @@ void PhotonReStir::generatePhotons(RenderContext* pRenderContext, const RenderDa
     var["CB"]["gGlobalRadius"] = mGlobalRadius;
     var["CB"]["gRussianRoulette"] = mRussianRoulette;
     var["CB"]["gIntensityScalar"] = mIntensityScalar;
+    var["CB"]["gPRNGDimension"] = dict.keyExists(kRenderPassPRNGDimension) ? dict[kRenderPassPRNGDimension] : 0u;
         
 
     //set the buffers

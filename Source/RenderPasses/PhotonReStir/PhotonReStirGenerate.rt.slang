@@ -17,6 +17,7 @@ cbuffer CB
     float       gGlobalRadius;      // Radius for the global photons
     float       gRussianRoulette;   // Probabilty that an global photon is saved
     float       gIntensityScalar;   //scalar for the light intenity
+    uint        gPRNGDimension;     // First available PRNG dimension.
 
 }
 
@@ -97,7 +98,7 @@ struct ScatterRayData
 
     /** Create ray payload with default parameters.
     */
-    static ScatterRayData create(SampleGenerator sg)
+    static ScatterRayData create()
     {
         ScatterRayData d;
         d.terminated = false;
@@ -107,7 +108,6 @@ struct ScatterRayData
         d.thp = float3(1, 1, 1);
         d.origin = float3(0, 0, 0);
         d.direction = float3(0, 0, 0);
-        d.sg = sg;
         return d;
     }
 };
@@ -191,9 +191,16 @@ void rayGen()
 
     uint launchIndex1D = launchIndex.x + launchIndex.y * launchDim.x;
     uint seed = gRndSeedBuffer[launchIndex1D];
-    
-    SampleGenerator sg = SampleGenerator.create(launchIndex, seed);
 
+     // Prepare ray payload.
+    ScatterRayData rayData = ScatterRayData.create();
+    rayData.sg = SampleGenerator.create(launchIndex, seed);
+
+    // Advance the generator to the first available dimension.
+    // TODO: This is potentially expensive. We may want to store/restore the state from memory if it becomes a problem.
+    for (uint i = 0; i < gPRNGDimension; i++)
+        sampleNext1D(rayData.sg);
+    
     LightCollection lc = gScene.lightCollection;
        
     const uint analyticLightCount = gScene.getLightCount();
@@ -204,7 +211,7 @@ void rayGen()
         return;
     
     // Pick one of the analytic light sources randomly with equal probability.
-    const uint lightIndex = min(uint(sampleNext1D(sg) * lightCount), lightCount - 1);
+    const uint lightIndex = min(uint(sampleNext1D(rayData.sg) * lightCount), lightCount - 1);
     float invPdf = lightCount; // Light selection pdf = 1.0 / lightCount.
 
     float3 lightPos = float3(0);
@@ -237,7 +244,7 @@ void rayGen()
         const uint triIndex = lc.activeTriangles[activeTriIndex];
         EmissiveTriangle emiTri = lc.getTriangle(triIndex); //get the random triangle
         //random baycentric coordinates
-        float2 RS = sampleNext2D(sg);
+        float2 RS = sampleNext2D(rayData.sg);
         if (RS.x + RS.y >= 1.0)            //make sure that it stays inside the triangle
             RS = 1.0 - RS;
         float3 bay = float3(RS.x, RS.y, 1.0 - (RS.x + RS.y));
@@ -249,7 +256,7 @@ void rayGen()
    
     
     RayDesc ray;
-    calcHemispehreDir(lightDir, sg, ray.Direction);
+    calcHemispehreDir(lightDir, rayData.sg, ray.Direction);
 
     //create photon
     float3 photonPos = float3(0, 0, 0);
@@ -272,8 +279,7 @@ void rayGen()
     bool wasReflectedSpecular = false;
     bool reflectedDiffuse = false;
     
-    // Prepare ray payload.
-    ScatterRayData rayData = ScatterRayData.create(sg);
+   
     
     //recursion where the photons are shot
     for (uint i = 0; i < kMaxRecursion && !rayData.terminated; i++)
@@ -284,9 +290,13 @@ void rayGen()
         photonPos = rayData.origin;
         photon.dir = ray.Direction;
         reflectedDiffuse = !rayData.specularRef;
+
         //save photon
-        //TODO: Add max for photon insertion
-        bool roulette = sampleNext1D(sg) <= gRussianRoulette;
+        float rndRoulette = sampleNext1D(rayData.sg);
+        bool roulette = rndRoulette <= gRussianRoulette;
+
+        
+        
         if (reflectedDiffuse)
         {
             //caustic photon
@@ -314,10 +324,11 @@ void rayGen()
             }
         }
         
-        //Update photon energy
-        float avgThroughput = (rayData.thp.x + rayData.thp.y + rayData.thp.z) / 3;
 
-        float rnd = sampleNext1D(sg);
+         //Update photon energy
+        float avgThroughput = max((rayData.thp.x + rayData.thp.y + rayData.thp.z) / 3, 0.0);
+
+        float rnd = sampleNext1D(rayData.sg);
         if (avgThroughput < rnd)
         {
             break;      //Photon is absorbed
@@ -336,7 +347,7 @@ void rayGen()
 
 
     //update Rnd Seed buffer with new seed
-    float newSeedF = kMaxUintF * sampleNext1D(sg);
+    float newSeedF = kMaxUintF * sampleNext1D(rayData.sg);
     uint newSeed = uint(newSeedF);
     gRndSeedBuffer[launchIndex1D] = newSeed;
     
