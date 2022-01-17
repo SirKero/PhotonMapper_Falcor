@@ -172,15 +172,14 @@ void PhotonReStir::execute(RenderContext* pRenderContext, const RenderData& rend
     generatePhotons(pRenderContext, renderData);
 
          
-   //barrier for the aabb buffers and copying the needed datas
-   syncPasses(pRenderContext);
+    //barrier for the aabb buffers and copying the needed datas
+    bool valid = syncPasses(pRenderContext);
 
     //Gather the photons with short rays
-    collectPhotons(pRenderContext, renderData);
+    if(valid)
+        collectPhotons(pRenderContext, renderData);
+        mFrameCount++;
     
-    
-
-    mFrameCount++;
 }
 
 void PhotonReStir::generatePhotons(RenderContext* pRenderContext, const RenderData& renderData)
@@ -256,7 +255,7 @@ void PhotonReStir::generatePhotons(RenderContext* pRenderContext, const RenderDa
     //TODO: Add progressive if activated
 }
 
-void PhotonReStir::syncPasses(RenderContext* pRenderContext)
+bool PhotonReStir::syncPasses(RenderContext* pRenderContext)
 {
     //Copy the photonConter to a CPU Buffer
     pRenderContext->uavBarrier(mPhotonCounterBuffer.counter.get());
@@ -265,12 +264,15 @@ void PhotonReStir::syncPasses(RenderContext* pRenderContext)
     //TODO:: Implement a better way than a full flush
     pRenderContext->flush(true);
 
-    std::vector<uint> photonCounter{ 0,0 };
     void* data = mPhotonCounterBuffer.cpuCopy->map(Buffer::MapType::Read);
-    std::memcpy(photonCounter.data(), data, sizeof(uint) * 2);
+    std::memcpy(mPhotonCount.data(), data, sizeof(uint) * 2);
     mPhotonCounterBuffer.cpuCopy->unmap();
 
-    createAccelerationStructure(pRenderContext, photonCounter);
+    if (mPhotonCount[0] == 0)
+        return false;
+
+    createAccelerationStructure(pRenderContext, mPhotonCount);
+    return true;
 }
 
 void PhotonReStir::collectPhotons(RenderContext* pRenderContext, const RenderData& renderData)
@@ -332,19 +334,23 @@ void PhotonReStir::renderUI(Gui::Widgets& widget)
 {
     bool dirty = false;
 
-    //Reset Iterations
-    widget.checkbox("Always Reset Iterations", mAlwaysResetIterations);
-    widget.tooltip("Always Resets the Iterations, currently good for moving the camera");
-    mResetIterations |= widget.button("Reset Iterations");
-    widget.tooltip("Resets the iterations");
-    dirty |= mResetIterations;
+    //Info
+    widget.text("Iterations: " + std::to_string(mFrameCount));
+    widget.text("Caustic Photons: " + std::to_string(mPhotonCount[0]));
+    widget.tooltip("Caustic Photons for this Iteration");
+    widget.text("Global Photons: " + std::to_string(mPhotonCount[1]));
+    widget.tooltip("Global Photons for this Iteration");
+
+    //miscellaneous
     dirty |= widget.var("Max bounces", mMaxBounces, 0u, 1u << 16);
     widget.tooltip("Maximum path length for Photon Bounces");
     dirty |= widget.var("DirLightPos", mDirLightWorldPos, -FLT_MAX, FLT_MAX, 0.001f);
     widget.tooltip("Position where all Dir lights come from");
+
     //Light settings
     dirty |= widget.var("IntensityScalar", mIntensityScalar, 0.0f, FLT_MAX, 0.001f);
     widget.tooltip("Scales the intensity of all Light Sources");
+
     //Radius settings
     dirty |= widget.var("CausticRadius", mCausticRadius, 0.0f, FLT_MAX, 0.001f);
     widget.tooltip("Radius for the caustic Photons");
@@ -352,6 +358,14 @@ void PhotonReStir::renderUI(Gui::Widgets& widget)
     widget.tooltip("Radius for the global Photons");
     dirty |= widget.var("Russian Roulette", mRussianRoulette, 0.001f, 1.f, 0.001f);
     widget.tooltip("Probabilty that a Global Photon is saved");
+
+    //Reset Iterations
+    widget.checkbox("Always Reset Iterations", mAlwaysResetIterations);
+    widget.tooltip("Always Resets the Iterations, currently good for moving the camera");
+    mResetIterations |= widget.button("Reset Iterations");
+    widget.tooltip("Resets the iterations");
+    dirty |= mResetIterations;
+
     //set flag to indicate that settings have changed and the pass has to be rebuild
     if (dirty)
         mOptionsChanged = true;

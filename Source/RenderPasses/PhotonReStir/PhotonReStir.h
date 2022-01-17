@@ -68,8 +68,9 @@ private:
 
     /** Sync Pass which syncs the resources which were used by the generate Photon Pass and are nedded by the Trace Photon Pass.
     * It also will create the Acceleration Structure which is needed for the next pass
+    * Returns false if Acceleration Structure could not be created (photon Counter is zero for example)
     */
-    void syncPasses(RenderContext* pRenderContext);
+    bool syncPasses(RenderContext* pRenderContext);
 
     /** Pass that collect the photons. It will shoot a infinit small ray at the current camera position and collect all photons.
     * The needed position etc. has to be provided by a gBuffer
@@ -107,6 +108,7 @@ private:
 
     // Runtime data
     uint                        mFrameCount = 0;            ///< Frame count since last Reset
+    std::vector<uint>           mPhotonCount = { 0,0 };
     bool                        mOptionsChanged = false;
 
     // Ray tracing program.
