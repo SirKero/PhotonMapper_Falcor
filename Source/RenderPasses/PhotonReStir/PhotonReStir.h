@@ -89,6 +89,10 @@ private:
    */
     void createBottomLevelAS(RenderContext* pContext, const std::vector<uint>& aabbCount);
 
+    /** Prepares the buffer that holds the seeds for the SampleGenerator
+    */
+    void prepareRandomSeedBuffer(const uint2 screenDimensions);
+
     // Internal state
     Scene::SharedPtr            mpScene;                    ///< Current scene.
     SampleGenerator::SharedPtr  mpSampleGenerator;          ///< GPU sample generator.
@@ -102,7 +106,7 @@ private:
     uint                        mNumPhotons = 500000;       ///< Number of Photons shot
     bool                        mUsePhotonReStir = false;   ///< Activates ReStir for global photons
     float3                      mDirLightWorldPos = float3(0.f, 10.f, 0.f); ///< Testing purposes only
-    float                       mIntensityScalar = 0.05f;     ///<Scales the intensity of the light sources
+    float                       mIntensityScalar = 1.0f;     ///<Scales the intensity of the light sources
     bool                        mResetIterations = false;           //Resets the iterations counter once
     bool                        mAlwaysResetIterations = false;     //Resets the iteration counter every frame
 
@@ -162,7 +166,8 @@ private:
 
     PhotonBuffers mCausticBuffers;              ///< Buffers for the caustic photons
     PhotonBuffers mGlobalBuffers;               ///< Buffers for the global photons
-    
+
+    Buffer::SharedPtr mRandNumSeedBuffer;       ///< Buffer for the random seeds
 
     struct BlasData
     {

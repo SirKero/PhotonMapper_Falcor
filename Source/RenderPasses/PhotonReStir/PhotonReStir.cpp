@@ -165,6 +165,11 @@ void PhotonReStir::execute(RenderContext* pRenderContext, const RenderData& rend
         mPhotonBuffersReady = preparePhotonBuffers();
     }
 
+    if (!mRandNumSeedBuffer) {
+        prepareRandomSeedBuffer(renderData.getDefaultTextureDims());
+    }
+
+
     //
     // Generate Ray Pass
     //
@@ -229,6 +234,7 @@ void PhotonReStir::generatePhotons(RenderContext* pRenderContext, const RenderDa
     var[kCausticInfoSName] = mCausticBuffers.info;
     var[kGlobalAABBSName] = mGlobalBuffers.aabb;
     var[kGlobalInfoSName] = mGlobalBuffers.info;
+    var["gRndSeedBuffer"] = mRandNumSeedBuffer;
 
     var["gPhotonCounter"] = mPhotonCounterBuffer.counter;
    
@@ -653,4 +659,20 @@ void PhotonReStir::createBottomLevelAS(RenderContext* pContext, const std::vecto
         //Barrier for the blas
         pContext->uavBarrier(i == 0 ? mCausticBuffers.blas.get() : mGlobalBuffers.blas.get());
     }
+}
+
+void PhotonReStir::prepareRandomSeedBuffer(const uint2 screenDimensions)
+{
+    assert(screenDimensions.x > 0 && screenDimensions.y > 0);
+
+    //fill a std vector with random seed from the seed_seq
+    std::seed_seq seq{ time(0) };
+    std::vector<uint32_t> cpuSeeds(screenDimensions.x * screenDimensions.y);
+    seq.generate(cpuSeeds.begin(), cpuSeeds.end());
+
+    //create the gpu buffer
+    mRandNumSeedBuffer = Buffer::createStructured(sizeof(uint32_t), screenDimensions.x * screenDimensions.y, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, Buffer::CpuAccess::None, cpuSeeds.data());
+    mRandNumSeedBuffer->setName("PhotonReStir::RandomSeedBuffer");
+
+    assert(mRandNumSeedBuffer);
 }
