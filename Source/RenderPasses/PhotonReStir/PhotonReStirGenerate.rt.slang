@@ -60,7 +60,6 @@ RWStructuredBuffer<PhotonInfo> gCaustic;
 RWStructuredBuffer<PhotonInfo> gGlobal;
 RWStructuredBuffer<AABB> gCausticAABB;
 RWStructuredBuffer<AABB> gGlobalAABB;
-RWStructuredBuffer<uint> gRndSeedBuffer;
 
 struct PhotonCounter
 {
@@ -188,13 +187,10 @@ void rayGen()
 {
     uint2 launchIndex = DispatchRaysIndex().xy;
     uint2 launchDim = DispatchRaysDimensions().xy;
-
-    uint launchIndex1D = launchIndex.x + launchIndex.y * launchDim.x;
-    uint seed = gRndSeedBuffer[launchIndex1D];
-
+    
      // Prepare ray payload.
     ScatterRayData rayData = ScatterRayData.create();
-    rayData.sg = SampleGenerator.create(launchIndex, seed);
+    rayData.sg = SampleGenerator.create(launchIndex, gFrameCount);
 
     // Advance the generator to the first available dimension.
     // TODO: This is potentially expensive. We may want to store/restore the state from memory if it becomes a problem.
@@ -344,11 +340,5 @@ void rayGen()
         ray.Origin = rayData.origin;
         ray.Direction = rayData.direction;
     }
-
-
-    //update Rnd Seed buffer with new seed
-    float newSeedF = kMaxUintF * sampleNext1D(rayData.sg);
-    uint newSeed = uint(newSeedF);
-    gRndSeedBuffer[launchIndex1D] = newSeed;
     
 }

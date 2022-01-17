@@ -164,11 +164,6 @@ void PhotonReStir::execute(RenderContext* pRenderContext, const RenderData& rend
         mPhotonBuffersReady = preparePhotonBuffers();
     }
 
-    if (!mRandNumSeedBuffer) {
-        prepareRandomSeedBuffer(renderData.getDefaultTextureDims());
-    }
-
-
     //
     // Generate Ray Pass
     //
@@ -193,6 +188,7 @@ void PhotonReStir::generatePhotons(RenderContext* pRenderContext, const RenderDa
     //Reset counter Buffers
     pRenderContext->copyBufferRegion(mPhotonCounterBuffer.counter.get(), 0, mPhotonCounterBuffer.reset.get(), 0, sizeof(uint64_t));
     pRenderContext->resourceBarrier(mPhotonCounterBuffer.counter.get(), Resource::State::ShaderResource);
+
 
     auto lights = mpScene->getLights();
     auto lightCollection = mpScene->getLightCollection(pRenderContext);
@@ -233,7 +229,6 @@ void PhotonReStir::generatePhotons(RenderContext* pRenderContext, const RenderDa
     var[kCausticInfoSName] = mCausticBuffers.info;
     var[kGlobalAABBSName] = mGlobalBuffers.aabb;
     var[kGlobalInfoSName] = mGlobalBuffers.info;
-    var["gRndSeedBuffer"] = mRandNumSeedBuffer;
 
     var["gPhotonCounter"] = mPhotonCounterBuffer.counter;
    
@@ -485,22 +480,6 @@ bool PhotonReStir::preparePhotonBuffers()
     mPhotonCounterBuffer.cpuCopy->setName("PhotonReStir::PhotonCounterCPU");
 
     return true;
-}
-
-void PhotonReStir::prepareRandomSeedBuffer(const uint2 screenDimensions)
-{
-    assert(screenDimensions.x > 0 && screenDimensions.y > 0);
-
-    //fill a std vector with random seed from the seed_seq
-    std::seed_seq seq{ time(0) };
-    std::vector<uint32_t> cpuSeeds(screenDimensions.x * screenDimensions.y);
-    seq.generate(cpuSeeds.begin(), cpuSeeds.end());
-
-    //create the gpu buffer
-    mRandNumSeedBuffer = Buffer::createStructured(sizeof(uint32_t), screenDimensions.x * screenDimensions.y, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, Buffer::CpuAccess::None, cpuSeeds.data());
-    mRandNumSeedBuffer->setName("PhotonReStir::RandomSeedBuffer");
-
-    assert(mRandNumSeedBuffer);
 }
 
 void PhotonReStir::createAccelerationStructure(RenderContext* pContext, const std::vector<uint>& aabbCount) {

@@ -62,10 +62,6 @@ private:
     */
     bool preparePhotonBuffers();
 
-    /** Prepares the buffer that holds the seeds for the SampleGenerator
-    */
-    void prepareRandomSeedBuffer(const uint2 screenDimensions);
-
     /** Creates the Generate Photon pass, where the photons are shot through the scene and saved in an AABB and information buffer
     */
     void generatePhotons(RenderContext* pRenderContext, const RenderData& renderData);
@@ -164,9 +160,7 @@ private:
 
     PhotonBuffers mCausticBuffers;              ///< Buffers for the caustic photons
     PhotonBuffers mGlobalBuffers;               ///< Buffers for the global photons
-
-    Buffer::SharedPtr mRandNumSeedBuffer;
-
+    
 
     struct BlasData
     {
