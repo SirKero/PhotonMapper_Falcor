@@ -199,8 +199,8 @@ void rayGen()
     
     LightCollection lc = gScene.lightCollection;
        
-    const uint analyticLightCount = gScene.getLightCount();
-    const uint emissiveLightCount = lc.getActiveTriangleCount();
+    const uint analyticLightCount = kUseAnalyticLights ? gScene.getLightCount() : 0;
+    const uint emissiveLightCount = kUseEmissiveLights ? lc.getActiveTriangleCount() : 0;
     const uint lightCount = analyticLightCount + emissiveLightCount;
     
     if (lightCount == 0)        //If that case happens we have a problem 
@@ -219,14 +219,8 @@ void rayGen()
     {
         LightData currentLight = gScene.getLight(lightIndex);
 
-    //set a pos for dir lights
-        if (currentLight.type == 1)
-        {
-            currentLight.posW = gDirLightWorldPos;
-        }
-
     //we only support point and dir lights
-        if (currentLight.type > 1)
+        if (currentLight.type != uint(LightType::Point))
             return;
 
         lightPos = currentLight.posW;
@@ -283,6 +277,9 @@ void rayGen()
         
         TraceRay(gScene.rtAccel, rayFlags, 0xff /* instanceInclusionMask */, 0 /* hitIdx */, rayTypeCount, 0 /* missIdx */, ray, rayData);
 
+        if(rayData.terminated)
+            break;
+        
         photonPos = rayData.origin;
         photon.dir = ray.Direction;
         reflectedDiffuse = !rayData.specularRef;
