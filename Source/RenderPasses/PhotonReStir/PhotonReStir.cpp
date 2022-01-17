@@ -133,6 +133,7 @@ void PhotonReStir::execute(RenderContext* pRenderContext, const RenderData& rend
     if (mOptionsChanged) {
         auto flags = dict.getValue(kRenderPassRefreshFlags, RenderPassRefreshFlags::None);
         dict[Falcor::kRenderPassRefreshFlags] = flags | Falcor::RenderPassRefreshFlags::RenderOptionsChanged;
+        mResetIterations = true;
         mOptionsChanged = false;
     }
 
@@ -219,7 +220,7 @@ void PhotonReStir::generatePhotons(RenderContext* pRenderContext, const RenderDa
     var["CB"]["gCausticRadius"] = mCausticRadius;
     var["CB"]["gGlobalRadius"] = mGlobalRadius;
     var["CB"]["gRussianRoulette"] = mRussianRoulette;
-    var["CB"]["gIntensityScalar"] = mIntensityScalar;
+    var["CB"]["gEmissiveScale"] = mIntensityScalar;
     var["CB"]["gPRNGDimension"] = dict.keyExists(kRenderPassPRNGDimension) ? dict[kRenderPassPRNGDimension] : 0u;
         
 
@@ -290,6 +291,7 @@ void PhotonReStir::collectPhotons(RenderContext* pRenderContext, const RenderDat
     var["CB"]["gCausticRadius"] = mCausticRadius;
     var["CB"]["gGlobalRadius"] = mGlobalRadius;
     var["CB"]["gNoColorOutput"] = false;            //TODO: save as variable
+    var["CB"]["gEmissiveScale"] = mIntensityScalar;
 
     //set the buffers
 

@@ -15,6 +15,7 @@ cbuffer CB
     float gCausticRadius;   // Radius for the caustic photons
     float gGlobalRadius;    // Radius for the global photons
     bool gNoColorOutput;    // Skips light calculation if activated and outputs 1 on all channels
+    float gEmissiveScale;   // Scale for the emissive part
 }
 
 static struct Data
@@ -249,6 +250,9 @@ void rayGen()
     float w = 1 / M_PI;
 
     float3 radiance = w * rayData.radiance;
+
+    float3 pixEmission = gEmissive[launchIndex].xyz *0.05;
+    radiance += pixEmission;
     
     //Accumulate the image
     if (gFrameCount > 0 )

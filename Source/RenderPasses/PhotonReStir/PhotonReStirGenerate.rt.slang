@@ -16,7 +16,7 @@ cbuffer CB
     float       gCausticRadius;     // Radius for the caustic photons
     float       gGlobalRadius;      // Radius for the global photons
     float       gRussianRoulette;   // Probabilty that an global photon is saved
-    float       gIntensityScalar;   //scalar for the light intenity
+    float       gEmissiveScale;   //scalar for the light intenity
     uint        gPRNGDimension;     // First available PRNG dimension.
 
 }
@@ -263,7 +263,7 @@ void rayGen()
     photon.pad2 = 0.f;
     
     //light flux
-    float3 lightFlux = lightIntensity * 2 * M_PI * invPdf * gIntensityScalar;
+    float3 lightFlux = lightIntensity * 2 * M_PI * invPdf * gEmissiveScale;
     photon.flux = lightFlux / float3(launchDim.x * launchDim.y);
 
     //ray tracing vars
