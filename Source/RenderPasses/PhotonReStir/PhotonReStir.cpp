@@ -143,6 +143,12 @@ void PhotonReStir::execute(RenderContext* pRenderContext, const RenderData& rend
         mResetIterations = false;
     }
 
+    //reset radius
+    if (mFrameCount == 0) {
+        mCausticRadius = mCausticRadiusStart;
+        mGlobalRadius = mGlobalRadiusStart;
+    }
+
     //If we have no scene just return
     if (!mpScene)
     {
@@ -184,6 +190,13 @@ void PhotonReStir::execute(RenderContext* pRenderContext, const RenderData& rend
     if(valid)
         collectPhotons(pRenderContext, renderData);
         mFrameCount++;
+
+        if (mUseStatisticProgressivePM) {
+            float itF = static_cast<float>(mFrameCount);
+            mGlobalRadius *= sqrt((itF + mSPPMAlphaGlobal) / (itF + 1.0f));
+            mCausticRadius *= sqrt((itF + mSPPMAlphaCaustic) / (itF + 1.0f));
+        }
+        //TODO: Add progressive if activated
     
 }
 
@@ -255,10 +268,6 @@ void PhotonReStir::generatePhotons(RenderContext* pRenderContext, const RenderDa
 
     // Trace the photons
     mpScene->raytrace(pRenderContext, mTracerGenerate.pProgram.get(), mTracerGenerate.pVars, uint3(targetDim, 1));
-
-    
-
-    //TODO: Add progressive if activated
 }
 
 bool PhotonReStir::syncPasses(RenderContext* pRenderContext)
@@ -347,8 +356,23 @@ void PhotonReStir::renderUI(Gui::Widgets& widget)
     widget.text("Global Photons: " + std::to_string(mPhotonCount[1]));
     widget.tooltip("Global Photons for this Iteration");
 
+    widget.text("Current Global Radius: " + std::to_string(mGlobalRadius));
+    widget.text("Current Caustic Radius: " + std::to_string(mCausticRadius));
+
+    //Progressive PM
+    dirty |= widget.checkbox("Use SPPM", mUseStatisticProgressivePM);
+    widget.tooltip("Activate Statistically Progressive Photon Mapping");
+
+    if (mUseStatisticProgressivePM) {
+        dirty |= widget.var("Global Alpha", mSPPMAlphaGlobal, 0.0f, 1.0f, 0.001f);
+        widget.tooltip("Sets the Alpha in SPPM for the Global Photons");
+        dirty |= widget.var("Caustic Alpha", mSPPMAlphaGlobal, 0.0f, 1.0f, 0.001f);
+        widget.tooltip("Sets the Alpha in SPPM for the Caustic Photons");
+    }
+    
+    widget.text("");
     //miscellaneous
-    dirty |= widget.var("Max bounces", mMaxBounces, 0u, 1u << 16);
+    dirty |= widget.slider("Max Recursion Depth", mMaxBounces, 1u, 32u);
     widget.tooltip("Maximum path length for Photon Bounces");
     dirty |= widget.var("DirLightPos", mDirLightWorldPos, -FLT_MAX, FLT_MAX, 0.001f);
     widget.tooltip("Position where all Dir lights come from");
@@ -358,10 +382,10 @@ void PhotonReStir::renderUI(Gui::Widgets& widget)
     widget.tooltip("Scales the intensity of all Light Sources");
 
     //Radius settings
-    dirty |= widget.var("CausticRadius", mCausticRadius, 0.0f, FLT_MAX, 0.001f);
-    widget.tooltip("Radius for the caustic Photons");
-    dirty |= widget.var("GlobalRadius", mGlobalRadius, 0.0f, FLT_MAX, 0.001f);
-    widget.tooltip("Radius for the global Photons");
+    dirty |= widget.var("Caustic Radius Start", mCausticRadiusStart, 0.0f, FLT_MAX, 0.001f);
+    widget.tooltip("The start value for the radius of caustic Photons");
+    dirty |= widget.var("Global Radius Start", mGlobalRadiusStart, 0.0f, FLT_MAX, 0.001f);
+    widget.tooltip("The start value for the radius of global Photons");
     dirty |= widget.var("Russian Roulette", mRussianRoulette, 0.001f, 1.f, 0.001f);
     widget.tooltip("Probabilty that a Global Photon is saved");
 

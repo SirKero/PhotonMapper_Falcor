@@ -98,17 +98,22 @@ private:
     SampleGenerator::SharedPtr  mpSampleGenerator;          ///< GPU sample generator.
 
     // Configuration
-    uint                        mMaxBounces = 3;            ///< Max number of indirect bounces (0 = none).
-    float                       mCausticRadius = 0.01f;      ///< Radius for caustic Photons
-    float                       mGlobalRadius = 0.04f;       ///< Radius for global Photons
-    float                       mRussianRoulette = 0.3f;    ///< Probabilty that a Global photon is saved
-    bool                        mUseProgressivePM = false;  ///< Activate Progressive Photon Mapping
-    uint                        mNumPhotons = 500000;       ///< Number of Photons shot
-    bool                        mUsePhotonReStir = false;   ///< Activates ReStir for global photons
+    uint                        mMaxBounces = 5;                        ///< Depth of recursion (0 = none).
+    float                       mCausticRadiusStart = 0.01f;            ///< Start value for the caustic Radius
+    float                       mGlobalRadiusStart = 0.04f;             ///< Start value for the caustic Radius
+    float                       mCausticRadius = 1.f;                 ///< Current Radius for caustic Photons
+    float                       mGlobalRadius = 1.f;                  ///< Current Radius for global Photons
+    float                       mRussianRoulette = 0.3f;                ///< Probabilty that a Global photon is saved
+    bool                        mUseStatisticProgressivePM = false;     ///< Activate Statistically Progressive Photon Mapping(SPPM)
+    float                       mSPPMAlphaGlobal = 0.7f;                 ///< Global Alpha for SPPM
+    float                       mSPPMAlphaCaustic = 0.7f;                ///< Caustic Alpha for SPPM
+    
+    uint                        mNumPhotons = 500000;                   ///< Number of Photons shot
+    bool                        mUsePhotonReStir = false;               ///< Activates ReStir for global photons
     float3                      mDirLightWorldPos = float3(0.f, 10.f, 0.f); ///< Testing purposes only
-    float                       mIntensityScalar = 1.0f;     ///<Scales the intensity of the light sources
-    bool                        mResetIterations = false;           //Resets the iterations counter once
-    bool                        mAlwaysResetIterations = false;     //Resets the iteration counter every frame
+    float                       mIntensityScalar = 1.0f;                ///<Scales the intensity of the light sources
+    bool                        mResetIterations = false;               ///<Resets the iterations counter once
+    bool                        mAlwaysResetIterations = false;         ///<Resets the iteration counter every frame
 
     // Runtime data
     uint                        mFrameCount = 0;            ///< Frame count since last Reset
