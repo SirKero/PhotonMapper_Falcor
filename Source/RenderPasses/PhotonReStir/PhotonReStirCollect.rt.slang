@@ -164,7 +164,7 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
     float3 woLocal = float3(dot(-photon.dir, sd.T), dot(-photon.dir, sd.B), dot(-photon.dir, sd.N));
 
     float3 f_r = bsdf.eval(wiLocal, woLocal);
-    float w = 1 / radius;
+    float w = 1 / (radius * radius);
     
     rayData.radiance += f_r * photon.flux * w;
 }
