@@ -18,14 +18,7 @@ cbuffer CB
     float       gRussianRoulette;   // Probabilty that an global photon is saved
     float       gEmissiveScale;   //scalar for the light intenity
     uint        gPRNGDimension;     // First available PRNG dimension.
-
 }
-
-static struct Data
-{
-    // Materials
-    StandardMaterial standardMaterial;
-} gData;
 
 // Inputs
 Texture2D<float4> gWorldPosition;
@@ -82,6 +75,10 @@ static const float3 kDefaultBackgroundColor = float3(0, 0, 0);
 static const float kRayTMax = FLT_MAX;
 static const uint kMaxPhotonIndex = MAX_PHOTON_INDEX;
 
+static const float Inv2Pi = 0.15915494309189533577;
+static const float Inv4Pi = 0.07957747154594766788;
+
+
 /** Payload for scatter ray (80B).
 */
 struct ScatterRayData
@@ -113,14 +110,9 @@ struct ScatterRayData
     }
 };
 
-void calcHemispehreDir(in float3 lightDirW,in SampleGenerator sg, inout float3 newDir)
+//transforms direction from local to world space
+void fromLocalToWorld(in float3 lightDirW, inout float3 dir)
 {
-    //get random pos in hemisphere
-    float2 rnd = sampleNext2D(sg);  //random numbers for z and phi
-    float r = sqrt(max(0.0, 1. - rnd.x * rnd.x));
-    float phi = rnd.y * 2 * M_PI;
-    float3 rndDirL = float3(r * cos(phi), r * sin(phi), rnd.x);
-
     //transform from local space -> random dir vector in world space
     float3 tangent, bitangent;
     if (abs(lightDirW.x) < 0.99)
@@ -130,8 +122,25 @@ void calcHemispehreDir(in float3 lightDirW,in SampleGenerator sg, inout float3 n
     //tangent = normalize(tangent);
     bitangent = cross(tangent, lightDirW);
 
-    newDir = rndDirL.x * tangent + rndDirL.y * bitangent + rndDirL.z * lightDirW;
+    dir = dir.x * tangent + dir.y * bitangent + dir.z * lightDirW;
 }
+
+//Samples a random direction in a hemisphere or nornmal sphere
+void calcLightDirection(in float3 lightDirW,in SampleGenerator sg, inout float3 newDir, inout float lightPDF , bool hemisphereSample = true)
+{
+    //get random pos in hemisphere
+    float2 rnd = sampleNext2D(sg);  //random numbers for z and phi
+    if(!hemisphereSample)
+        rnd.x = 1.0 - 2.0 * rnd.x;
+    float r = sqrt(max(0.0, 1. - rnd.x * rnd.x));
+    float phi = rnd.y * 2 * M_PI;
+    newDir = float3(r * cos(phi), r * sin(phi), rnd.x);
+
+    fromLocalToWorld(lightDirW, newDir);
+    lightPDF = hemisphereSample ? Inv2Pi : Inv4Pi;
+}
+
+
 
 AABB calcPhotonAABB(in float3 center, in float radius)
 {
@@ -220,6 +229,8 @@ void rayGen()
     float3 lightDir = float3(0, 1, 0);
     float3 lightIntensity = float3(0);
 
+    uint type = 0;  //0 == Point, 1 == Area
+
     //Point or Dir light
     if (lightIndex < analyticLightCount)
     {
@@ -247,12 +258,14 @@ void rayGen()
         lightPos = emiTri.getPosition(bay);
         lightDir = emiTri.normal;
         lightIntensity = lc.getAverageRadiance(triIndex);
+        type = 1;
     }
 
    
     
     RayDesc ray;
-    calcHemispehreDir(lightDir, rayData.sg, ray.Direction);
+    float lightDirPDF = 0.0;
+    calcLightDirection(lightDir, rayData.sg, ray.Direction, lightDirPDF ,type == 0 ? false : true);
 
     //create photon
     float3 photonPos = float3(0, 0, 0);
@@ -263,7 +276,7 @@ void rayGen()
     photon.pad2 = 0.f;
     
     //light flux
-    float3 lightFlux = lightIntensity * 2 * M_PI * invPdf * gEmissiveScale;
+    float3 lightFlux = lightIntensity * lightDirPDF * invPdf * gEmissiveScale;
     photon.flux = lightFlux / float3(launchDim.x * launchDim.y);
 
     //ray tracing vars
