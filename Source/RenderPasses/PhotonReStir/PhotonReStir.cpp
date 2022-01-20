@@ -298,6 +298,10 @@ void PhotonReStir::collectPhotons(RenderContext* pRenderContext, const RenderDat
     mTracerCollect.pProgram->addDefines(getValidResourceDefines(kInputChannels, renderData));
     mTracerCollect.pProgram->addDefines(getValidResourceDefines(kOutputChannels, renderData));
 
+    mTracerCollect.pProgram->addDefine("COLLECT_GLOBAL_PHOTONS", !mDisableGlobalCollection ? "1" : "0");
+    mTracerCollect.pProgram->addDefine("COLLECT_CAUSTIC_PHOTONS", !mDisableCausticCollection ? "1" : "0");
+
+
     // Prepare program vars. This may trigger shader compilation.
     if (!mTracerCollect.pVars) mTracerCollect.pVars = RtProgramVars::create(mTracerCollect.pProgram, mTracerCollect.pBindingTable);;
     assert(mTracerCollect.pVars);
@@ -389,7 +393,14 @@ void PhotonReStir::renderUI(Gui::Widgets& widget)
     dirty |= widget.var("Russian Roulette", mRussianRoulette, 0.001f, 1.f, 0.001f);
     widget.tooltip("Probabilty that a Global Photon is saved");
 
+    //Disable Photon Collecion
+    widget.text("");
+    dirty |= widget.checkbox("Disable Global Photons", mDisableGlobalCollection);
+    widget.tooltip("Disables the collection of Global Photons. However they will still be generated");
+    dirty |= widget.checkbox("Disable Caustic Photons", mDisableCausticCollection);
+    widget.tooltip("Disables the collection of Caustic Photons. However they will still be generated");
     //Reset Iterations
+    widget.text("");
     widget.checkbox("Always Reset Iterations", mAlwaysResetIterations);
     widget.tooltip("Always Resets the Iterations, currently good for moving the camera");
     mResetIterations |= widget.button("Reset Iterations");
