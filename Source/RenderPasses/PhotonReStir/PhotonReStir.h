@@ -104,7 +104,7 @@ private:
     float                       mCausticRadius = 1.f;                 ///< Current Radius for caustic Photons
     float                       mGlobalRadius = 1.f;                  ///< Current Radius for global Photons
     float                       mRussianRoulette = 0.3f;                ///< Probabilty that a Global photon is saved
-    bool                        mUseStatisticProgressivePM = false;     ///< Activate Statistically Progressive Photon Mapping(SPPM)
+    bool                        mUseStatisticProgressivePM = true;     ///< Activate Statistically Progressive Photon Mapping(SPPM)
     float                       mSPPMAlphaGlobal = 0.7f;                 ///< Global Alpha for SPPM
     float                       mSPPMAlphaCaustic = 0.7f;                ///< Caustic Alpha for SPPM
     
