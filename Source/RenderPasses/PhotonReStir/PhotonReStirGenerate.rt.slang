@@ -18,14 +18,7 @@ cbuffer CB
     float       gRussianRoulette;   // Probabilty that an global photon is saved
     float       gEmissiveScale;   //scalar for the light intenity
     uint        gPRNGDimension;     // First available PRNG dimension.
-
 }
-
-static struct Data
-{
-    // Materials
-    StandardMaterial standardMaterial;
-} gData;
 
 // Inputs
 Texture2D<float4> gWorldPosition;
@@ -81,6 +74,7 @@ static const bool kUseEnvBackground = USE_ENV_BACKGROUND;
 static const float3 kDefaultBackgroundColor = float3(0, 0, 0);
 static const float kRayTMax = FLT_MAX;
 static const uint kMaxPhotonIndex = MAX_PHOTON_INDEX;
+
 
 /** Payload for scatter ray (80B).
 */

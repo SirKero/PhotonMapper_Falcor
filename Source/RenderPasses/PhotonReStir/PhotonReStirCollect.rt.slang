@@ -64,6 +64,9 @@ RWStructuredBuffer<AABB> gGlobalAABB;
 static const float3 kDefaultBackgroundColor = float3(0, 0, 0);
 static const float kRayTMax = FLT_MAX;
 
+static const bool kCollectGlobalPhotons = COLLECT_GLOBAL_PHOTONS;
+static const bool kCollectCausticPhotons = COLLECT_CAUSTIC_PHOTONS;
+
 /** Payload for ray (128B).
 */
 struct RayData
@@ -242,10 +245,10 @@ void rayGen()
     uint rayFlags = RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | RAY_FLAG_SKIP_TRIANGLES;
 
     //It is faster to trace two times in the different instance mask becaus of divergence
-    
-    TraceRay(gPhotonAS, rayFlags, 1 /* instanceInclusionMask */, 0 /* hitIdx */, 0 /* rayType count */, 0 /* missIdx */, ray, rayData);
-   
-    TraceRay(gPhotonAS, rayFlags, 2 /* instanceInclusionMask */, 0 /* hitIdx */, 0 /* rayType count */, 0 /* missIdx */, ray, rayData);
+    if (kCollectCausticPhotons)
+        TraceRay(gPhotonAS, rayFlags, 1 /* instanceInclusionMask */, 0 /* hitIdx */, 0 /* rayType count */, 0 /* missIdx */, ray, rayData);
+    if(kCollectGlobalPhotons)
+        TraceRay(gPhotonAS, rayFlags, 2 /* instanceInclusionMask */, 0 /* hitIdx */, 0 /* rayType count */, 0 /* missIdx */, ray, rayData);
 
     float w = 1 / M_PI;
 
