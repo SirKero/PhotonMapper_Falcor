@@ -56,6 +56,9 @@ public:
 
 private:
     PhotonReStir();
+
+    /** Prepares Program Variables and binds the sample generator
+    */
     void prepareVars();
 
     /** Prepares all buffers neede for the generate photon pass
