@@ -88,7 +88,7 @@ struct ScatterRayData
     float3  thp;            ///< Current path throughput. This is updated at each path vertex.
     uint    pathLength;     ///< Path length in number of path segments (0 at origin, 1 at first secondary hit, etc.). Max 2^31.
     float3  origin;         ///< Next path segment origin.
-    bool    specularRef;    ///< Set to true if the ray is reflected/transmitted specular
+    uint    lobeType;       ///< Mask for the type of reflection
     float3  direction;      ///< Next path segment direction.
     uint    _pad1;
 
@@ -100,7 +100,7 @@ struct ScatterRayData
     {
         ScatterRayData d;
         d.terminated = false;
-        d.specularRef = false;
+        d.lobeType = 0;
         d.pathLength = 0;
         d.radiance = float3(0, 0, 0);
         d.thp = float3(1, 1, 1);
@@ -140,8 +140,6 @@ void calcLightDirection(in float3 lightDirW,in SampleGenerator sg, inout float3 
     lightPDF = hemisphereSample ? Inv2Pi : Inv4Pi;
 }
 
-
-
 AABB calcPhotonAABB(in float3 center, in float radius)
 {
     AABB aabb = AABB.create(center - radius, center + radius);
@@ -165,9 +163,6 @@ void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleInt
     const uint materialID = gScene.getMaterialID(instanceID);
     ShadingData sd = prepareShadingData(v, materialID, gScene.materials[materialID], gScene.materialResources[materialID], -WorldRayDirection(), 0.f);
 
-    //compute ray origin for the new ray
-    float3 rayOrigin = sd.computeNewRayOrigin();
-
     float pdf = 0.f;
     uint lobe = 0;
     float3 wiLocal = sd.toLocal(sd.V);
@@ -179,12 +174,16 @@ void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleInt
 
     float3 res = bsdf.eval(wiLocal, woLocal);   //TODO: Check if order is correct
 
-
+    bool transmission = (lobe & (uint) LobeType::Transmission) > 0;
+    //compute ray origin for the new ray
+    float3 rayOrigin = sd.computeNewRayOrigin(!transmission);   //false is for transmissions
+    
     //set ray data
     rayData.origin = rayOrigin;
     rayData.direction = sd.fromLocal(woLocal);
     rayData.thp = valid ? res / pdf : float3(0);
-    rayData.specularRef = (lobe & (uint)LobeType::Specular) > 0;    //was reflected specular or diffuse
+    rayData.lobeType = lobe;                         //save lobe type
+    rayData.thp = min(max(rayData.thp, float3(0)), float3(1.0));
     //if throughput is 0, return
     if(!any(rayData.thp > 0.f))
         rayData.terminated = true;
@@ -301,13 +300,12 @@ void rayGen()
         
         photonPos = rayData.origin;
         photon.dir = ray.Direction;
-        reflectedDiffuse = !rayData.specularRef;
+        reflectedDiffuse = ((uint) LobeType::DiffuseReflection & rayData.lobeType) > 0;
 
         //save photon
         float rndRoulette = sampleNext1D(rayData.sg);
         bool roulette = rndRoulette <= gRussianRoulette;
 
-        
         
         if (reflectedDiffuse)
         {
