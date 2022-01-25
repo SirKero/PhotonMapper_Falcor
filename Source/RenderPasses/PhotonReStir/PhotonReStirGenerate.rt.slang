@@ -183,7 +183,7 @@ void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleInt
     rayData.direction = sd.fromLocal(woLocal);
     rayData.thp = valid ? res / pdf : float3(0);
     rayData.lobeType = lobe;                         //save lobe type
-    rayData.thp = min(max(rayData.thp, float3(0)), float3(1.0));
+    rayData.thp = min(max(rayData.thp, float3(0)), float3(1.0));        //there is a low probabilty that transmission creates a valid ray with broken thp
     //if throughput is 0, return
     if(!any(rayData.thp > 0.f))
         rayData.terminated = true;
