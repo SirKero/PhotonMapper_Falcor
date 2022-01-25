@@ -172,18 +172,19 @@ void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleInt
     bsdf.setup(sd);
     bool valid = bsdf.sample(wiLocal, woLocal, pdf, weight, lobe, rayData.sg);
 
-    float3 res = bsdf.eval(wiLocal, woLocal);   //TODO: Check if order is correct
+    float3 res = bsdf.eval(wiLocal, woLocal);
 
     bool transmission = (lobe & (uint) LobeType::Transmission) > 0;
+    bool isDelta = (lobe & (uint) LobeType::Delta) > 0; //checks if its a delta reflection/transmission. For Glas-Materials
     //compute ray origin for the new ray
     float3 rayOrigin = sd.computeNewRayOrigin(!transmission);   //false is for transmissions
     
     //set ray data
     rayData.origin = rayOrigin;
     rayData.direction = sd.fromLocal(woLocal);
-    rayData.thp = valid ? res / pdf : float3(0);
+    rayData.thp = valid ? isDelta ? sd.transmission: res / pdf: float3(0);   //Throughput depending if it is valid. IsDelta checks for Glas Material (res and pdf are 0 for them)
     rayData.lobeType = lobe;                         //save lobe type
-    rayData.thp = min(max(rayData.thp, float3(0)), float3(1.0));        //there is a low probabilty that transmission creates a valid ray with broken thp
+    rayData.thp = min(max(rayData.thp, float3(0)), float3(1.0)) * weight;        //there is a low probabilty that transmission creates a valid ray with broken thp
     //if throughput is 0, return
     if(!any(rayData.thp > 0.f))
         rayData.terminated = true;
