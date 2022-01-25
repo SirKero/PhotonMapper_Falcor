@@ -1,11 +1,11 @@
 #include "Utils/Math/MathConstants.slangh"
 
 import Scene.Raytracing;
-importUtils.Math.MathHelpers;
-importUtils.Sampling.SampleGenerator;
-importExperimental.Scene.Material.StandardMaterial;
-importExperimental.Scene.Material.MaterialHelpers;
-importExperimental.Scene.Lights.LightHelpers;
+import Utils.Math.MathHelpers;
+import Utils.Sampling.SampleGenerator;
+import Experimental.Scene.Material.StandardMaterial;
+import Experimental.Scene.Material.MaterialHelpers;
+import Experimental.Scene.Lights.LightHelpers;
 
 
 cbuffer CB
@@ -63,7 +63,40 @@ void miss(inout ScatterRayData rayData : SV_RayPayload)
 [shader("closesthit")]
 void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleIntersectionAttributes attribs : SV_IntersectionAttributes)
 {
-   
+   // Evaluate Falcor's material parameters at the hit point.
+    GeometryInstanceID instanceID = getGeometryInstanceID();
+    VertexData v = getVertexData(instanceID, PrimitiveIndex(), attribs);
+    const uint materialID = gScene.getMaterialID(instanceID);
+    ShadingData sd = prepareShadingData(v, materialID, gScene.materials[materialID], gScene.materialResources[materialID], -WorldRayDirection(), 0.f);
+
+    float pdf = 0.f;
+    uint lobe = 0;
+    float3 wiLocal = sd.toLocal(sd.V);
+    float3 woLocal = { }, weight = { };
+
+    FalcorBSDF bsdf;
+    bsdf.setup(sd);
+    bool valid = bsdf.sample(wiLocal, woLocal, pdf, weight, lobe, rayData.sg);
+
+    float3 res = bsdf.eval(wiLocal, woLocal); //TODO: Check if order is correct
+
+    bool transmission = (lobe & (uint) LobeType::Transmission) > 0;
+    //compute ray origin for the new ray
+    float3 rayOrigin = sd.computeNewRayOrigin(!transmission); //false is for transmissions
+
+    bool diffuseHit = (lobe & (uint) LobeType::DiffuseReflection) > 0;
+    rayData.radiance = diffuseHit ? sd.diffuse : float3(0);
+    //set ray data
+    rayData.origin = rayOrigin;
+    rayData.direction = sd.fromLocal(woLocal);
+    rayData.thp = valid ? res / pdf : float3(0);
+    rayData.lobeType = lobe; //save lobe type
+    rayData.thp = min(max(rayData.thp, float3(0)), float3(1.0)); //there is a low probabilty that transmission creates a valid ray with broken thp
+    //if throughput is 0, return
+    if (!any(rayData.thp > 0.f))
+        rayData.terminated = true;
+    
+    rayData.pathLength++;
 }
 
 [shader("raygeneration")]
@@ -71,4 +104,35 @@ void rayGen()
 {
     uint2 launchIndex = DispatchRaysIndex().xy;
     uint2 launchDim = DispatchRaysDimensions().xy;
+
+    float3 outColor = float3(0);
+    float3 throughput = float3(1);
+    ScatterRayData rayData = ScatterRayData.create();
+    rayData.sg = SampleGenerator.create(launchIndex, gFrameCount); //lazy init for now
+    Ray ray = gScene.camera.computeRayThinlens(launchIndex, launchDim, sampleNext2D(rayData.sg)); //get a random jittered ray
+    uint rayFlags = 0;
+    
+    //Trace recursive
+    for (uint i = 0; i < kMaxRecursion; i++)
+    {
+        TraceRay(gScene.rtAccel, rayFlags, 0xff /* instanceInclusionMask */, 0 /* hitIdx */, rayTypeCount, 0 /* missIdx */, ray.toRayDesc(), rayData);
+
+        if (rayData.terminated)
+            break;
+
+        throughput *= rayData.thp;  //accumulate throughput
+        //calculate color and stop if we are diffuse
+        if (((uint) LobeType::DiffuseReflection & rayData.lobeType) > 0)
+        {
+            outColor = rayData.radiance * throughput;
+            break;
+        }
+        
+        //update ray for next iteration
+        ray.origin = rayData.origin;
+        ray.dir = rayData.direction;
+    }
+    
+    gOutput[launchIndex] = float4(outColor, 1);
+
 }

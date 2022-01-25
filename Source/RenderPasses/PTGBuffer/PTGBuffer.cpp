@@ -132,6 +132,8 @@ void PTGBuffer::execute(RenderContext* pRenderContext, const RenderData& renderD
 
     // Trace the Scene
     mpScene->raytrace(pRenderContext, mTracer.pProgram.get(), mTracer.pVars, uint3(targetDim, 1));
+
+    mFrameCount++;
 }
 
 void PTGBuffer::setScene(RenderContext* pRenderContext, const Scene::SharedPtr& pScene)
