@@ -28,6 +28,7 @@
 #pragma once
 #include "Falcor.h"
 #include "FalcorExperimental.h"
+#include "Utils/Sampling/SampleGenerator.h"
 
 using namespace Falcor;
 
@@ -49,10 +50,44 @@ public:
     virtual void compile(RenderContext* pContext, const CompileData& compileData) override {}
     virtual void execute(RenderContext* pRenderContext, const RenderData& renderData) override;
     virtual void renderUI(Gui::Widgets& widget) override;
-    virtual void setScene(RenderContext* pRenderContext, const Scene::SharedPtr& pScene) override {}
+    virtual void setScene(RenderContext* pRenderContext, const Scene::SharedPtr& pScene) override;
     virtual bool onMouseEvent(const MouseEvent& mouseEvent) override { return false; }
     virtual bool onKeyEvent(const KeyboardEvent& keyEvent) override { return false; }
 
 private:
-    PTGBuffer() = default;
+    PTGBuffer();
+
+    /** Prepares Program Variables and binds the sample generator
+    */
+    void prepareVars();
+
+    // Internal state
+    Scene::SharedPtr            mpScene;                    ///< Current scene.
+    SampleGenerator::SharedPtr  mpSampleGenerator;          ///< GPU sample generator.
+
+    // Configuration
+    uint                        mRecursionDepth = 5;        ///< Depth of recursion (0 = none).
+
+     // Runtime data
+    uint                        mFrameCount = 0;            ///< Frame count since last Reset
+    bool                        mOptionsChanged = false;
+
+    //Ray Tracing Program
+    struct RayTraceProgramHelper
+    {
+        RtProgram::SharedPtr pProgram;
+        RtBindingTable::SharedPtr pBindingTable;
+        RtProgramVars::SharedPtr pVars;
+
+        static const RayTraceProgramHelper create()
+        {
+            RayTraceProgramHelper r;
+            r.pProgram = nullptr;
+            r.pBindingTable = nullptr;
+            r.pVars = nullptr;
+            return r;
+        }
+    };
+
+    RayTraceProgramHelper mTracer;
 };

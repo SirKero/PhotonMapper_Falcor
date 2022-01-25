@@ -6,4 +6,7 @@
   <ItemGroup>
     <ClInclude Include="PTGBuffer.h" />
   </ItemGroup>
+  <ItemGroup>
+    <ShaderSource Include="PTGBuffer.rt.slang" />
+  </ItemGroup>
 </Project>
