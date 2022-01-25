@@ -78,23 +78,24 @@ void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleInt
     bsdf.setup(sd);
     bool valid = bsdf.sample(wiLocal, woLocal, pdf, weight, lobe, rayData.sg);
 
-    float3 res = bsdf.eval(wiLocal, woLocal); //TODO: Check if order is correct
+    float3 res = bsdf.eval(wiLocal, woLocal) * weight; //TODO: Check if order is correct
 
     bool transmission = (lobe & (uint) LobeType::Transmission) > 0;
+    bool isDelta = (lobe & (uint) LobeType::Delta) > 0;
     //compute ray origin for the new ray
     float3 rayOrigin = sd.computeNewRayOrigin(!transmission); //false is for transmissions
-
     bool diffuseHit = (lobe & (uint) LobeType::DiffuseReflection) > 0;
+    
     rayData.radiance = diffuseHit ? sd.diffuse : float3(0);
     //set ray data
     rayData.origin = rayOrigin;
     rayData.direction = sd.fromLocal(woLocal);
-    rayData.thp = valid ? res / pdf : float3(0);
+    rayData.thp = valid ? isDelta ? sd.transmission * weight : res / pdf : float3(0);
     rayData.lobeType = lobe; //save lobe type
     rayData.thp = min(max(rayData.thp, float3(0)), float3(1.0)); //there is a low probabilty that transmission creates a valid ray with broken thp
     //if throughput is 0, return
     if (!any(rayData.thp > 0.f))
-        rayData.terminated = true;
+        rayData.terminated = false;
     
     rayData.pathLength++;
 }
@@ -122,6 +123,13 @@ void rayGen()
 
         throughput *= rayData.thp;  //accumulate throughput
         //calculate color and stop if we are diffuse
+        /*
+        if (((uint) LobeType::DeltaTransmission & rayData.lobeType) > 0)
+        {
+            outColor = float3(0, 1, 0);
+            break;
+        }
+        */
         if (((uint) LobeType::DiffuseReflection & rayData.lobeType) > 0)
         {
             outColor = rayData.radiance * throughput;
