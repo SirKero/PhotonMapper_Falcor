@@ -122,20 +122,14 @@ void rayGen()
     //Trace recursive
     for (uint i = 0; i < kMaxRecursion; i++)
     {
+        throughput *= rayData.thp; //accumulate throughput
+        
         TraceRay(gScene.rtAccel, rayFlags, 0xff /* instanceInclusionMask */, 0 /* hitIdx */, rayTypeCount, 0 /* missIdx */, ray.toRayDesc(), rayData);
 
         if (rayData.terminated)
             break;
 
-        throughput *= rayData.thp;  //accumulate throughput
         //calculate color and stop if we are diffuse
-        /*
-        if (((uint) LobeType::DeltaTransmission & rayData.lobeType) > 0)
-        {
-            outColor = float3(0, 1, 0);
-            break;
-        }
-        */
         if (((uint) LobeType::DiffuseReflection & rayData.lobeType) > 0)
         {
             break;
