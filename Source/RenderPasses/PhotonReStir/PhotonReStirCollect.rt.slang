@@ -73,7 +73,7 @@ struct RayData
 {
     float3 radiance; ///< Accumulated outgoing radiance from path.
     bool terminated; ///< Set to true when path is terminated.
-    float3 wNormal;
+    uint3 wNormalFaceN; //< 16 bit Normal , 16 bit Face normal encoded.
     float texU;
     float3 wView;
     float texV;
@@ -89,7 +89,7 @@ struct RayData
         RayData r;
         r.radiance = float3(0);
         r.terminated = false;
-        r.wNormal = float3(0);
+        r.wNormalFaceN = uint3(0);
         r.texU = 0.0;
         r.wView = float3(0);
         r.texV = 0.0;
@@ -101,7 +101,23 @@ struct RayData
 
         return r;
     }
+
 };
+
+//Encode Normal + Face Normal
+uint3 encodeNormalFaceNormal(in float3 normal, in float3 faceNormal)
+{
+    uint3 normal16 = f32tof16(normal) << 16;
+    uint3 faceNormal16 = f32tof16(faceNormal);
+    return (normal16 | faceNormal16);
+}
+
+//Decode Normal + Face Normal
+void decodeNormalFaceNormal(in uint3 encodedNormal, out float3 normal, out float3 faceNormal)
+{
+    faceNormal = f16tof32(encodedNormal);
+    normal = f16tof32(encodedNormal >> 16);
+}
 
 struct SphereAttribs
 {
@@ -153,9 +169,10 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
     matPara.specularRoughness = rayData.specularRoughness;
     matPara.emissive = rayData.emissive;
     matPara.extraParams = rayData.extraParams;
-    float3 faceNormal = gFaceNormal[DispatchRaysIndex().xy].xyz;    //TODO: encode that in the struct
+    float3 wNormal, faceNormal;
+    decodeNormalFaceNormal(rayData.wNormalFaceN, wNormal, faceNormal);
 
-    GeometryParams geoPara = prepareGeometryParams(ObjectRayOrigin() /*wPos*/, rayData.wView, rayData.wNormal, rayData.wTangent, faceNormal, float2(rayData.texU, rayData.texV));
+    GeometryParams geoPara = prepareGeometryParams(ObjectRayOrigin() /*wPos*/, rayData.wView, wNormal, rayData.wTangent, faceNormal, float2(rayData.texU, rayData.texV));
 
     ShadingData sd = prepareShadingData(geoPara, matPara);
     FalcorBSDF bsdf;
@@ -225,7 +242,6 @@ void rayGen()
     float2 texCoord = gTextureCoordinate[launchIndex];
     //prepare payload
     RayData rayData = RayData.create();
-    rayData.wNormal = gWorldNormal[launchIndex].xyz;
     rayData.texU = texCoord.x;
     rayData.wView = gViewWorld[launchIndex].xyz;
     rayData.texV = texCoord.y;
@@ -234,13 +250,16 @@ void rayGen()
     rayData.specularRoughness = gSpecularRoughness[launchIndex];
     rayData.emissive = gEmissive[launchIndex];
     rayData.extraParams = gMaterialExtra[launchIndex];
-    //rayData.wFaceNormal = gFaceNormal[launchIndex];
+    //encode normal
+    float3 wNormal = gWorldNormal[launchIndex].xyz;
+    float3 faceNormal = gFaceNormal[launchIndex].xyz;
+    rayData.wNormalFaceN = encodeNormalFaceNormal(wNormal, faceNormal);
     
     RayDesc ray;
     ray.Origin = wPos.xyz;
     ray.TMin = 0.001;
     ray.TMax = 0.01;
-    ray.Direction = rayData.wNormal;
+    ray.Direction = float3(0, 1, 0);
     
     uint rayFlags = RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | RAY_FLAG_SKIP_TRIANGLES;
 
