@@ -56,7 +56,13 @@ void miss(inout ScatterRayData rayData : SV_RayPayload)
 {
     rayData.terminated = true;
 
-    //TODO: Add enviroment map color if ray misses scene 
+    //TODO: Add enviroment map color if ray misses scene
+    if (kUseEnvBackground)
+    {
+        float3 Le = gScene.envMap.eval(WorldRayDirection());
+        rayData.radiance += Le;
+    }
+
 }
 
 
@@ -85,14 +91,14 @@ void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleInt
     //compute ray origin for the new ray
     float3 rayOrigin = sd.computeNewRayOrigin(!transmission); //false is for transmissions
     bool diffuseHit = (lobe & (uint) LobeType::DiffuseReflection) > 0;
-    
+        
     rayData.radiance = diffuseHit ? sd.diffuse : float3(0);
     //set ray data
     rayData.origin = rayOrigin;
     rayData.direction = sd.fromLocal(woLocal);
-    rayData.thp = valid ? isDelta ? sd.transmission * weight : res / pdf : float3(0);
+    rayData.thp = valid ? isDelta ? float3(1.0) : res / pdf : float3(0);
     rayData.lobeType = lobe; //save lobe type
-    rayData.thp = min(max(rayData.thp, float3(0)), float3(1.0)); //there is a low probabilty that transmission creates a valid ray with broken thp
+    rayData.thp = min(max(rayData.thp, float3(0)), float3(1.0)) * weight; //there is a low probabilty that transmission creates a valid ray with broken thp
     //if throughput is 0, return
     if (!any(rayData.thp > 0.f))
         rayData.terminated = false;
@@ -132,7 +138,6 @@ void rayGen()
         */
         if (((uint) LobeType::DiffuseReflection & rayData.lobeType) > 0)
         {
-            outColor = rayData.radiance * throughput;
             break;
         }
         
@@ -140,7 +145,8 @@ void rayGen()
         ray.origin = rayData.origin;
         ray.dir = rayData.direction;
     }
-    
+
+    outColor = rayData.radiance * throughput;
     gOutput[launchIndex] = float4(outColor, 1);
 
 }
