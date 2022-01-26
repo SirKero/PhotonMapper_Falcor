@@ -15,6 +15,16 @@ cbuffer CB
 
 // Outputs
 RWTexture2D<float4> gOutput;
+RWTexture2D<float4> gPosW;
+RWTexture2D<float4> gNormW;
+RWTexture2D<float4> gTangentW;
+RWTexture2D<float4> gTexC;
+RWTexture2D<float4> gDiffuseOpacity;
+RWTexture2D<float4> gSpecRough;
+RWTexture2D<float4> gEmissive;
+RWTexture2D<float4> gMatlExtra;
+RWTexture2D<float4> gViewWorld;
+RWTexture2D<float4> gFaceNormal;
 
 static const uint kMaxRecursion = MAX_RECURSION;
 static const bool kUseEnvBackground = USE_ENV_BACKGROUND;

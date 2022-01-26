@@ -38,7 +38,17 @@ namespace
     const uint32_t kMaxRecursionDepth = 2u;
 
     const ChannelList kOutputChannels = {
-        {"Output",      "gOutput",          "Testing Output Image"}
+        {"Output",          "gOutput",          "Testing Output Image"},
+        { "posW",           "gPosW",            "world space position",         true /* optional */, ResourceFormat::RGBA32Float },
+        { "normW",          "gNormW",           "world space normal",           true /* optional */, ResourceFormat::RGBA32Float },
+        { "tangentW",       "gTangentW",        "world space tangent",          true /* optional */, ResourceFormat::RGBA32Float },
+        { "texC",           "gTexC",            "texture coordinates",          true /* optional */, ResourceFormat::RGBA32Float },
+        { "diffuseOpacity", "gDiffuseOpacity",  "diffuse color and opacity",    true /* optional */, ResourceFormat::RGBA32Float },
+        { "specRough",      "gSpecRough",       "specular color and roughness", true /* optional */, ResourceFormat::RGBA32Float },
+        { "emissive",       "gEmissive",        "emissive color",               true /* optional */, ResourceFormat::RGBA32Float },
+        { "matlExtra",      "gMatlExtra",       "additional material data",     true /* optional */, ResourceFormat::RGBA32Float },
+        { "viewW",          "gViewWorld",       "World View Direction",             true /* optional */, ResourceFormat::RGBA32Float },
+        { "faceNormal",     "gFaceNormal",      "Normal for the face",              true /* optional */, ResourceFormat::RGBA32Float },
     };
 }
 
