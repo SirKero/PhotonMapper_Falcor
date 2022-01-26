@@ -100,10 +100,13 @@ private:
     Scene::SharedPtr            mpScene;                    ///< Current scene.
     SampleGenerator::SharedPtr  mpSampleGenerator;          ///< GPU sample generator.
 
+    //Constants
+    const float                 kMinPhotonRadius = 0.005f;                ///< At radius 0.005 Photons are still visible
+
     // Configuration
     uint                        mMaxBounces = 5;                        ///< Depth of recursion (0 = none).
-    float                       mCausticRadiusStart = 0.01f;            ///< Start value for the caustic Radius
-    float                       mGlobalRadiusStart = 0.04f;             ///< Start value for the caustic Radius
+    float                       mCausticRadiusStart = 0.06f;            ///< Start value for the caustic Radius
+    float                       mGlobalRadiusStart = 0.24f;             ///< Start value for the caustic Radius
     float                       mCausticRadius = 1.f;                 ///< Current Radius for caustic Photons
     float                       mGlobalRadius = 1.f;                  ///< Current Radius for global Photons
     float                       mRussianRoulette = 0.3f;                ///< Probabilty that a Global photon is saved

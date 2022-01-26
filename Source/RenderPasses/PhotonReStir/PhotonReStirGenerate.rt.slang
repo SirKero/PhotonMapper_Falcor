@@ -75,6 +75,8 @@ static const float3 kDefaultBackgroundColor = float3(0, 0, 0);
 static const float kRayTMax = FLT_MAX;
 static const uint kMaxPhotonIndex = MAX_PHOTON_INDEX;
 
+static const float k_2Pi = 6.28318530717958647692;
+static const float k_4Pi = 12.5663706143591729538;
 static const float Inv2Pi = 0.15915494309189533577;
 static const float Inv4Pi = 0.07957747154594766788;
 
@@ -137,7 +139,7 @@ void calcLightDirection(in float3 lightDirW,in SampleGenerator sg, inout float3 
     newDir = float3(r * cos(phi), r * sin(phi), rnd.x);
 
     fromLocalToWorld(lightDirW, newDir);
-    lightPDF = hemisphereSample ? Inv2Pi : Inv4Pi;
+    lightPDF = hemisphereSample ? k_2Pi : k_4Pi;
 }
 
 AABB calcPhotonAABB(in float3 center, in float radius)

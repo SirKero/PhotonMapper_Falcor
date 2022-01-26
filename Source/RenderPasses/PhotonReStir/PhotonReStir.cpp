@@ -195,8 +195,11 @@ void PhotonReStir::execute(RenderContext* pRenderContext, const RenderData& rend
             float itF = static_cast<float>(mFrameCount);
             mGlobalRadius *= sqrt((itF + mSPPMAlphaGlobal) / (itF + 1.0f));
             mCausticRadius *= sqrt((itF + mSPPMAlphaCaustic) / (itF + 1.0f));
+
+            //Clamp to min radius
+            mGlobalRadius = std::max(mGlobalRadius, kMinPhotonRadius);
+            mCausticRadius = std::max(mCausticRadius, kMinPhotonRadius);
         }
-        //TODO: Add progressive if activated
     
 }
 
@@ -368,9 +371,9 @@ void PhotonReStir::renderUI(Gui::Widgets& widget)
     widget.tooltip("Activate Statistically Progressive Photon Mapping");
 
     if (mUseStatisticProgressivePM) {
-        dirty |= widget.var("Global Alpha", mSPPMAlphaGlobal, 0.0f, 1.0f, 0.001f);
+        dirty |= widget.var("Global Alpha", mSPPMAlphaGlobal, 0.1f, 1.0f, 0.001f);
         widget.tooltip("Sets the Alpha in SPPM for the Global Photons");
-        dirty |= widget.var("Caustic Alpha", mSPPMAlphaGlobal, 0.0f, 1.0f, 0.001f);
+        dirty |= widget.var("Caustic Alpha", mSPPMAlphaGlobal, 0.1f, 1.0f, 0.001f);
         widget.tooltip("Sets the Alpha in SPPM for the Caustic Photons");
     }
     
@@ -386,9 +389,9 @@ void PhotonReStir::renderUI(Gui::Widgets& widget)
     widget.tooltip("Scales the intensity of all Light Sources");
 
     //Radius settings
-    dirty |= widget.var("Caustic Radius Start", mCausticRadiusStart, 0.0f, FLT_MAX, 0.001f);
+    dirty |= widget.var("Caustic Radius Start", mCausticRadiusStart, kMinPhotonRadius, FLT_MAX, 0.001f);
     widget.tooltip("The start value for the radius of caustic Photons");
-    dirty |= widget.var("Global Radius Start", mGlobalRadiusStart, 0.0f, FLT_MAX, 0.001f);
+    dirty |= widget.var("Global Radius Start", mGlobalRadiusStart, kMinPhotonRadius, FLT_MAX, 0.001f);
     widget.tooltip("The start value for the radius of global Photons");
     dirty |= widget.var("Russian Roulette", mRussianRoulette, 0.001f, 1.f, 0.001f);
     widget.tooltip("Probabilty that a Global Photon is saved");
