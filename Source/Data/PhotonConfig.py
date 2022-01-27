@@ -23,6 +23,7 @@ def render_graph_DefaultRenderGraph():
     loadRenderPassLibrary('MinimalPathTracer.dll')
     loadRenderPassLibrary('PassLibraryTemplate.dll')
     loadRenderPassLibrary('PixelInspectorPass.dll')
+    loadRenderPassLibrary('PTGBuffer.dll')
     loadRenderPassLibrary('SceneDebugger.dll')
     loadRenderPassLibrary('SimplePostFX.dll')
     loadRenderPassLibrary('SkyBox.dll')
@@ -52,11 +53,11 @@ def render_graph_DefaultRenderGraph():
 m.addGraph(render_graph_DefaultRenderGraph())
 
 # Scene
-m.loadScene('Arcade/Arcade.pyscene')
+m.loadScene('E:/VSProjects/Models/FalcorTestScenes/CornellBoxGlass.pyscene')
 m.scene.renderSettings = SceneRenderSettings(useEnvLight=True, useAnalyticLights=True, useEmissiveLights=True, useVolumes=True)
-m.scene.camera.position = float3(-3.192799,2.636635,3.310391)
-m.scene.camera.target = float3(-2.570774,2.199951,2.660473)
-m.scene.camera.up = float3(-0.001150,0.999999,0.001203)
+m.scene.camera.position = float3(0.000000,4.500000,10.500000)
+m.scene.camera.target = float3(0.000000,4.200000,9.000000)
+m.scene.camera.up = float3(0.000000,1.000000,0.000000)
 m.scene.cameraSpeed = 1.0
 
 # Window Configuration

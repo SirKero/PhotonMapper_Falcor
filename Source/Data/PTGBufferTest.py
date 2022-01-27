@@ -35,7 +35,10 @@ def render_graph_DefaultRenderGraph():
     loadRenderPassLibrary('WhittedRayTracer.dll')
     PTGBuffer = createPass('PTGBuffer')
     g.addPass(PTGBuffer, 'PTGBuffer')
-    g.markOutput('PTGBuffer.Output')
+    AccumulatePass = createPass('AccumulatePass', {'enabled': True, 'autoReset': True, 'precisionMode': AccumulatePrecision.Single, 'subFrameCount': 0, 'maxAccumulatedFrames': 0})
+    g.addPass(AccumulatePass, 'AccumulatePass')
+    g.addEdge('PTGBuffer.Output', 'AccumulatePass.input')
+    g.markOutput('AccumulatePass.output')
     return g
 
 DefaultRenderGraph = render_graph_DefaultRenderGraph()
