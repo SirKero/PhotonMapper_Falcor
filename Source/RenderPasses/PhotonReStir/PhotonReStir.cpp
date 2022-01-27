@@ -137,6 +137,12 @@ void PhotonReStir::execute(RenderContext* pRenderContext, const RenderData& rend
         mOptionsChanged = false;
     }
 
+    //If we have no scene just return
+    if (!mpScene)
+    {
+        return;
+    }
+
     //Reset Frame Count if conditions are met
     if (mResetIterations || mAlwaysResetIterations || is_set(mpScene->getUpdates(), Scene::UpdateFlags::CameraMoved)) {
         mFrameCount = 0;
@@ -147,12 +153,6 @@ void PhotonReStir::execute(RenderContext* pRenderContext, const RenderData& rend
     if (mFrameCount == 0) {
         mCausticRadius = mCausticRadiusStart;
         mGlobalRadius = mGlobalRadiusStart;
-    }
-
-    //If we have no scene just return
-    if (!mpScene)
-    {
-        return;
     }
 
     if (is_set(mpScene->getUpdates(), Scene::UpdateFlags::GeometryChanged))
