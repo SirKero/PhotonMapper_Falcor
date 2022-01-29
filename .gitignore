@@ -12,3 +12,9 @@ Source/RenderPasses/*
 !Source/RenderPasses/PhotonReStir/
 !Source/RenderPasses/PTGBuffer/
 !Source/Data/
+!Source/Tools
+Source/Tools/*
+!Source/Tools/RenderGraphEditor
+
+*.vcxproj
+*.vcxproj.user
