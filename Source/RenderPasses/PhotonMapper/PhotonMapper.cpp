@@ -25,7 +25,7 @@
  # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
-#include "PhotonReStir.h"
+#include "PhotonMapper.h"
 #include <RenderGraph/RenderPassHelpers.h>
 
 //for random seed generation
@@ -37,8 +37,8 @@ constexpr float kUint32tMaxF = float((uint32_t)-1);
 
 namespace
 {
-    const char kShaderGeneratePhoton[] = "RenderPasses/PhotonReStir/PhotonReStirGenerate.rt.slang";
-    const char kShaderCollectPhoton[] = "RenderPasses/PhotonReStir/PhotonReStirCollect.rt.slang";
+    const char kShaderGeneratePhoton[] = "RenderPasses/PhotonMapper/PhotonMapperGenerate.rt.slang";
+    const char kShaderCollectPhoton[] = "RenderPasses/PhotonMapper/PhotonMapperCollect.rt.slang";
     const char kDesc[] = "Shoots Photons and then gathers them";
 
     // Ray tracing settings that affect the traversal stack size.
@@ -84,30 +84,30 @@ extern "C" __declspec(dllexport) const char* getProjDir()
 
 extern "C" __declspec(dllexport) void getPasses(Falcor::RenderPassLibrary& lib)
 {
-    lib.registerClass("PhotonReStir", kDesc, PhotonReStir::create);
+    lib.registerClass("PhotonMapper", kDesc, PhotonMapper::create);
 }
 
-PhotonReStir::SharedPtr PhotonReStir::create(RenderContext* pRenderContext, const Dictionary& dict)
+PhotonMapper::SharedPtr PhotonMapper::create(RenderContext* pRenderContext, const Dictionary& dict)
 {
-    SharedPtr pPass = SharedPtr(new PhotonReStir);
+    SharedPtr pPass = SharedPtr(new PhotonMapper);
     return pPass;
 }
 
-PhotonReStir::PhotonReStir()
+PhotonMapper::PhotonMapper()
 {
     mpSampleGenerator = SampleGenerator::create(SAMPLE_GENERATOR_UNIFORM);
     assert(mpSampleGenerator);
 }
 
 
-std::string PhotonReStir::getDesc() { return kDesc; }
+std::string PhotonMapper::getDesc() { return kDesc; }
 
-Dictionary PhotonReStir::getScriptingDictionary()
+Dictionary PhotonMapper::getScriptingDictionary()
 {
     return Dictionary();
 }
 
-RenderPassReflection PhotonReStir::reflect(const CompileData& compileData)
+RenderPassReflection PhotonMapper::reflect(const CompileData& compileData)
 {
     // Define the required resources here
     RenderPassReflection reflector;
@@ -120,13 +120,13 @@ RenderPassReflection PhotonReStir::reflect(const CompileData& compileData)
     return reflector;
 }
 
-void PhotonReStir::compile(RenderContext* pContext, const CompileData& compileData)
+void PhotonMapper::compile(RenderContext* pContext, const CompileData& compileData)
 {
     // put reflector outputs here and create again if needed
     
 }
 
-void PhotonReStir::execute(RenderContext* pRenderContext, const RenderData& renderData)
+void PhotonMapper::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
     /// Update refresh flag if options that affect the output have changed.
     auto& dict = renderData.getDictionary();
@@ -203,7 +203,7 @@ void PhotonReStir::execute(RenderContext* pRenderContext, const RenderData& rend
     
 }
 
-void PhotonReStir::generatePhotons(RenderContext* pRenderContext, const RenderData& renderData)
+void PhotonMapper::generatePhotons(RenderContext* pRenderContext, const RenderData& renderData)
 {
 
     //Reset counter Buffers
@@ -273,7 +273,7 @@ void PhotonReStir::generatePhotons(RenderContext* pRenderContext, const RenderDa
     mpScene->raytrace(pRenderContext, mTracerGenerate.pProgram.get(), mTracerGenerate.pVars, uint3(targetDim, 1));
 }
 
-bool PhotonReStir::syncPasses(RenderContext* pRenderContext)
+bool PhotonMapper::syncPasses(RenderContext* pRenderContext)
 {
     //Copy the photonConter to a CPU Buffer
     pRenderContext->uavBarrier(mPhotonCounterBuffer.counter.get());
@@ -293,7 +293,7 @@ bool PhotonReStir::syncPasses(RenderContext* pRenderContext)
     return true;
 }
 
-void PhotonReStir::collectPhotons(RenderContext* pRenderContext, const RenderData& renderData)
+void PhotonMapper::collectPhotons(RenderContext* pRenderContext, const RenderData& renderData)
 {
 
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
@@ -352,7 +352,7 @@ void PhotonReStir::collectPhotons(RenderContext* pRenderContext, const RenderDat
 
 }
 
-void PhotonReStir::renderUI(Gui::Widgets& widget)
+void PhotonMapper::renderUI(Gui::Widgets& widget)
 {
     bool dirty = false;
 
@@ -415,7 +415,7 @@ void PhotonReStir::renderUI(Gui::Widgets& widget)
         mOptionsChanged = true;
 }
 
-void PhotonReStir::setScene(RenderContext* pRenderContext, const Scene::SharedPtr& pScene)
+void PhotonMapper::setScene(RenderContext* pRenderContext, const Scene::SharedPtr& pScene)
 {
     // Clear data for previous scene.
    // After changing scene, the raytracing program should to be recreated.
@@ -463,12 +463,12 @@ void PhotonReStir::setScene(RenderContext* pRenderContext, const Scene::SharedPt
             desc.setMaxTraceRecursionDepth(kMaxRecursionDepth);
             desc.addDefines(mpScene->getSceneDefines());
 
-            mTracerCollect.pBindingTable = RtBindingTable::create(1, 1, mUsePhotonReStir ? 1 : 2);
+            mTracerCollect.pBindingTable = RtBindingTable::create(1, 1, mUsePhotonMapper ? 1 : 2);
             auto& sbt = mTracerCollect.pBindingTable;
             sbt->setRayGen(desc.addRayGen("rayGen"));
             sbt->setMiss(0, desc.addMiss("miss"));
             auto hitShader = desc.addHitGroup("closestHit", "anyHit", "intersection");
-            for (int i = 0; i < (mUsePhotonReStir ? 1 : 2); i++) {
+            for (int i = 0; i < (mUsePhotonMapper ? 1 : 2); i++) {
                 sbt->setHitGroup(0, i, hitShader);
             }
 
@@ -477,7 +477,7 @@ void PhotonReStir::setScene(RenderContext* pRenderContext, const Scene::SharedPt
     }
 }
 
-void PhotonReStir::prepareVars()
+void PhotonMapper::prepareVars()
 {
     assert(mTracerGenerate.pProgram);
 
@@ -494,7 +494,7 @@ void PhotonReStir::prepareVars()
     if (!success) throw std::exception("Failed to bind sample generator");
 }
 
-bool PhotonReStir::preparePhotonBuffers()
+bool PhotonMapper::preparePhotonBuffers()
 {
     //caustic
     
@@ -504,9 +504,9 @@ bool PhotonReStir::preparePhotonBuffers()
 
     //TODO: Change Buffer Generation to initilize with program
     mCausticBuffers.aabb = Buffer::createStructured(sizeof(D3D12_RAYTRACING_AABB), mCausticBuffers.maxSize);
-    mCausticBuffers.aabb->setName("PhotonReStir::mCausticBuffers.aabb");
+    mCausticBuffers.aabb->setName("PhotonMapper::mCausticBuffers.aabb");
     mCausticBuffers.info = Buffer::createStructured(sizeof(PhotonInfo), mCausticBuffers.maxSize);
-    mCausticBuffers.info->setName("PhotonReStir::mCausticBuffers.info");
+    mCausticBuffers.info->setName("PhotonMapper::mCausticBuffers.info");
 
     assert(mCausticBuffers.aabb);   assert(mCausticBuffers.info);
 
@@ -517,36 +517,36 @@ bool PhotonReStir::preparePhotonBuffers()
         mGlobalBuffers.maxSize = mNumPhotons;
 
     //only set aabb buffer if it is used
-    if (!mUsePhotonReStir) {
+    if (!mUsePhotonMapper) {
         mGlobalBuffers.aabb = Buffer::createStructured(sizeof(D3D12_RAYTRACING_AABB), mGlobalBuffers.maxSize);
-        mGlobalBuffers.aabb->setName("PhotonReStir::mGlobalBuffers.aabb");
+        mGlobalBuffers.aabb->setName("PhotonMapper::mGlobalBuffers.aabb");
 
         assert(mGlobalBuffers.aabb);
     }
 
     mGlobalBuffers.info = Buffer::createStructured(sizeof(PhotonInfo), mGlobalBuffers.maxSize);
-    mGlobalBuffers.info->setName("PhotonReStir::mGlobalBuffers.info");
+    mGlobalBuffers.info->setName("PhotonMapper::mGlobalBuffers.info");
 
     assert(mGlobalBuffers.info);
 
     //photon counter
     mPhotonCounterBuffer.counter = Buffer::createStructured(sizeof(uint), 2);
-    mPhotonCounterBuffer.counter->setName("PhotonReStir::PhotonCounter");
+    mPhotonCounterBuffer.counter->setName("PhotonMapper::PhotonCounter");
     uint64_t zeroInit = 0;
     mPhotonCounterBuffer.reset = Buffer::create(sizeof(uint64_t), ResourceBindFlags::None, Buffer::CpuAccess::None, &zeroInit);
-    mPhotonCounterBuffer.reset->setName("PhotonReStir::PhotonCounterReset");
+    mPhotonCounterBuffer.reset->setName("PhotonMapper::PhotonCounterReset");
     uint32_t oneInit[2] = { 1,1 };
     mPhotonCounterBuffer.cpuCopy = Buffer::create(sizeof(uint64_t), ResourceBindFlags::None, Buffer::CpuAccess::Read, oneInit);
-    mPhotonCounterBuffer.cpuCopy->setName("PhotonReStir::PhotonCounterCPU");
+    mPhotonCounterBuffer.cpuCopy->setName("PhotonMapper::PhotonCounterCPU");
 
     return true;
 }
 
-void PhotonReStir::createAccelerationStructure(RenderContext* pContext, const std::vector<uint>& aabbCount) {
+void PhotonMapper::createAccelerationStructure(RenderContext* pContext, const std::vector<uint>& aabbCount) {
     createBottomLevelAS(pContext, aabbCount);
     createTopLevelAS(pContext);
 }
-void PhotonReStir::createTopLevelAS(RenderContext* pContext) {
+void PhotonMapper::createTopLevelAS(RenderContext* pContext) {
     //TODO:: Update instead of bilding new
 
     //fill the instance description if empty
@@ -580,16 +580,16 @@ void PhotonReStir::createTopLevelAS(RenderContext* pContext) {
         GET_COM_INTERFACE(gpDevice->getApiHandle(), ID3D12Device5, pDevice5);
         pDevice5->GetRaytracingAccelerationStructurePrebuildInfo(&inputs, &mTlasPrebuildInfo);
         mTlasScratch = Buffer::create(mTlasPrebuildInfo.ScratchDataSizeInBytes, Buffer::BindFlags::UnorderedAccess, Buffer::CpuAccess::None);
-        mTlasScratch->setName("PhotonReStir::TLAS_Scratch");
+        mTlasScratch->setName("PhotonMapper::TLAS_Scratch");
     }
 
     //if buffers for the tlas are empty create them
     if (mPhotonTlas.pTlas == nullptr) {
         assert(mPhotonTlas.pInstanceDescs == nullptr); //the instance descriptions should also be null
         mPhotonTlas.pTlas = Buffer::create(mTlasPrebuildInfo.ResultDataMaxSizeInBytes, Buffer::BindFlags::AccelerationStructure, Buffer::CpuAccess::None);
-        mPhotonTlas.pTlas->setName("PhotonReStir::TLAS");
+        mPhotonTlas.pTlas->setName("PhotonMapper::TLAS");
         mPhotonTlas.pInstanceDescs = Buffer::create((uint32_t)mPhotonInstanceDesc.size() * sizeof(D3D12_RAYTRACING_INSTANCE_DESC), Buffer::BindFlags::None, Buffer::CpuAccess::Write, mPhotonInstanceDesc.data());
-        mPhotonTlas.pInstanceDescs->setName("PhotonReStir:: TLAS Instance Description");
+        mPhotonTlas.pInstanceDescs->setName("PhotonMapper:: TLAS Instance Description");
     }
 
     D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC asDesc = {};
@@ -610,11 +610,11 @@ void PhotonReStir::createTopLevelAS(RenderContext* pContext) {
     }
 
 }
-void PhotonReStir::createBottomLevelAS(RenderContext* pContext, const std::vector<uint>& aabbCount) {
+void PhotonMapper::createBottomLevelAS(RenderContext* pContext, const std::vector<uint>& aabbCount) {
 
     //Init the blas with a maximum size for scratch and result buffer
     if (mBlasData.empty()) {
-        mBlasData.resize(mUsePhotonReStir ? 1 : 2);
+        mBlasData.resize(mUsePhotonMapper ? 1 : 2);
         uint64_t maxScratchSize = 0;
         //Prebuild
         for (size_t i = 0; i < mBlasData.size(); i++) {
@@ -651,14 +651,14 @@ void PhotonReStir::createBottomLevelAS(RenderContext* pContext, const std::vecto
 
         //Create the scratch and blas buffers
         mBlasScratch = Buffer::create(maxScratchSize, Buffer::BindFlags::UnorderedAccess, Buffer::CpuAccess::None);
-        mBlasScratch->setName("PhotonReStir::BlasScratch");
+        mBlasScratch->setName("PhotonMapper::BlasScratch");
 
         mCausticBuffers.blas = Buffer::create(mBlasData[0].blasByteSize, Buffer::BindFlags::AccelerationStructure, Buffer::CpuAccess::None);
-        mCausticBuffers.blas->setName("PhotonReStir::CausticBlasBuffer");
+        mCausticBuffers.blas->setName("PhotonMapper::CausticBlasBuffer");
 
-        if (!mUsePhotonReStir) {    //create a global buffer if they are not used as light
+        if (!mUsePhotonMapper) {    //create a global buffer if they are not used as light
             mGlobalBuffers.blas = Buffer::create(mBlasData[1].blasByteSize, Buffer::BindFlags::AccelerationStructure, Buffer::CpuAccess::None);
-            mGlobalBuffers.blas->setName("PhotonReStir::GlobalBlasBuffer");
+            mGlobalBuffers.blas->setName("PhotonMapper::GlobalBlasBuffer");
         }
     }
 
@@ -677,7 +677,7 @@ void PhotonReStir::createBottomLevelAS(RenderContext* pContext, const std::vecto
 
     //aabb buffers need to be ready
     pContext->uavBarrier(mCausticBuffers.aabb.get());
-    if(!mUsePhotonReStir)  pContext->uavBarrier(mGlobalBuffers.aabb.get());
+    if(!mUsePhotonMapper)  pContext->uavBarrier(mGlobalBuffers.aabb.get());
 
     for (size_t i = 0; i < mBlasData.size(); i++) {
         auto& blas = mBlasData[i];
@@ -699,7 +699,7 @@ void PhotonReStir::createBottomLevelAS(RenderContext* pContext, const std::vecto
     }
 }
 
-void PhotonReStir::prepareRandomSeedBuffer(const uint2 screenDimensions)
+void PhotonMapper::prepareRandomSeedBuffer(const uint2 screenDimensions)
 {
     assert(screenDimensions.x > 0 && screenDimensions.y > 0);
 
@@ -710,7 +710,7 @@ void PhotonReStir::prepareRandomSeedBuffer(const uint2 screenDimensions)
 
     //create the gpu buffer
     mRandNumSeedBuffer = Buffer::createStructured(sizeof(uint32_t), screenDimensions.x * screenDimensions.y, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, Buffer::CpuAccess::None, cpuSeeds.data());
-    mRandNumSeedBuffer->setName("PhotonReStir::RandomSeedBuffer");
+    mRandNumSeedBuffer->setName("PhotonMapper::RandomSeedBuffer");
 
     assert(mRandNumSeedBuffer);
 }

@@ -9,7 +9,7 @@
 Source/*
 !Source/RenderPasses/
 Source/RenderPasses/*
-!Source/RenderPasses/PhotonReStir/
+!Source/RenderPasses/PhotonMapper/
 !Source/RenderPasses/PTGBuffer/
 !Source/Data/
 !Source/Tools

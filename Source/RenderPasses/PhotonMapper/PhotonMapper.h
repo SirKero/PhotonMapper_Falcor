@@ -32,10 +32,10 @@
 
 using namespace Falcor;
 
-class PhotonReStir : public RenderPass
+class PhotonMapper : public RenderPass
 {
 public:
-    using SharedPtr = std::shared_ptr<PhotonReStir>;
+    using SharedPtr = std::shared_ptr<PhotonMapper>;
 
     /** Create a new render pass object.
         \param[in] pRenderContext The render context.
@@ -55,7 +55,7 @@ public:
     virtual bool onKeyEvent(const KeyboardEvent& keyEvent) override { return false; }
 
 private:
-    PhotonReStir();
+    PhotonMapper();
 
     /** Prepares Program Variables and binds the sample generator
     */
@@ -115,7 +115,7 @@ private:
     float                       mSPPMAlphaCaustic = 0.7f;                ///< Caustic Alpha for SPPM
 
     uint                        mNumPhotons = 500000;                   ///< Number of Photons shot
-    bool                        mUsePhotonReStir = false;               ///< Activates ReStir for global photons
+    bool                        mUsePhotonMapper = false;               ///< Activates ReStir for global photons
     float3                      mDirLightWorldPos = float3(0.f, 10.f, 0.f); ///< Testing purposes only
     float                       mIntensityScalar = 1.0f;                ///<Scales the intensity of the light sources
     bool                        mResetIterations = false;               ///<Resets the iterations counter once
