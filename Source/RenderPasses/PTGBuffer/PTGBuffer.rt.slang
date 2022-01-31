@@ -52,7 +52,7 @@ struct ScatterRayData
         d.terminated = false;
         d.lobeType = 0;
         d.pathLength = 0;
-        d.radiance = float3(0, 0, 0);
+        d.radiance = float3(1, 1, 1);
         d.thp = float3(1, 1, 1);
         d.origin = float3(0, 0, 0);
         d.direction = float3(0, 0, 0);
@@ -70,7 +70,11 @@ void miss(inout ScatterRayData rayData : SV_RayPayload)
     if (kUseEnvBackground)
     {
         float3 Le = gScene.envMap.eval(WorldRayDirection());
-        rayData.radiance += Le;
+        rayData.radiance *= Le;
+    }
+    else
+    {
+        rayData.radiance = 0;
     }
 
 }
@@ -79,6 +83,7 @@ void miss(inout ScatterRayData rayData : SV_RayPayload)
 [shader("closesthit")]
 void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleIntersectionAttributes attribs : SV_IntersectionAttributes)
 {
+    uint2 launchIndex = DispatchRaysIndex().xy;
    // Evaluate Falcor's material parameters at the hit point.
     GeometryInstanceID instanceID = getGeometryInstanceID();
     VertexData v = getVertexData(instanceID, PrimitiveIndex(), attribs);
@@ -101,17 +106,36 @@ void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleInt
     //compute ray origin for the new ray
     float3 rayOrigin = sd.computeNewRayOrigin(!transmission); //false is for transmissions
     bool diffuseHit = (lobe & (uint) LobeType::DiffuseReflection) > 0;
-        
-    rayData.radiance = diffuseHit ? sd.diffuse : float3(0);
+    
+    rayData.radiance *= diffuseHit ? sd.diffuse * weight : weight;
     //set ray data
     rayData.origin = rayOrigin;
     rayData.direction = sd.fromLocal(woLocal);
     rayData.thp = valid ? isDelta ? float3(1.0) : res / pdf : float3(0);
     rayData.lobeType = lobe; //save lobe type
-    rayData.thp = min(max(rayData.thp, float3(0)), float3(1.0)) * weight; //there is a low probabilty that transmission creates a valid ray with broken thp
+    rayData.thp = min(max(rayData.thp, float3(0)), float3(1.0)); //there is a low probabilty that transmission creates a valid ray with broken thp
     //if throughput is 0, return
     if (!any(rayData.thp > 0.f))
         rayData.terminated = false;
+
+    //save hit if lobe is diffuse
+    if ((lobe & (uint) LobeType::Diffuse)  > 0)
+    {
+        uint specTrans16 = f32tof16(sd.specularTransmission) << 16;
+        uint diffTrans16 = f32tof16(sd.diffuseTransmission);
+        uint trans16 = specTrans16 | diffTrans16;
+        
+        gPosW[launchIndex] = float4(rayOrigin, 1.0);
+        gNormW[launchIndex] = float4(sd.N, 1.0);
+        gTangentW[launchIndex] = float4(sd.T, 1.0);
+        gTexC[launchIndex] = float4(sd.uv, 1.0, 1.0);
+        gDiffuseOpacity[launchIndex] = float4(rayData.radiance, sd.opacity);
+        gSpecRough[launchIndex] = float4(sd.specular, sd.linearRoughness);
+        gEmissive[launchIndex] = float4(sd.emissive, 1.0);
+        gMatlExtra[launchIndex] = float4(sd.IoR, asfloat(sd.flags), asfloat(trans16), sd.metallic);
+        gViewWorld[launchIndex] = float4(-WorldRayDirection(), 1.0);
+        gFaceNormal[launchIndex] = float4(sd.faceN, 1);
+    }
     
     rayData.pathLength++;
 }

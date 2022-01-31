@@ -108,6 +108,14 @@ void PTGBuffer::execute(RenderContext* pRenderContext, const RenderData& renderD
     if (is_set(mpScene->getUpdates(), Scene::UpdateFlags::GeometryChanged))
         throw std::runtime_error("This render pass does not support scene geometry changes. Aborting.");
 
+    //clear all output images
+    auto clear = [&](const ChannelDesc& channel)
+    {
+        auto pTex = renderData[channel.name]->asTexture();
+        if (pTex) pRenderContext->clearUAV(pTex->getUAV().get(), float4(0.f));
+    };
+    for (const auto& channel : kOutputChannels) clear(channel);
+
     // Specialize the program
     // These defines should not modify the program vars. Do not trigger program vars re-creation.
     mTracer.pProgram->addDefine("MAX_RECURSION", std::to_string(mRecursionDepth));

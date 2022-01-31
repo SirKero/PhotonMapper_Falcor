@@ -1,7 +1,7 @@
 from falcor import *
 
-def render_graph_DefaultRenderGraph():
-    g = RenderGraph('DefaultRenderGraph')
+def render_graph_PTGBuffer():
+    g = RenderGraph('PTGBuffer')
     loadRenderPassLibrary('PhotonReStir.dll')
     loadRenderPassLibrary('ErrorMeasurePass.dll')
     loadRenderPassLibrary('BSDFViewer.dll')
@@ -41,6 +41,6 @@ def render_graph_DefaultRenderGraph():
     g.markOutput('AccumulatePass.output')
     return g
 
-DefaultRenderGraph = render_graph_DefaultRenderGraph()
-try: m.addGraph(DefaultRenderGraph)
+PTGBuffer = render_graph_PTGBuffer()
+try: m.addGraph(PTGBuffer)
 except NameError: None
