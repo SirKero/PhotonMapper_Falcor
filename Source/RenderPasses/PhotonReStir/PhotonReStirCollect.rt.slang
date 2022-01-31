@@ -115,7 +115,7 @@ uint3 encodeNormalFaceNormal(in float3 normal, in float3 faceNormal)
 //Decode Normal + Face Normal
 void decodeNormalFaceNormal(in uint3 encodedNormal, out float3 normal, out float3 faceNormal)
 {
-    faceNormal = f16tof32(encodedNormal);
+    faceNormal = f16tof32(encodedNormal & 0xffff);
     normal = f16tof32(encodedNormal >> 16);
 }
 
