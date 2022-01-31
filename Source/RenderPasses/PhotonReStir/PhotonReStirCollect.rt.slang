@@ -254,6 +254,10 @@ void rayGen()
     float3 wNormal = gWorldNormal[launchIndex].xyz;
     float3 faceNormal = gFaceNormal[launchIndex].xyz;
     rayData.wNormalFaceN = encodeNormalFaceNormal(wNormal, faceNormal);
+
+    bool valid = true;
+    if (wPos.w < 1.0)
+        valid = false;
     
     RayDesc ray;
     ray.Origin = wPos.xyz;
@@ -264,14 +268,14 @@ void rayGen()
     uint rayFlags = RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | RAY_FLAG_SKIP_TRIANGLES;
 
     //It is faster to trace two times in the different instance mask becaus of divergence
-    if (kCollectCausticPhotons)
+    if (kCollectCausticPhotons && valid)
         TraceRay(gPhotonAS, rayFlags, 1 /* instanceInclusionMask */, 0 /* hitIdx */, 0 /* rayType count */, 0 /* missIdx */, ray, rayData);
-    if(kCollectGlobalPhotons)
+    if (kCollectGlobalPhotons && valid)
         TraceRay(gPhotonAS, rayFlags, 2 /* instanceInclusionMask */, 0 /* hitIdx */, 0 /* rayType count */, 0 /* missIdx */, ray, rayData);
 
     float w = 1 / M_PI;
 
-    float3 radiance = w * rayData.radiance;
+    float3 radiance = valid ? w * rayData.radiance : float3(0.0);
 
     float3 pixEmission = gEmissive[launchIndex].xyz *0.05;
     radiance += pixEmission;
