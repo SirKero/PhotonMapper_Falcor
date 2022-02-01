@@ -186,7 +186,8 @@ void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleInt
     rayData.direction = sd.fromLocal(woLocal);
     rayData.thp = valid ? isDelta ? float3(1.0) : res / pdf : float3(0); //Throughput depending if it is valid. IsDelta checks for Glas Material (res and pdf are 0 for them)
     rayData.lobeType = lobe;                         //save lobe type
-    rayData.thp = min(max(rayData.thp, float3(0)), float3(1.0)) * weight;        //there is a low probabilty that transmission creates a valid ray with broken thp
+    //rayData.thp = min(max(rayData.thp, float3(0)), float3(1.0));        //there is a low probabilty that transmission creates a valid ray with broken thp
+    rayData.thp *= weight;
     //if throughput is 0, return
     if(!any(rayData.thp > 0.f))
         rayData.terminated = true;
