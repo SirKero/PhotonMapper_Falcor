@@ -107,7 +107,7 @@ void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleInt
     float3 rayOrigin = sd.computeNewRayOrigin(!transmission); //false is for transmissions
     bool diffuseHit = (lobe & (uint) LobeType::DiffuseReflection) > 0;
     
-    rayData.radiance *= diffuseHit ? sd.diffuse * weight : weight;
+    rayData.radiance *= weight;
     //set ray data
     rayData.origin = rayOrigin;
     rayData.direction = sd.fromLocal(woLocal);
@@ -116,10 +116,13 @@ void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleInt
     rayData.thp = min(max(rayData.thp, float3(0)), float3(1.0)); //there is a low probabilty that transmission creates a valid ray with broken thp
     //if throughput is 0, return
     if (!any(rayData.thp > 0.f))
-        rayData.terminated = false;
+    {
+        rayData.terminated = true;
+    }
+        
 
     //save hit if lobe is diffuse
-    if ((lobe & (uint) LobeType::Diffuse)  > 0)
+    if ((lobe & ((uint) LobeType::Specular | (uint) LobeType::Delta)) == 0 && !rayData.terminated)
     {
         uint specTrans16 = f32tof16(sd.specularTransmission) << 16;
         uint diffTrans16 = f32tof16(sd.diffuseTransmission);
@@ -129,9 +132,9 @@ void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleInt
         gNormW[launchIndex] = float4(sd.N, 1.0);
         gTangentW[launchIndex] = float4(sd.T, 1.0);
         gTexC[launchIndex] = float4(sd.uv, 1.0, 1.0);
-        gDiffuseOpacity[launchIndex] = float4(rayData.radiance, sd.opacity);
-        gSpecRough[launchIndex] = float4(sd.specular, sd.linearRoughness);
-        gEmissive[launchIndex] = float4(sd.emissive, 1.0);
+        gDiffuseOpacity[launchIndex] = float4(sd.diffuse * rayData.radiance, sd.opacity);
+        gSpecRough[launchIndex] = float4(sd.specular * rayData.radiance, sd.linearRoughness);
+        gEmissive[launchIndex] = float4(sd.emissive * rayData.radiance, 1.0);
         gMatlExtra[launchIndex] = float4(sd.IoR, asfloat(sd.flags), asfloat(trans16), sd.metallic);
         gViewWorld[launchIndex] = float4(-WorldRayDirection(), 1.0);
         gFaceNormal[launchIndex] = float4(sd.faceN, 1);
@@ -156,15 +159,17 @@ void rayGen()
     //Trace recursive
     for (uint i = 0; i < kMaxRecursion; i++)
     {
-        throughput *= rayData.thp; //accumulate throughput
+        
         
         TraceRay(gScene.rtAccel, rayFlags, 0xff /* instanceInclusionMask */, 0 /* hitIdx */, rayTypeCount, 0 /* missIdx */, ray.toRayDesc(), rayData);
 
         if (rayData.terminated)
             break;
 
+        throughput *= rayData.thp; //accumulate throughput
+        
         //calculate color and stop if we are diffuse
-        if (((uint) LobeType::DiffuseReflection & rayData.lobeType) > 0)
+        if (((uint) LobeType::Diffuse & rayData.lobeType) > 0)
         {
             break;
         }
