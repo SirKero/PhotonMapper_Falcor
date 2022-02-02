@@ -139,7 +139,7 @@ void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleInt
         gViewWorld[launchIndex] = float4(-WorldRayDirection(), 1.0);
         gFaceNormal[launchIndex] = float4(sd.faceN, 1);
     }
-    
+
     rayData.pathLength++;
 }
 

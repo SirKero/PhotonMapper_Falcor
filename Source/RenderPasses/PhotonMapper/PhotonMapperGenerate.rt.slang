@@ -127,19 +127,36 @@ void fromLocalToWorld(in float3 lightDirW, inout float3 dir)
     dir = dir.x * tangent + dir.y * bitangent + dir.z * lightDirW;
 }
 
-//Samples a random direction in a hemisphere or nornmal sphere
-void calcLightDirection(in float3 lightDirW,in SampleGenerator sg, inout float3 newDir, inout float lightPDF , bool hemisphereSample = true)
+/** *Samples a random direction in a hemisphere or nornmal sphere
+    * type for the different light types. 0 = Area; 1 = Point ; 2 = Spot
+*/
+void calcLightDirection(in float3 lightDirW, float2 rnd, inout float3 newDir, inout float lightPDF , uint type , float cosThetaMax = M_PI)
 {
-    //get random pos in hemisphere
-    float2 rnd = sampleNext2D(sg);  //random numbers for z and phi
-    if(!hemisphereSample)
-        rnd.x = 1.0 - 2.0 * rnd.x;
-    float r = sqrt(max(0.0, 1. - rnd.x * rnd.x));
-    float phi = rnd.y * 2 * M_PI;
-    newDir = float3(r * cos(phi), r * sin(phi), rnd.x);
+    //theta and pdf for the different light types
+    float cosTheta, sinTheta;
+    switch (type)
+    {
+        //Area
+        case 0:
+            cosTheta = rnd.x;
+            lightPDF = k_4Pi;
+            break;
+        //Point
+        case 1:
+            cosTheta = 1.0 - 2.0 * rnd.x;
+            lightPDF = k_2Pi;
+            break;
+        //Spot
+        case 2:
+            cosTheta = (1.0 - rnd.x) + rnd.x * cosThetaMax;
+            lightPDF = 1 / (k_2Pi * (1.0 - cosThetaMax));
+    }
+
+    sinTheta = sqrt(max(0.0, 1. - cosTheta * cosTheta));
+    float phi = rnd.y * k_2Pi;
+    newDir = float3(sinTheta * cos(phi), sinTheta * sin(phi), cosTheta);
 
     fromLocalToWorld(lightDirW, newDir);
-    lightPDF = hemisphereSample ? k_2Pi : k_4Pi;
 }
 
 AABB calcPhotonAABB(in float3 center, in float radius)
@@ -268,7 +285,8 @@ void rayGen()
     
     RayDesc ray;
     float lightDirPDF = 0.0;
-    calcLightDirection(lightDir, rayData.sg, ray.Direction, lightDirPDF ,type == 0 ? false : true);
+    float2 lightRnd = sampleNext2D(rayData.sg);
+    calcLightDirection(lightDir, lightRnd, ray.Direction, lightDirPDF, type);
 
     //create photon
     float3 photonPos = float3(0, 0, 0);
