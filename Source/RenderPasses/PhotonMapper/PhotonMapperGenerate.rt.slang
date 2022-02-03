@@ -242,8 +242,9 @@ void rayGen()
     float3 lightPos = float3(0);
     float3 lightDir = float3(0, 1, 0);
     float3 lightIntensity = float3(0);
+    float maxCosineAngle = 0;
 
-    uint type = 0;  //0 == Point, 1 == Area
+    uint type = 0;  //0 == Point, 1 == Area, 2 == Spot
 
     //Point or Dir light
     if (lightIndex < analyticLightCount)
@@ -254,9 +255,13 @@ void rayGen()
         if (currentLight.type != uint(LightType::Point))
             return;
 
+        if (currentLight.openingAngle < (M_PI / 2.0))
+            type = 2;
+        
         lightPos = currentLight.posW;
         lightDir = currentLight.dirW;
         lightIntensity = currentLight.intensity;
+        maxCosineAngle = currentLight.cosOpeningAngle;
     }
     //emissive triangle light
     else
@@ -280,7 +285,7 @@ void rayGen()
     RayDesc ray;
     float lightDirPDF = 0.0;
     float2 lightRnd = sampleNext2D(rayData.sg);
-    calcLightDirection(lightDir, lightRnd, ray.Direction, lightDirPDF, type);
+    calcLightDirection(lightDir, lightRnd, ray.Direction, lightDirPDF, type, maxCosineAngle);
 
     //create photon
     float3 photonPos = float3(0, 0, 0);
