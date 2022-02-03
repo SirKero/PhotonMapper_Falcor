@@ -128,34 +128,28 @@ void fromLocalToWorld(in float3 lightDirW, inout float3 dir)
 }
 
 /** *Samples a random direction in a hemisphere or nornmal sphere
-    * type for the different light types. 0 = Area; 1 = Point ; 2 = Spot
+    * type for the different light types. 0 =Point ; 1 = Area ; 2 = Spot
 */
 void calcLightDirection(in float3 lightDirW, float2 rnd, inout float3 newDir, inout float lightPDF , uint type , float cosThetaMax = M_PI)
 {
     //theta and pdf for the different light types
-    float cosTheta, sinTheta;
     switch (type)
     {
-        //Area
+        //Point
         case 0:
-            cosTheta = rnd.x;
+            newDir = sample_sphere(rnd);
             lightPDF = k_4Pi;
             break;
-        //Point
+        //Area
         case 1:
-            cosTheta = 1.0 - 2.0 * rnd.x;
-            lightPDF = k_2Pi;
+            newDir = sample_cosine_hemisphere_polar(rnd, lightPDF);
             break;
         //Spot
         case 2:
-            cosTheta = (1.0 - rnd.x) + rnd.x * cosThetaMax;
+            newDir = sample_cone(rnd, cosThetaMax);
             lightPDF = 1 / (k_2Pi * (1.0 - cosThetaMax));
     }
-
-    sinTheta = sqrt(max(0.0, 1. - cosTheta * cosTheta));
-    float phi = rnd.y * k_2Pi;
-    newDir = float3(sinTheta * cos(phi), sinTheta * sin(phi), cosTheta);
-
+    
     fromLocalToWorld(lightDirW, newDir);
 }
 

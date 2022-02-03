@@ -346,7 +346,7 @@ void PhotonMapper::collectPhotons(RenderContext* pRenderContext, const RenderDat
 
     assert(pRenderContext && mTracerCollect.pProgram && mTracerCollect.pVars);
 
-    //TODO bind TLAS
+    //bind TLAS
     bool tlasValid = var["gPhotonAS"].setSrv(mPhotonTlas.pSrv);
     assert(tlasValid);
     
