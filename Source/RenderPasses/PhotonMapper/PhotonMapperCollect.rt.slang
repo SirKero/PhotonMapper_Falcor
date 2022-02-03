@@ -202,6 +202,7 @@ float hitSphere(const float3 center, const float radius, const float3 p)
 [shader("intersection")]
 void intersection()
 {
+    
     //Check for Sphere intersection
     const float3 origin = ObjectRayOrigin();
     const uint primIndex = PrimitiveIndex();
@@ -237,7 +238,7 @@ void rayGen()
 {
     uint2 launchIndex = DispatchRaysIndex().xy;
     uint2 launchDim = DispatchRaysDimensions().xy;
-
+        
     float4 wPos = gWorldPosition[launchIndex];
     float2 texCoord = gTextureCoordinate[launchIndex];
     //prepare payload

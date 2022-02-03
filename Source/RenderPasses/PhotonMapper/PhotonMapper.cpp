@@ -275,6 +275,7 @@ void PhotonMapper::generatePhotons(RenderContext* pRenderContext, const RenderDa
 
 bool PhotonMapper::syncPasses(RenderContext* pRenderContext)
 {
+    PROFILE("syncPasses");
     //Copy the photonConter to a CPU Buffer
     pRenderContext->uavBarrier(mPhotonCounterBuffer.counter.get());
     pRenderContext->copyBufferRegion(mPhotonCounterBuffer.cpuCopy.get(),0, mPhotonCounterBuffer.counter.get(),0, sizeof(uint32_t) * 2);
@@ -295,7 +296,8 @@ bool PhotonMapper::syncPasses(RenderContext* pRenderContext)
 
 void PhotonMapper::collectPhotons(RenderContext* pRenderContext, const RenderData& renderData)
 {
-
+    // Trace the photons
+    PROFILE("collect photons");
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
     // TODO: This should be moved to a more general mechanism using Slang.
     mTracerCollect.pProgram->addDefines(getValidResourceDefines(kInputChannels, renderData));
@@ -340,14 +342,14 @@ void PhotonMapper::collectPhotons(RenderContext* pRenderContext, const RenderDat
     const uint2 targetDim = renderData.getDefaultTextureDims();
     assert(targetDim.x > 0 && targetDim.y > 0);
 
-    // Trace the photons
-    PROFILE("collect photons");
+    
 
     assert(pRenderContext && mTracerCollect.pProgram && mTracerCollect.pVars);
 
     //TODO bind TLAS
-    assert(var["gPhotonAS"].setSrv(mPhotonTlas.pSrv));
-
+    bool tlasValid = var["gPhotonAS"].setSrv(mPhotonTlas.pSrv);
+    assert(tlasValid);
+    
     pRenderContext->raytrace(mTracerCollect.pProgram.get(), mTracerCollect.pVars.get(), targetDim.x, targetDim.y, 1);
 
 }
@@ -463,14 +465,13 @@ void PhotonMapper::setScene(RenderContext* pRenderContext, const Scene::SharedPt
             desc.setMaxTraceRecursionDepth(kMaxRecursionDepth);
             desc.addDefines(mpScene->getSceneDefines());
 
-            mTracerCollect.pBindingTable = RtBindingTable::create(1, 1, mUsePhotonMapper ? 1 : 2);
+            mTracerCollect.pBindingTable = RtBindingTable::create(1, 1, 1);
             auto& sbt = mTracerCollect.pBindingTable;
             sbt->setRayGen(desc.addRayGen("rayGen"));
             sbt->setMiss(0, desc.addMiss("miss"));
             auto hitShader = desc.addHitGroup("closestHit", "anyHit", "intersection");
-            for (int i = 0; i < (mUsePhotonMapper ? 1 : 2); i++) {
-                sbt->setHitGroup(0, i, hitShader);
-            }
+            sbt->setHitGroup(0, 0, hitShader);
+            
 
             mTracerCollect.pProgram = RtProgram::create(desc);
         }
