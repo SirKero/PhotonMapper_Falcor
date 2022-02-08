@@ -15,6 +15,3 @@ Source/RenderPasses/*
 !Source/Tools
 Source/Tools/*
 !Source/Tools/RenderGraphEditor
-
-*.vcxproj
-*.vcxproj.user

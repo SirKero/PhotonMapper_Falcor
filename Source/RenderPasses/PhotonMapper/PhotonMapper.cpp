@@ -35,11 +35,23 @@
 
 constexpr float kUint32tMaxF = float((uint32_t)-1);
 
+const RenderPass::Info PhotonMapper::kInfo{"PhotonMapper", "A Photon Mapper with full RTX support" };
+
+// Don't remove this. it's required for hot-reload to function properly
+extern "C" FALCOR_API_EXPORT const char* getProjDir()
+{
+    return PROJECT_DIR;
+}
+
+extern "C" FALCOR_API_EXPORT void getPasses(Falcor::RenderPassLibrary & lib)
+{
+    lib.registerPass(PhotonMapper::kInfo, PhotonMapper::create);
+}
+
 namespace
 {
     const char kShaderGeneratePhoton[] = "RenderPasses/PhotonMapper/PhotonMapperGenerate.rt.slang";
     const char kShaderCollectPhoton[] = "RenderPasses/PhotonMapper/PhotonMapperCollect.rt.slang";
-    const char kDesc[] = "Shoots Photons and then gathers them";
 
     // Ray tracing settings that affect the traversal stack size.
    // These should be set as small as possible.
@@ -65,8 +77,7 @@ namespace
 
     const ChannelList kOutputChannels =
     {
-        { "PhotonImage",          "gPhotonImage",               "An image that shows the caustics and indirect light from global photons"                        },
-        {"PhotonTestImage",       "gPhotonTestImage",           "For testing purposes only"}
+        { "PhotonImage",          "gPhotonImage",               "An image that shows the caustics and indirect light from global photons" , false , ResourceFormat::RGBA32Float }
     };
 
 
@@ -76,31 +87,18 @@ namespace
     const char kGlobalInfoSName[] = "gGlobal";
 }
 
-// Don't remove this. it's required for hot-reload to function properly
-extern "C" __declspec(dllexport) const char* getProjDir()
-{
-    return PROJECT_DIR;
-}
-
-extern "C" __declspec(dllexport) void getPasses(Falcor::RenderPassLibrary& lib)
-{
-    lib.registerClass("PhotonMapper", kDesc, PhotonMapper::create);
-}
-
 PhotonMapper::SharedPtr PhotonMapper::create(RenderContext* pRenderContext, const Dictionary& dict)
 {
     SharedPtr pPass = SharedPtr(new PhotonMapper);
     return pPass;
 }
 
-PhotonMapper::PhotonMapper()
+PhotonMapper::PhotonMapper():
+    RenderPass(kInfo)
 {
     mpSampleGenerator = SampleGenerator::create(SAMPLE_GENERATOR_UNIFORM);
-    assert(mpSampleGenerator);
+    FALCOR_ASSERT(mpSampleGenerator);
 }
-
-
-std::string PhotonMapper::getDesc() { return kDesc; }
 
 Dictionary PhotonMapper::getScriptingDictionary()
 {
@@ -229,7 +227,7 @@ void PhotonMapper::generatePhotons(RenderContext* pRenderContext, const RenderDa
     // The program should have all necessary defines set at this point.
 
     if (!mTracerGenerate.pVars) prepareVars();
-    assert(mTracerGenerate.pVars);
+    FALCOR_ASSERT(mTracerGenerate.pVars);
 
     auto& dict = renderData.getDictionary();
 
@@ -263,11 +261,10 @@ void PhotonMapper::generatePhotons(RenderContext* pRenderContext, const RenderDa
             var[desc.texname] = renderData[desc.name]->asTexture();
         }
     };
-    bindAsTex(kOutputChannels[1]);
 
     // Get dimensions of ray dispatch.
     const uint2 targetDim = uint2(static_cast<uint>(sqrt(mNumPhotons)));
-    assert(targetDim.x > 0 && targetDim.y > 0);
+    FALCOR_ASSERT(targetDim.x > 0 && targetDim.y > 0);
 
     // Trace the photons
     mpScene->raytrace(pRenderContext, mTracerGenerate.pProgram.get(), mTracerGenerate.pVars, uint3(targetDim, 1));
@@ -275,7 +272,7 @@ void PhotonMapper::generatePhotons(RenderContext* pRenderContext, const RenderDa
 
 bool PhotonMapper::syncPasses(RenderContext* pRenderContext)
 {
-    PROFILE("syncPasses");
+    FALCOR_PROFILE("syncPasses");
     //Copy the photonConter to a CPU Buffer
     pRenderContext->uavBarrier(mPhotonCounterBuffer.counter.get());
     pRenderContext->copyBufferRegion(mPhotonCounterBuffer.cpuCopy.get(),0, mPhotonCounterBuffer.counter.get(),0, sizeof(uint32_t) * 2);
@@ -297,7 +294,7 @@ bool PhotonMapper::syncPasses(RenderContext* pRenderContext)
 void PhotonMapper::collectPhotons(RenderContext* pRenderContext, const RenderData& renderData)
 {
     // Trace the photons
-    PROFILE("collect photons");
+    FALCOR_PROFILE("collect photons");
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
     // TODO: This should be moved to a more general mechanism using Slang.
     mTracerCollect.pProgram->addDefines(getValidResourceDefines(kInputChannels, renderData));
@@ -308,8 +305,16 @@ void PhotonMapper::collectPhotons(RenderContext* pRenderContext, const RenderDat
 
 
     // Prepare program vars. This may trigger shader compilation.
-    if (!mTracerCollect.pVars) mTracerCollect.pVars = RtProgramVars::create(mTracerCollect.pProgram, mTracerCollect.pBindingTable);;
-    assert(mTracerCollect.pVars);
+    if (!mTracerCollect.pVars) {
+        FALCOR_ASSERT(mTracerCollect.pProgram);
+        mTracerCollect.pProgram->addDefines(mpSampleGenerator->getDefines());
+        mTracerCollect.pProgram->setTypeConformances(mpScene->getTypeConformances());
+        mTracerCollect.pVars = RtProgramVars::create(mTracerCollect.pProgram, mTracerCollect.pBindingTable);
+        // Bind utility classes into shared data.
+        auto var = mTracerGenerate.pVars->getRootVar();
+        mpSampleGenerator->setShaderData(var);
+    }
+    FALCOR_ASSERT(mTracerCollect.pVars);
 
     // Set constants.
     auto var = mTracerCollect.pVars->getRootVar();
@@ -340,18 +345,19 @@ void PhotonMapper::collectPhotons(RenderContext* pRenderContext, const RenderDat
 
     // Get dimensions of ray dispatch.
     const uint2 targetDim = renderData.getDefaultTextureDims();
-    assert(targetDim.x > 0 && targetDim.y > 0);
+    FALCOR_ASSERT(targetDim.x > 0 && targetDim.y > 0);
 
     
 
-    assert(pRenderContext && mTracerCollect.pProgram && mTracerCollect.pVars);
+    FALCOR_ASSERT(pRenderContext && mTracerCollect.pProgram && mTracerCollect.pVars);
 
     //bind TLAS
     bool tlasValid = var["gPhotonAS"].setSrv(mPhotonTlas.pSrv);
-    assert(tlasValid);
+    FALCOR_ASSERT(tlasValid);
     
-    pRenderContext->raytrace(mTracerCollect.pProgram.get(), mTracerCollect.pVars.get(), targetDim.x, targetDim.y, 1);
-
+    //pRenderContext->raytrace(mTracerCollect.pProgram.get(), mTracerCollect.pVars.get(), targetDim.x, targetDim.y, 1);
+    // Trace the photons
+    mpScene->raytrace(pRenderContext, mTracerCollect.pProgram.get(), mTracerCollect.pVars, uint3(targetDim, 1));    //TODO: Check if scene defines can be set manually
 }
 
 void PhotonMapper::renderUI(Gui::Widgets& widget)
@@ -430,7 +436,7 @@ void PhotonMapper::setScene(RenderContext* pRenderContext, const Scene::SharedPt
 
     if (mpScene)
     {
-        if (mpScene->hasGeometryType(Scene::GeometryType::Procedural))
+        if (mpScene->hasGeometryType(Scene::GeometryType::Custom))
         {
             logWarning("This render pass only supports triangles. Other types of geometry will be ignored.");
         }
@@ -442,7 +448,7 @@ void PhotonMapper::setScene(RenderContext* pRenderContext, const Scene::SharedPt
             desc.setMaxPayloadSize(kMaxPayloadSizeBytes);
             desc.setMaxAttributeSize(kMaxAttributeSizeBytes);
             desc.setMaxTraceRecursionDepth(kMaxRecursionDepth);
-            desc.addDefines(mpScene->getSceneDefines());
+            //desc.addDefines(mpScene->getSceneDefines());
             
 
 
@@ -450,9 +456,11 @@ void PhotonMapper::setScene(RenderContext* pRenderContext, const Scene::SharedPt
             auto& sbt = mTracerGenerate.pBindingTable;
             sbt->setRayGen(desc.addRayGen("rayGen"));
             sbt->setMiss(0, desc.addMiss("miss"));
-            sbt->setHitGroupByType(0, mpScene, Scene::GeometryType::TriangleMesh, desc.addHitGroup("closestHit"));
+            if (mpScene->hasGeometryType(Scene::GeometryType::TriangleMesh)) {
+                sbt->setHitGroup(0, mpScene->getGeometryIDs(Scene::GeometryType::TriangleMesh), desc.addHitGroup("closestHit"));
+            }
 
-            mTracerGenerate.pProgram = RtProgram::create(desc);
+            mTracerGenerate.pProgram = RtProgram::create(desc, mpScene->getSceneDefines());
         }
         
 
@@ -463,9 +471,9 @@ void PhotonMapper::setScene(RenderContext* pRenderContext, const Scene::SharedPt
             desc.setMaxPayloadSize(kMaxPayloadSizeBytesCollect);
             desc.setMaxAttributeSize(kMaxAttributeSizeBytes);
             desc.setMaxTraceRecursionDepth(kMaxRecursionDepth);
-            desc.addDefines(mpScene->getSceneDefines());
+            //desc.addDefines(mpScene->getSceneDefines());
 
-            mTracerCollect.pBindingTable = RtBindingTable::create(1, 1, 1);
+            mTracerCollect.pBindingTable = RtBindingTable::create(1, 1, mpScene->getGeometryCount());   //TODO: Check if that can be removed
             auto& sbt = mTracerCollect.pBindingTable;
             sbt->setRayGen(desc.addRayGen("rayGen"));
             sbt->setMiss(0, desc.addMiss("miss"));
@@ -473,26 +481,25 @@ void PhotonMapper::setScene(RenderContext* pRenderContext, const Scene::SharedPt
             sbt->setHitGroup(0, 0, hitShader);
             
 
-            mTracerCollect.pProgram = RtProgram::create(desc);
+            mTracerCollect.pProgram = RtProgram::create(desc, mpScene->getSceneDefines());
         }
     }
 }
 
 void PhotonMapper::prepareVars()
 {
-    assert(mTracerGenerate.pProgram);
+    FALCOR_ASSERT(mTracerGenerate.pProgram);
 
     // Configure program.
     mTracerGenerate.pProgram->addDefines(mpSampleGenerator->getDefines());
-
+    mTracerGenerate.pProgram->setTypeConformances(mpScene->getTypeConformances());
     // Create program variables for the current program.
     // This may trigger shader compilation. If it fails, throw an exception to abort rendering.
     mTracerGenerate.pVars = RtProgramVars::create(mTracerGenerate.pProgram, mTracerGenerate.pBindingTable);
 
     // Bind utility classes into shared data.
     auto var = mTracerGenerate.pVars->getRootVar();
-    bool success = mpSampleGenerator->setShaderData(var);
-    if (!success) throw std::exception("Failed to bind sample generator");
+    mpSampleGenerator->setShaderData(var);
 }
 
 bool PhotonMapper::preparePhotonBuffers()
@@ -509,7 +516,7 @@ bool PhotonMapper::preparePhotonBuffers()
     mCausticBuffers.info = Buffer::createStructured(sizeof(PhotonInfo), mCausticBuffers.maxSize);
     mCausticBuffers.info->setName("PhotonMapper::mCausticBuffers.info");
 
-    assert(mCausticBuffers.aabb);   assert(mCausticBuffers.info);
+    FALCOR_ASSERT(mCausticBuffers.aabb);   FALCOR_ASSERT(mCausticBuffers.info);
 
     //global
 
@@ -522,13 +529,13 @@ bool PhotonMapper::preparePhotonBuffers()
         mGlobalBuffers.aabb = Buffer::createStructured(sizeof(D3D12_RAYTRACING_AABB), mGlobalBuffers.maxSize);
         mGlobalBuffers.aabb->setName("PhotonMapper::mGlobalBuffers.aabb");
 
-        assert(mGlobalBuffers.aabb);
+        FALCOR_ASSERT(mGlobalBuffers.aabb);
     }
 
     mGlobalBuffers.info = Buffer::createStructured(sizeof(PhotonInfo), mGlobalBuffers.maxSize);
     mGlobalBuffers.info->setName("PhotonMapper::mGlobalBuffers.info");
 
-    assert(mGlobalBuffers.info);
+    FALCOR_ASSERT(mGlobalBuffers.info);
 
     //photon counter
     mPhotonCounterBuffer.counter = Buffer::createStructured(sizeof(uint), 2);
@@ -567,7 +574,7 @@ void PhotonMapper::createTopLevelAS(RenderContext* pContext) {
         }
     }
 
-    PROFILE("buildPhotonTlas");
+    FALCOR_PROFILE("buildPhotonTlas");
 
     D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS inputs = {};
     inputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL;
@@ -578,7 +585,7 @@ void PhotonMapper::createTopLevelAS(RenderContext* pContext) {
     //if scratch is empty, create one
     if (mTlasScratch == nullptr) {
         //Prebuild
-        GET_COM_INTERFACE(gpDevice->getApiHandle(), ID3D12Device5, pDevice5);
+        FALCOR_GET_COM_INTERFACE(gpDevice->getApiHandle(), ID3D12Device5, pDevice5);
         pDevice5->GetRaytracingAccelerationStructurePrebuildInfo(&inputs, &mTlasPrebuildInfo);
         mTlasScratch = Buffer::create(mTlasPrebuildInfo.ScratchDataSizeInBytes, Buffer::BindFlags::UnorderedAccess, Buffer::CpuAccess::None);
         mTlasScratch->setName("PhotonMapper::TLAS_Scratch");
@@ -586,7 +593,7 @@ void PhotonMapper::createTopLevelAS(RenderContext* pContext) {
 
     //if buffers for the tlas are empty create them
     if (mPhotonTlas.pTlas == nullptr) {
-        assert(mPhotonTlas.pInstanceDescs == nullptr); //the instance descriptions should also be null
+        FALCOR_ASSERT(mPhotonTlas.pInstanceDescs == nullptr); //the instance descriptions should also be null
         mPhotonTlas.pTlas = Buffer::create(mTlasPrebuildInfo.ResultDataMaxSizeInBytes, Buffer::BindFlags::AccelerationStructure, Buffer::CpuAccess::None);
         mPhotonTlas.pTlas->setName("PhotonMapper::TLAS");
         mPhotonTlas.pInstanceDescs = Buffer::create((uint32_t)mPhotonInstanceDesc.size() * sizeof(D3D12_RAYTRACING_INSTANCE_DESC), Buffer::BindFlags::None, Buffer::CpuAccess::Write, mPhotonInstanceDesc.data());
@@ -600,7 +607,7 @@ void PhotonMapper::createTopLevelAS(RenderContext* pContext) {
     asDesc.DestAccelerationStructureData = mPhotonTlas.pTlas->getGpuAddress();
 
     // Create TLAS
-    GET_COM_INTERFACE(pContext->getLowLevelData()->getCommandList(), ID3D12GraphicsCommandList4, pList4);
+    FALCOR_GET_COM_INTERFACE(pContext->getLowLevelData()->getCommandList(), ID3D12GraphicsCommandList4, pList4);
     pContext->resourceBarrier(mPhotonTlas.pInstanceDescs.get(), Resource::State::NonPixelShader);
     pList4->BuildRaytracingAccelerationStructure(&asDesc, 0, nullptr);
     pContext->uavBarrier(mPhotonTlas.pTlas.get());                   //barrier for the tlas so we can use it savely after creation
@@ -637,15 +644,15 @@ void PhotonMapper::createBottomLevelAS(RenderContext* pContext, const std::vecto
             inputs.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_BUILD;
 
             //get prebuild Info
-            GET_COM_INTERFACE(gpDevice->getApiHandle(), ID3D12Device5, pDevice5);
+            FALCOR_GET_COM_INTERFACE(gpDevice->getApiHandle(), ID3D12Device5, pDevice5);
             pDevice5->GetRaytracingAccelerationStructurePrebuildInfo(&blas.buildInputs, &blas.prebuildInfo);
 
             // Figure out the padded allocation sizes to have proper alignment.
-            assert(blas.prebuildInfo.ResultDataMaxSizeInBytes > 0);
-            blas.blasByteSize = align_to(D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT, blas.prebuildInfo.ResultDataMaxSizeInBytes);
+            FALCOR_ASSERT(blas.prebuildInfo.ResultDataMaxSizeInBytes > 0);
+            blas.blasByteSize = align_to((uint64_t)D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT, blas.prebuildInfo.ResultDataMaxSizeInBytes);
 
             uint64_t scratchByteSize = std::max(blas.prebuildInfo.ScratchDataSizeInBytes, blas.prebuildInfo.UpdateScratchDataSizeInBytes);
-            blas.scratchByteSize = align_to(D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT, scratchByteSize);
+            blas.scratchByteSize = align_to((uint64_t)D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT, scratchByteSize);
 
             maxScratchSize = std::max(blas.scratchByteSize, maxScratchSize);
         }
@@ -663,14 +670,14 @@ void PhotonMapper::createBottomLevelAS(RenderContext* pContext, const std::vecto
         }
     }
 
-    assert(mBlasData.size() <= aabbCount.size()); //size of the blas data has to be equal or smaller than the aabbCounts 
+    FALCOR_ASSERT(mBlasData.size() <= aabbCount.size()); //size of the blas data has to be equal or smaller than the aabbCounts 
 
     //Update size of the blas
     for (size_t i = 0; i < mBlasData.size(); i++) {
         mBlasData[i].geomDescs.AABBs.AABBCount = aabbCount[i];
     }
 
-    PROFILE("buildPhotonBlas");
+    FALCOR_PROFILE("buildPhotonBlas");
     if (!gpDevice->isFeatureSupported(Device::SupportedFeatures::Raytracing))
     {
         throw std::exception("Raytracing is not supported by the current device");
@@ -692,7 +699,7 @@ void PhotonMapper::createBottomLevelAS(RenderContext* pContext, const std::vecto
         asDesc.ScratchAccelerationStructureData = mBlasScratch->getGpuAddress();
         asDesc.DestAccelerationStructureData = i == 0 ? mCausticBuffers.blas->getGpuAddress(): mGlobalBuffers.blas->getGpuAddress();
 
-        GET_COM_INTERFACE(pContext->getLowLevelData()->getCommandList(), ID3D12GraphicsCommandList4, pList4);
+        FALCOR_GET_COM_INTERFACE(pContext->getLowLevelData()->getCommandList(), ID3D12GraphicsCommandList4, pList4);
         pList4->BuildRaytracingAccelerationStructure(&asDesc, 0, nullptr);
 
         //Barrier for the blas
@@ -702,7 +709,7 @@ void PhotonMapper::createBottomLevelAS(RenderContext* pContext, const std::vecto
 
 void PhotonMapper::prepareRandomSeedBuffer(const uint2 screenDimensions)
 {
-    assert(screenDimensions.x > 0 && screenDimensions.y > 0);
+    FALCOR_ASSERT(screenDimensions.x > 0 && screenDimensions.y > 0);
 
     //fill a std vector with random seed from the seed_seq
     std::seed_seq seq{ time(0) };
@@ -713,5 +720,5 @@ void PhotonMapper::prepareRandomSeedBuffer(const uint2 screenDimensions)
     mRandNumSeedBuffer = Buffer::createStructured(sizeof(uint32_t), screenDimensions.x * screenDimensions.y, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, Buffer::CpuAccess::None, cpuSeeds.data());
     mRandNumSeedBuffer->setName("PhotonMapper::RandomSeedBuffer");
 
-    assert(mRandNumSeedBuffer);
+    FALCOR_ASSERT(mRandNumSeedBuffer);
 }

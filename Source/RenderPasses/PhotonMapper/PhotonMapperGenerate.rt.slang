@@ -1,12 +1,12 @@
-
+#include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
 
 import Scene.Raytracing;
 import Utils.Math.MathHelpers;
 import Utils.Sampling.SampleGenerator;
-import Experimental.Scene.Material.StandardMaterial;
-import Experimental.Scene.Material.MaterialHelpers;
-import Experimental.Scene.Lights.LightHelpers;
+import Rendering.Materials.StandardMaterial;
+//import Experimental.Scene.Material.MaterialHelpers;
+import Rendering.Lights.LightHelpers;
 
 
 cbuffer CB
@@ -30,13 +30,6 @@ Texture2D<float4> gSpecularRoughness;
 Texture2D<float4> gEmissive;
 Texture2D<float4> gMaterialExtra;
 Texture2D<float4> gViewWorld;
-
-
-// Outputs
-RWTexture2D<float4> gPhotonImage;
-
-// Outputs
-RWTexture2D<float4> gPhotonTestImage;
 
 //Internal Buffer Structs
 
@@ -155,7 +148,7 @@ void calcLightDirection(in float3 lightDirW, float2 rnd, inout float3 newDir, in
 
 AABB calcPhotonAABB(in float3 center, in float radius)
 {
-    AABB aabb = AABB.create(center - radius, center + radius);
+    AABB aabb = AABB(center - radius, center + radius);
     return aabb;
 }
 
@@ -174,8 +167,26 @@ void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleInt
     GeometryInstanceID instanceID = getGeometryInstanceID();
     VertexData v = getVertexData(instanceID, PrimitiveIndex(), attribs);
     const uint materialID = gScene.getMaterialID(instanceID);
-    ShadingData sd = prepareShadingData(v, materialID, gScene.materials[materialID], gScene.materialResources[materialID], -WorldRayDirection(), 0.f);
+    let lod = ExplicitLodTextureSampler(0.f);
+    ShadingData sd = gScene.materials.prepareShadingData(v, materialID, -WorldRayDirection(), lod);
+    //ShadingData sd = prepareShadingData(v, materialID, gScene.materials[materialID], gScene.materialResources[materialID], -WorldRayDirection(), 0.f);
 
+    BSDFSample bsdfSample;
+    let bsdf = gScene.materials.getBSDF(sd, lod);
+
+    bool valid = bsdf.sample(sd, rayData.sg, bsdfSample, true /*ImportanceSampling*/);
+
+
+    float3 thpStart = rayData.thp;
+    
+    bool transmission = bsdfSample.isLobe(LobeType::Transmission);
+    float3 rayOrigin = sd.computeNewRayOrigin(!transmission); //false is for transmissions
+    rayData.origin = rayOrigin;
+    rayData.thp = valid ? bsdfSample.weight : float3(0);
+    rayData.lobeType = bsdfSample.lobe;
+    rayData.direction = bsdfSample.wo;
+
+    /*
     float pdf = 0.f;
     uint lobe = 0;
     float3 wiLocal = sd.toLocal(sd.V);
@@ -199,6 +210,8 @@ void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleInt
     rayData.lobeType = lobe;                         //save lobe type
     //rayData.thp = min(max(rayData.thp, float3(0)), float3(1.0));        //there is a low probabilty that transmission creates a valid ray with broken thp
     rayData.thp *= weight;
+    */
+    
     //if throughput is 0, return
     if(!any(rayData.thp > 0.f))
         rayData.terminated = true;
@@ -219,7 +232,7 @@ void rayGen()
     
      // Prepare ray payload.
     ScatterRayData rayData = ScatterRayData.create();
-    rayData.sg = SampleGenerator.create(launchIndex, seed + gFrameCount);
+    rayData.sg = SampleGenerator(launchIndex, seed + gFrameCount);
 
     // Advance the generator to the first available dimension.
     // TODO: This is potentially expensive. We may want to store/restore the state from memory if it becomes a problem.
@@ -338,7 +351,7 @@ void rayGen()
                 InterlockedAdd(gPhotonCounter[0].caustic, 1u, photonIndex);
                 photonIndex = min(photonIndex, kMaxPhotonIndex);
                 AABB photonAABB = calcPhotonAABB(photonPos, gCausticRadius);
-                gCaustic[photonIndex] = photon; //this causes error for some reason    
+                gCaustic[photonIndex] = photon; 
                 gCausticAABB[photonIndex] = photonAABB;
             }
             //Global photon

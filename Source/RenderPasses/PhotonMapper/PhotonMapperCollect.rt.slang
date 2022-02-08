@@ -1,12 +1,12 @@
-
+#include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
 
-import Scene.Scene;
 import Scene.Raytracing;
 import Utils.Math.MathHelpers;
-import Experimental.Scene.Material.StandardMaterial;
-import Experimental.Scene.Material.MaterialHelpers;
-import Experimental.Scene.Lights.LightHelpers;
+import Utils.Sampling.SampleGenerator;
+import Rendering.Materials.StandardMaterial;
+//import Experimental.Scene.Material.MaterialHelpers;
+import Rendering.Lights.LightHelpers;
 
 
 cbuffer CB
@@ -18,12 +18,6 @@ cbuffer CB
     float gEmissiveScale;   // Scale for the emissive part
 }
 
-static struct Data
-{
-    // Materials
-    StandardMaterial standardMaterial;
-} gData;
-
 // Inputs
 Texture2D<float4> gWorldPosition;
 Texture2D<float4> gWorldNormal;
@@ -32,7 +26,7 @@ Texture2D<float2> gTextureCoordinate;
 Texture2D<float4> gDiffuseOpacity;
 Texture2D<float4> gSpecularRoughness;
 Texture2D<float4> gEmissive;
-Texture2D<float4> gMaterialExtra;
+Texture2D<uint4> gMaterialExtra;
 Texture2D<float4> gViewWorld;
 Texture2D<float4> gFaceNormal;
 
@@ -81,7 +75,8 @@ struct RayData
     float4 diffuseOpacity;
     float4 specularRoughness;
     float4 emissive;
-    float4 extraParams;
+    uint matID;
+    uint3 extraParams;
   
 
     static RayData create()
@@ -96,7 +91,8 @@ struct RayData
         r.diffuseOpacity = float4(0);
         r.specularRoughness = float4(0);
         r.emissive = float4(0);
-        r.extraParams = float4(0);
+        r.matID = 0;
+        r.extraParams = uint3(0);
         r.wTangent = float4(0);
 
         return r;
@@ -146,7 +142,8 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
         rayData.radiance = float3(1);
         return;
     }
-
+    
+    
     const uint primIndex = PrimitiveIndex();
     //get caustic or global photon
     PhotonInfo photon;
@@ -163,7 +160,20 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
         radius = gGlobalRadius;
     }
 
+    //create a Vertex Data object
+    VertexData v;
+    v.posW = ObjectRayOrigin().xyz;
+    decodeNormalFaceNormal(rayData.wNormalFaceN, v.normalW, v.faceNormalW);
+    v.tangentW = rayData.wTangent;
+    v.texC = float2(rayData.texU, rayData.texV);
+    //v.coneTexLODValue = 0.0;
+
+    //uint materialID = rayData.extraParams.x;
+
+    
+    
     //create shading data
+    /*
     MaterialParams matPara;
     matPara.diffuseOpacity = rayData.diffuseOpacity;
     matPara.specularRoughness = rayData.specularRoughness;
@@ -171,16 +181,33 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
     matPara.extraParams = rayData.extraParams;
     float3 wNormal, faceNormal;
     decodeNormalFaceNormal(rayData.wNormalFaceN, wNormal, faceNormal);
+    */ 
+    //GeometryParams geoPara = prepareGeometryParams(ObjectRayOrigin() /*wPos*/, rayData.wView, wNormal, rayData.wTangent, faceNormal, float2(rayData.texU, rayData.texV));
 
-    GeometryParams geoPara = prepareGeometryParams(ObjectRayOrigin() /*wPos*/, rayData.wView, wNormal, rayData.wTangent, faceNormal, float2(rayData.texU, rayData.texV));
+    //ShadingData sd = prepareShadingData(geoPara, matPara);
 
-    ShadingData sd = prepareShadingData(geoPara, matPara);
+    let lod = ExplicitLodTextureSampler(0.f);
+    ShadingData sd = gScene.materials.prepareShadingData(v, rayData.matID, rayData.wView, lod);
+
+    
+    
+    let bsdf = gScene.materials.getBSDF(sd, lod);
+    
+    float3 woLocal = float3(dot(-photon.dir, sd.T), dot(-photon.dir, sd.B), dot(-photon.dir, sd.N));
+    float3 wiLocal = sd.toLocal(sd.V);
+
+     // Get BSDF properties.
+    let bsdfProperties = bsdf.getProperties(sd);
+    
+    /*
     FalcorBSDF bsdf;
     bsdf.setup(sd);
     float3 wiLocal = sd.toLocal(sd.V);
-    float3 woLocal = float3(dot(-photon.dir, sd.T), dot(-photon.dir, sd.B), dot(-photon.dir, sd.N));
-
-    float3 f_r = bsdf.eval(wiLocal, woLocal);
+    */
+    
+    float3 f_r = float3(1);
+    f_r = bsdf.eval(sd, -photon.dir);
+        
     float w = 1 / (M_PI * (radius * radius));
     
     rayData.radiance += f_r * photon.flux * w;
@@ -250,7 +277,8 @@ void rayGen()
     rayData.diffuseOpacity = gDiffuseOpacity[launchIndex];
     rayData.specularRoughness = gSpecularRoughness[launchIndex];
     rayData.emissive = gEmissive[launchIndex];
-    rayData.extraParams = gMaterialExtra[launchIndex];
+    rayData.matID = asuint(gViewWorld[launchIndex].w);
+    rayData.extraParams = gMaterialExtra[launchIndex].yzw;
     //encode normal
     float3 wNormal = gWorldNormal[launchIndex].xyz;
     float3 faceNormal = gFaceNormal[launchIndex].xyz;
@@ -271,16 +299,18 @@ void rayGen()
     //It is faster to trace two times in the different instance mask becaus of divergence
     if (kCollectCausticPhotons && valid)
         TraceRay(gPhotonAS, rayFlags, 1 /* instanceInclusionMask */, 0 /* hitIdx */, 0 /* rayType count */, 0 /* missIdx */, ray, rayData);
+    
     if (kCollectGlobalPhotons && valid)
         TraceRay(gPhotonAS, rayFlags, 2 /* instanceInclusionMask */, 0 /* hitIdx */, 0 /* rayType count */, 0 /* missIdx */, ray, rayData);
-
+    
     float w = 1 / M_PI;
 
     float3 radiance = valid ? w * rayData.radiance : float3(0.0);
 
     float3 pixEmission = gEmissive[launchIndex].xyz *0.05;
     radiance += pixEmission;
-    
+
+    radiance *= rayData.diffuseOpacity.xyz;
     //Accumulate the image
     if (gFrameCount > 0 )
     {

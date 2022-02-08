@@ -28,6 +28,19 @@
 #include "PTGBuffer.h"
 #include <RenderGraph/RenderPassHelpers.h>
 
+const RenderPass::Info PTGBuffer::kInfo{ "PTGBuffer", "A GBuffer that traces until it reaches a diffuse Surface." };
+
+// Don't remove this. it's required for hot-reload to function properly
+extern "C" FALCOR_API_EXPORT const char* getProjDir()
+{
+    return PROJECT_DIR;
+}
+
+extern "C" FALCOR_API_EXPORT void getPasses(Falcor::RenderPassLibrary & lib)
+{
+    lib.registerPass(PTGBuffer::kInfo, PTGBuffer::create);
+}
+
 namespace
 {
     const char kShader[] = "RenderPasses/PTGBuffer/PTGBuffer.rt.slang";
@@ -38,29 +51,18 @@ namespace
     const uint32_t kMaxRecursionDepth = 2u;
 
     const ChannelList kOutputChannels = {
-        {"Output",          "gOutput",          "Testing Output Image"},
-        { "posW",           "gPosW",            "world space position",         true /* optional */, ResourceFormat::RGBA32Float },
-        { "normW",          "gNormW",           "world space normal",           true /* optional */, ResourceFormat::RGBA32Float },
-        { "tangentW",       "gTangentW",        "world space tangent",          true /* optional */, ResourceFormat::RGBA32Float },
-        { "texC",           "gTexC",            "texture coordinates",          true /* optional */, ResourceFormat::RGBA32Float },
-        { "diffuseOpacity", "gDiffuseOpacity",  "diffuse color and opacity",    true /* optional */, ResourceFormat::RGBA32Float },
-        { "specRough",      "gSpecRough",       "specular color and roughness", true /* optional */, ResourceFormat::RGBA32Float },
-        { "emissive",       "gEmissive",        "emissive color",               true /* optional */, ResourceFormat::RGBA32Float },
-        { "matlExtra",      "gMatlExtra",       "additional material data",     true /* optional */, ResourceFormat::RGBA32Float },
-        { "viewW",          "gViewWorld",       "World View Direction",             true /* optional */, ResourceFormat::RGBA32Float },
-        { "faceNormal",     "gFaceNormal",      "Normal for the face",              true /* optional */, ResourceFormat::RGBA32Float },
+        {"Output",          "gOutput",          "Testing Output Image",        false /* optional */, ResourceFormat::RGBA32Float },
+        { "posW",           "gPosW",            "world space position",         false /* optional */, ResourceFormat::RGBA32Float },
+        { "normW",          "gNormW",           "world space normal",           false /* optional */, ResourceFormat::RGBA32Float },
+        { "tangentW",       "gTangentW",        "world space tangent",          false /* optional */, ResourceFormat::RGBA32Float },
+        { "texC",           "gTexC",            "texture coordinates",          false /* optional */, ResourceFormat::RGBA32Float },
+        { "diffuseOpacity", "gDiffuseOpacity",  "diffuse color and opacity",    false /* optional */, ResourceFormat::RGBA32Float },
+        { "specRough",      "gSpecRough",       "specular color and roughness", false /* optional */, ResourceFormat::RGBA32Float },
+        { "emissive",       "gEmissive",        "emissive color",               false /* optional */, ResourceFormat::RGBA32Float },
+        { "matlExtra",      "gMatlExtra",       "additional material data",     false /* optional */, ResourceFormat::RGBA32Uint },
+        { "viewW",          "gViewWorld",       "World View Direction",             false /* optional */, ResourceFormat::RGBA32Float },
+        { "faceNormal",     "gFaceNormal",      "Normal for the face",              false /* optional */, ResourceFormat::RGBA32Float },
     };
-}
-
-// Don't remove this. it's required for hot-reload to function properly
-extern "C" __declspec(dllexport) const char* getProjDir()
-{
-    return PROJECT_DIR;
-}
-
-extern "C" __declspec(dllexport) void getPasses(Falcor::RenderPassLibrary& lib)
-{
-    lib.registerClass("PTGBuffer", kDesc, PTGBuffer::create);
 }
 
 PTGBuffer::SharedPtr PTGBuffer::create(RenderContext* pRenderContext, const Dictionary& dict)
@@ -70,12 +72,11 @@ PTGBuffer::SharedPtr PTGBuffer::create(RenderContext* pRenderContext, const Dict
 }
 
 PTGBuffer::PTGBuffer()
+    : RenderPass(kInfo)
 {
     mpSampleGenerator = SampleGenerator::create(SAMPLE_GENERATOR_UNIFORM);
-    assert(mpSampleGenerator);
+    FALCOR_ASSERT(mpSampleGenerator);
 }
-
-std::string PTGBuffer::getDesc() { return kDesc; }
 
 Dictionary PTGBuffer::getScriptingDictionary()
 {
@@ -125,7 +126,7 @@ void PTGBuffer::execute(RenderContext* pRenderContext, const RenderData& renderD
     // The program should have all necessary defines set at this point.
 
     if (!mTracer.pVars) prepareVars();
-    assert(mTracer.pVars);
+    FALCOR_ASSERT(mTracer.pVars);
 
     // Set constants.
     auto var = mTracer.pVars->getRootVar();
@@ -146,7 +147,7 @@ void PTGBuffer::execute(RenderContext* pRenderContext, const RenderData& renderD
 
     // Get dimensions of ray dispatch.
     const uint2 targetDim = renderData.getDefaultTextureDims();
-    assert(targetDim.x > 0 && targetDim.y > 0);
+    FALCOR_ASSERT(targetDim.x > 0 && targetDim.y > 0);
 
     // Trace the Scene
     mpScene->raytrace(pRenderContext, mTracer.pProgram.get(), mTracer.pVars, uint3(targetDim, 1));
@@ -163,7 +164,7 @@ void PTGBuffer::setScene(RenderContext* pRenderContext, const Scene::SharedPtr& 
     mpScene = pScene;
 
     if (mpScene) {
-        if (mpScene->hasGeometryType(Scene::GeometryType::Procedural))
+        if (mpScene->hasGeometryType(Scene::GeometryType::Custom))
         {
             logWarning("This render pass only supports triangles. Other types of geometry will be ignored.");
         }
@@ -174,15 +175,17 @@ void PTGBuffer::setScene(RenderContext* pRenderContext, const Scene::SharedPtr& 
         desc.setMaxPayloadSize(kMaxPayloadSizeBytes);
         desc.setMaxAttributeSize(kMaxAttributeSizeBytes);
         desc.setMaxTraceRecursionDepth(kMaxRecursionDepth);
-        desc.addDefines(mpScene->getSceneDefines());
+        //desc.addDefines(mpScene->getSceneDefines());
 
         mTracer.pBindingTable = RtBindingTable::create(1, 1, mpScene->getGeometryCount());
         auto& sbt = mTracer.pBindingTable;
         sbt->setRayGen(desc.addRayGen("rayGen"));
         sbt->setMiss(0, desc.addMiss("miss"));
-        sbt->setHitGroupByType(0, mpScene, Scene::GeometryType::TriangleMesh, desc.addHitGroup("closestHit"));
+        if (mpScene->hasGeometryType(Scene::GeometryType::TriangleMesh)) {
+            sbt->setHitGroup(0, mpScene->getGeometryIDs(Scene::GeometryType::TriangleMesh), desc.addHitGroup("closestHit"));
+        }
 
-        mTracer.pProgram = RtProgram::create(desc);
+        mTracer.pProgram = RtProgram::create(desc, mpScene->getSceneDefines());
     }
 }
 
@@ -201,10 +204,11 @@ void PTGBuffer::renderUI(Gui::Widgets& widget)
 
 void PTGBuffer::prepareVars()
 {
-    assert(mTracer.pProgram);
+    FALCOR_ASSERT(mTracer.pProgram);
 
     //Configure Program
     mTracer.pProgram->addDefines(mpSampleGenerator->getDefines());
+    mTracer.pProgram->setTypeConformances(mpScene->getTypeConformances());
 
     // Create program variables for the current program.
     // This may trigger shader compilation. If it fails, throw an exception to abort rendering.
@@ -212,6 +216,5 @@ void PTGBuffer::prepareVars()
 
     // Bind utility classes into shared data.
     auto var = mTracer.pVars->getRootVar();
-    bool success = mpSampleGenerator->setShaderData(var);
-    if (!success) throw std::exception("Failed to bind sample generator");
+    mpSampleGenerator->setShaderData(var);
 }

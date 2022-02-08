@@ -1,11 +1,13 @@
+#include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
 
 import Scene.Raytracing;
 import Utils.Math.MathHelpers;
 import Utils.Sampling.SampleGenerator;
-import Experimental.Scene.Material.StandardMaterial;
-import Experimental.Scene.Material.MaterialHelpers;
-import Experimental.Scene.Lights.LightHelpers;
+import Utils.Sampling.SampleGenerator;
+import Rendering.Materials.StandardMaterial;
+//import Experimental.Scene.Material.MaterialHelpers;
+import Rendering.Lights.LightHelpers;
 
 
 cbuffer CB
@@ -22,7 +24,7 @@ RWTexture2D<float4> gTexC;
 RWTexture2D<float4> gDiffuseOpacity;
 RWTexture2D<float4> gSpecRough;
 RWTexture2D<float4> gEmissive;
-RWTexture2D<float4> gMatlExtra;
+RWTexture2D<uint4> gMatlExtra;
 RWTexture2D<float4> gViewWorld;
 RWTexture2D<float4> gFaceNormal;
 
@@ -88,8 +90,25 @@ void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleInt
     GeometryInstanceID instanceID = getGeometryInstanceID();
     VertexData v = getVertexData(instanceID, PrimitiveIndex(), attribs);
     const uint materialID = gScene.getMaterialID(instanceID);
-    ShadingData sd = prepareShadingData(v, materialID, gScene.materials[materialID], gScene.materialResources[materialID], -WorldRayDirection(), 0.f);
+    let lod = ExplicitLodTextureSampler(0.f);
+    ShadingData sd = gScene.materials.prepareShadingData(v, materialID, -WorldRayDirection(), lod);
+    //ShadingData sd = prepareShadingData(v, materialID, gScene.materials[materialID], gScene.materialResources[materialID], -WorldRayDirection(), 0.f);
 
+    BSDFSample bsdfSample;
+    let bsdf = gScene.materials.getBSDF(sd, lod);
+
+    bool valid = bsdf.sample(sd, rayData.sg, bsdfSample, true /*ImportanceSampling*/);
+
+
+    float3 thpStart = rayData.thp;
+    
+    bool transmission = bsdfSample.isLobe(LobeType::Transmission);
+    float3 rayOrigin = sd.computeNewRayOrigin(!transmission); //false is for transmissions
+    rayData.origin = rayOrigin;
+    rayData.thp = valid ? bsdfSample.weight : float3(0);
+    rayData.lobeType = bsdfSample.lobe;
+    rayData.direction = bsdfSample.wo;
+    /*
     float pdf = 0.f;
     uint lobe = 0;
     float3 wiLocal = sd.toLocal(sd.V);
@@ -114,6 +133,7 @@ void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleInt
     rayData.thp = valid ? isDelta ? float3(1.0) : res / pdf : float3(0);
     rayData.lobeType = lobe; //save lobe type
     rayData.thp = min(max(rayData.thp, float3(0)), float3(1.0)); //there is a low probabilty that transmission creates a valid ray with broken thp
+    */
     //if throughput is 0, return
     if (!any(rayData.thp > 0.f))
     {
@@ -122,22 +142,30 @@ void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleInt
         
 
     //save hit if lobe is diffuse
-    if ((lobe & ((uint) LobeType::Specular | (uint) LobeType::Delta)) == 0 && !rayData.terminated)
+    if (bsdfSample.isLobe(LobeType::Diffuse) && !rayData.terminated)
     {
-        uint specTrans16 = f32tof16(sd.specularTransmission) << 16;
-        uint diffTrans16 = f32tof16(sd.diffuseTransmission);
-        uint trans16 = specTrans16 | diffTrans16;
-        
+        // We store the final normal and tangent in the G-buffer.
+         // In order to reconstruct the bitangent later, we also need to store its handedness (sign).
+        float3 B = cross(sd.N, sd.T);
+        float bitangentSign = dot(sd.B, B) >= 0.f ? 1.f : -1.f;
+
         gPosW[launchIndex] = float4(rayOrigin, 1.0);
         gNormW[launchIndex] = float4(sd.N, 1.0);
-        gTangentW[launchIndex] = float4(sd.T, 1.0);
+        gTangentW[launchIndex] = float4(sd.T, bitangentSign);
         gTexC[launchIndex] = float4(sd.uv, 1.0, 1.0);
-        gDiffuseOpacity[launchIndex] = float4(sd.diffuse * rayData.radiance, sd.opacity);
-        gSpecRough[launchIndex] = float4(sd.specular * rayData.radiance, sd.linearRoughness);
-        gEmissive[launchIndex] = float4(sd.emissive * rayData.radiance, 1.0);
-        gMatlExtra[launchIndex] = float4(sd.IoR, asfloat(sd.flags), asfloat(trans16), sd.metallic);
-        gViewWorld[launchIndex] = float4(-WorldRayDirection(), 1.0);
+        gViewWorld[launchIndex] = float4(-WorldRayDirection(), asfloat(sd.materialID));
         gFaceNormal[launchIndex] = float4(sd.faceN, 1);
+        gMatlExtra[launchIndex] = uint4(sd.materialID, 0,0, 0);
+
+        // Get BSDF properties.
+        let bsdfProperties = bsdf.getProperties(sd);
+             
+       
+        gDiffuseOpacity[launchIndex] = float4(thpStart, sd.opacity);
+        gSpecRough[launchIndex] = float4(bsdfProperties.specularReflectance, bsdfProperties.roughness);
+        gEmissive[launchIndex] = float4(bsdfProperties.emission, 0.f);
+       
+        
     }
 
     rayData.pathLength++;
@@ -152,7 +180,7 @@ void rayGen()
     float3 outColor = float3(0);
     float3 throughput = float3(1);
     ScatterRayData rayData = ScatterRayData.create();
-    rayData.sg = SampleGenerator.create(launchIndex, gFrameCount); //lazy init for now
+    rayData.sg = SampleGenerator(launchIndex, gFrameCount); //lazy init for now
     Ray ray = gScene.camera.computeRayThinlens(launchIndex, launchDim, sampleNext2D(rayData.sg)); //get a random jittered ray
     uint rayFlags = 0;
     
