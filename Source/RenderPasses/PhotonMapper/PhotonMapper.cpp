@@ -57,22 +57,20 @@ namespace
    // These should be set as small as possible.
    //TODO: set them later to the right vals
     const uint32_t kMaxPayloadSizeBytes = 80u;
-    const uint32_t kMaxPayloadSizeBytesCollect = 128u;
+    const uint32_t kMaxPayloadSizeBytesCollect = 96u;
     const uint32_t kMaxAttributeSizeBytes = 8u;
     const uint32_t kMaxRecursionDepth = 2u;
 
     const ChannelList kInputChannels =
     {
-        { "WPos",               "gWorldPosition",           "World Position"                    ,true},
-        { "WNormal",            "gWorldNormal",             "World Normals"                     ,true},
-        {"WTangent",            "gWorldTangent",            "World Tangent"                     ,true},
-        {"TexC",                "gTextureCoordinate",       "Texture Coordinate"                ,true},
-        {"DiffuseOpacity",      "gDiffuseOpacity",          "Diffuse and Opacity (in z)"        ,true},
-        {"SpecularRoughness",   "gSpecularRoughness",       "The Specular and Roughness"        ,true},
-        {"Emissive",            "gEmissive",                "Emissive"                          ,true},
-        {"MaterialExtra",       "gMaterialExtra",           "Extra Material Data"               ,true},
-        {"WView",               "gViewWorld",               "World View Direction"              ,true},
-        {"WFaceNormal",         "gFaceNormal",              "Normal for the face"               ,true}
+        {"posW",                "gWorldPosition",           "World Position",               false},
+        {"normalW",             "gWorldNormal",             "World Normals",                false},
+        {"tangentW",            "gWorldTangent",            "World Tangent",                false},
+        {"texC",                "gTextureCoordinate",       "Texture Coordinate",           false},
+        {"viewW",               "gViewWorld",               "World View Direction",         false},
+        {"faceNormal",          "gFaceNormal",              "Normal for the face",          false},
+        {"thpMatID",            "gThpMatID",                "Throughput and material id(w)",false},
+        {"emissive",            "gEmissive",                "Emissive",                     false},
     };
 
     const ChannelList kOutputChannels =

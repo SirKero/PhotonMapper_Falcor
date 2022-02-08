@@ -23,12 +23,10 @@ Texture2D<float4> gWorldPosition;
 Texture2D<float4> gWorldNormal;
 Texture2D<float4> gWorldTangent;
 Texture2D<float2> gTextureCoordinate;
-Texture2D<float4> gDiffuseOpacity;
-Texture2D<float4> gSpecularRoughness;
-Texture2D<float4> gEmissive;
-Texture2D<uint4> gMaterialExtra;
 Texture2D<float4> gViewWorld;
 Texture2D<float4> gFaceNormal;
+Texture2D<float4> gThpMatID;
+Texture2D<float4> gEmissive;
 
 
 // Outputs
@@ -65,39 +63,28 @@ static const bool kCollectCausticPhotons = COLLECT_CAUSTIC_PHOTONS;
 */
 struct RayData
 {
-    float3 radiance; ///< Accumulated outgoing radiance from path.
-    bool terminated; ///< Set to true when path is terminated.
-    uint3 wNormalFaceN; //< 16 bit Normal , 16 bit Face normal encoded.
-    float texU;
-    float3 wView;
-    float texV;
-    float4 wTangent;
-    float4 diffuseOpacity;
-    float4 specularRoughness;
-    float4 emissive;
-    uint matID;
-    uint3 extraParams;
+    float3 radiance;    ///< Accumulated outgoing radiance from path.
+    bool terminated;    ///< Set to true when path is terminated.
+    float3 wNormal;      ///< World normal
+    float texU;         ///< U of texture coordinate 
+    float3 wView;       ///< World View
+    float texV;         ///< V of texture coordinate 
+    float4 wTangent;    ///< Tangent, w component is the direction for the bitangent (either -1 or +1)
+    float3 wFaceNormal; ///< Face Normal
+    uint matID;         ///< MaterialID
   
 
-    static RayData create()
-    {
-        RayData r;
-        r.radiance = float3(0);
-        r.terminated = false;
-        r.wNormalFaceN = uint3(0);
-        r.texU = 0.0;
-        r.wView = float3(0);
-        r.texV = 0.0;
-        r.diffuseOpacity = float4(0);
-        r.specularRoughness = float4(0);
-        r.emissive = float4(0);
-        r.matID = 0;
-        r.extraParams = uint3(0);
-        r.wTangent = float4(0);
-
-        return r;
+    __init(){
+        this.radiance = float3(0);
+        this.terminated = false;
+        this.wNormal = float3(0);
+        this.texU = 0.0;
+        this.wView = float3(0);
+        this.texV = 0.0;
+        this.wTangent = float4(0);
+        this.wNormal = float3(0);
+        this.matID = 0;
     }
-
 };
 
 //Encode Normal + Face Normal
@@ -163,34 +150,15 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
     //create a Vertex Data object
     VertexData v;
     v.posW = ObjectRayOrigin().xyz;
-    decodeNormalFaceNormal(rayData.wNormalFaceN, v.normalW, v.faceNormalW);
+    v.normalW = rayData.wNormal;
+    v.faceNormalW = rayData.wFaceNormal;
     v.tangentW = rayData.wTangent;
     v.texC = float2(rayData.texU, rayData.texV);
-    //v.coneTexLODValue = 0.0;
-
-    //uint materialID = rayData.extraParams.x;
-
-    
-    
-    //create shading data
-    /*
-    MaterialParams matPara;
-    matPara.diffuseOpacity = rayData.diffuseOpacity;
-    matPara.specularRoughness = rayData.specularRoughness;
-    matPara.emissive = rayData.emissive;
-    matPara.extraParams = rayData.extraParams;
-    float3 wNormal, faceNormal;
-    decodeNormalFaceNormal(rayData.wNormalFaceN, wNormal, faceNormal);
-    */ 
-    //GeometryParams geoPara = prepareGeometryParams(ObjectRayOrigin() /*wPos*/, rayData.wView, wNormal, rayData.wTangent, faceNormal, float2(rayData.texU, rayData.texV));
-
-    //ShadingData sd = prepareShadingData(geoPara, matPara);
+    v.coneTexLODValue = 0.0;
 
     let lod = ExplicitLodTextureSampler(0.f);
     ShadingData sd = gScene.materials.prepareShadingData(v, rayData.matID, rayData.wView, lod);
 
-    
-    
     let bsdf = gScene.materials.getBSDF(sd, lod);
     
     float3 woLocal = float3(dot(-photon.dir, sd.T), dot(-photon.dir, sd.B), dot(-photon.dir, sd.N));
@@ -198,17 +166,11 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
 
      // Get BSDF properties.
     let bsdfProperties = bsdf.getProperties(sd);
-    
-    /*
-    FalcorBSDF bsdf;
-    bsdf.setup(sd);
-    float3 wiLocal = sd.toLocal(sd.V);
-    */
-    
+        
     float3 f_r = float3(1);
     f_r = bsdf.eval(sd, -photon.dir);
         
-    float w = 1 / (M_PI * (radius * radius));
+    float w = 1 / (radius * radius);
     
     rayData.radiance += f_r * photon.flux * w;
 }
@@ -255,7 +217,7 @@ void intersection()
     
     if (tHit > 0.0)
     {
-        ReportHit(0.005, 0, attribs);
+        ReportHit(0.00005, 0, attribs);
     }
 }
 
@@ -265,33 +227,27 @@ void rayGen()
 {
     uint2 launchIndex = DispatchRaysIndex().xy;
     uint2 launchDim = DispatchRaysDimensions().xy;
-        
+    
     float4 wPos = gWorldPosition[launchIndex];
     float2 texCoord = gTextureCoordinate[launchIndex];
+    float4 thpMatID = gThpMatID[launchIndex];
+
     //prepare payload
-    RayData rayData = RayData.create();
+    RayData rayData = RayData();
     rayData.texU = texCoord.x;
     rayData.wView = gViewWorld[launchIndex].xyz;
     rayData.texV = texCoord.y;
     rayData.wTangent = gWorldTangent[launchIndex];
-    rayData.diffuseOpacity = gDiffuseOpacity[launchIndex];
-    rayData.specularRoughness = gSpecularRoughness[launchIndex];
-    rayData.emissive = gEmissive[launchIndex];
-    rayData.matID = asuint(gViewWorld[launchIndex].w);
-    rayData.extraParams = gMaterialExtra[launchIndex].yzw;
-    //encode normal
-    float3 wNormal = gWorldNormal[launchIndex].xyz;
-    float3 faceNormal = gFaceNormal[launchIndex].xyz;
-    rayData.wNormalFaceN = encodeNormalFaceNormal(wNormal, faceNormal);
+    rayData.matID = asuint(thpMatID.w); 
+    rayData.wNormal = gWorldNormal[launchIndex].xyz;
+    rayData.wFaceNormal = gFaceNormal[launchIndex].xyz;
 
-    bool valid = true;
-    if (wPos.w < 1.0)
-        valid = false;
+    bool valid = !(wPos.w < 0.1);   //Check if the ray is valid (value over 0.1 in w coordinate of position)
     
     RayDesc ray;
     ray.Origin = wPos.xyz;
-    ray.TMin = 0.001;
-    ray.TMax = 0.01;
+    ray.TMin = 0.00001;
+    ray.TMax = 0.0001;
     ray.Direction = float3(0, 1, 0);
     
     uint rayFlags = RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | RAY_FLAG_SKIP_TRIANGLES;
@@ -303,15 +259,16 @@ void rayGen()
     if (kCollectGlobalPhotons && valid)
         TraceRay(gPhotonAS, rayFlags, 2 /* instanceInclusionMask */, 0 /* hitIdx */, 0 /* rayType count */, 0 /* missIdx */, ray, rayData);
     
-    float w = 1 / M_PI;
+    float w = 1 / M_PI;     //make this a constant
 
-    float3 radiance = valid ? w * rayData.radiance : float3(0.0);
+    float3 radiance = float3(0);
+        
+    radiance = valid ? w * rayData.radiance * thpMatID.xyz : float3(0.0);
 
-    float3 pixEmission = gEmissive[launchIndex].xyz *0.05;
-    radiance += pixEmission;
-
-    radiance *= rayData.diffuseOpacity.xyz;
-    //Accumulate the image
+    float3 pixEmission = gEmissive[launchIndex].xyz;
+    radiance += pixEmission * thpMatID.xyz;
+    
+    //Accumulate the image (Put in accumulate pass ? )
     if (gFrameCount > 0 )
     {
         float3 last = gPhotonImage[launchIndex].xyz;

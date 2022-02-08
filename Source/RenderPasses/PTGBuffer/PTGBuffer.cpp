@@ -46,22 +46,19 @@ namespace
     const char kShader[] = "RenderPasses/PTGBuffer/PTGBuffer.rt.slang";
     const char kDesc[] = "A GBuffer that traces until it reaches a diffuse Surface";
 
-    const uint32_t kMaxPayloadSizeBytes = 80u;
+    const uint32_t kMaxPayloadSizeBytes = 64u;
     const uint32_t kMaxAttributeSizeBytes = 8u;
     const uint32_t kMaxRecursionDepth = 2u;
 
     const ChannelList kOutputChannels = {
-        {"Output",          "gOutput",          "Testing Output Image",        false /* optional */, ResourceFormat::RGBA32Float },
-        { "posW",           "gPosW",            "world space position",         false /* optional */, ResourceFormat::RGBA32Float },
-        { "normW",          "gNormW",           "world space normal",           false /* optional */, ResourceFormat::RGBA32Float },
-        { "tangentW",       "gTangentW",        "world space tangent",          false /* optional */, ResourceFormat::RGBA32Float },
-        { "texC",           "gTexC",            "texture coordinates",          false /* optional */, ResourceFormat::RGBA32Float },
-        { "diffuseOpacity", "gDiffuseOpacity",  "diffuse color and opacity",    false /* optional */, ResourceFormat::RGBA32Float },
-        { "specRough",      "gSpecRough",       "specular color and roughness", false /* optional */, ResourceFormat::RGBA32Float },
-        { "emissive",       "gEmissive",        "emissive color",               false /* optional */, ResourceFormat::RGBA32Float },
-        { "matlExtra",      "gMatlExtra",       "additional material data",     false /* optional */, ResourceFormat::RGBA32Uint },
-        { "viewW",          "gViewWorld",       "World View Direction",             false /* optional */, ResourceFormat::RGBA32Float },
-        { "faceNormal",     "gFaceNormal",      "Normal for the face",              false /* optional */, ResourceFormat::RGBA32Float },
+        { "posW",           "gPosW",            "world space position",              false , ResourceFormat::RGBA32Float },
+        { "normW",          "gNormW",           "world space normal",                false , ResourceFormat::RGBA32Float },
+        { "tangentW",       "gTangentW",        "world space tangent",               false , ResourceFormat::RGBA32Float },
+        { "texC",           "gTexC",            "texture coordinates",               false , ResourceFormat::RGBA32Float },
+        { "viewW",          "gViewWorld",       "World View Direction",              false , ResourceFormat::RGBA32Float },
+        { "faceNormal",     "gFaceNormal",      "Normal for the face",               false, ResourceFormat::RGBA32Float },
+        { "throughputMatID", "gThpMatID",       "Throughput and material id(w)",     false , ResourceFormat::RGBA32Float },
+        { "emissive",       "gEmissive",        "Emissive color",                    false , ResourceFormat::RGBA32Float },
     };
 }
 
