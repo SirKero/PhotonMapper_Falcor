@@ -86,8 +86,8 @@ private:
 
     // Configuration
     uint                        mRecursionDepth = 5;                            ///< Depth of recursion (0 = none).
-    SamplePattern               mSamplePattern = SamplePattern::DirectX;         ///< Which camera jitter sample pattern to use.
-    uint32_t                    mSampleCount = 8;                              ///< Sample count for camera jitter.
+    SamplePattern               mSamplePattern = SamplePattern::Halton;         ///< Which camera jitter sample pattern to use.
+    uint32_t                    mSampleCount = 16;                              ///< Sample count for camera jitter.
 
      // Runtime data
     uint                        mFrameCount = 0;            ///< Frame count since last Reset

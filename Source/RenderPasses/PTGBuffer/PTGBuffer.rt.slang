@@ -37,7 +37,7 @@ struct ScatterRayData
     float3 origin; ///< Next path segment origin.
     uint lobeType; ///< Mask for the type of reflection
     float3 direction; ///< Next path segment direction.
-    uint _pad1;       ///free space
+    uint pathLength;       ///free space
 
     SampleGenerator sg; ///< Per-ray state for the sample generator (up to 16B).
 
@@ -49,7 +49,7 @@ struct ScatterRayData
         this.origin = float3(0); 
         this.lobeType = 0; 
         this.direction = float3(0); 
-        this._pad1 = 0;
+        this.pathLength = 0;
         this.sg = sg;
     }
 };
@@ -113,9 +113,12 @@ void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleInt
 
         // Get BSDF properties.
         let bsdfProperties = bsdf.getProperties(sd);
-        gEmissive[launchIndex] = float4(bsdfProperties.emission, 0.f);
+        float emissiveFactor = rayData.pathLength > 0 ? 0.5 / rayData.pathLength : 1.0;
+        gEmissive[launchIndex] = float4(bsdfProperties.emission * emissiveFactor, 0.f);
         rayData.terminated = true;
     }
+
+    rayData.pathLength++;
 }
 
 [shader("raygeneration")]
