@@ -34,6 +34,15 @@ using namespace Falcor;
 class PTGBuffer : public RenderPass
 {
 public:
+    //Sample patterns for camera jitter
+    enum class SamplePattern : uint32_t
+    {
+        Center,
+        DirectX,
+        Halton,
+        Stratified,
+    };
+
     using SharedPtr = std::shared_ptr<PTGBuffer>;
 
     static const Info kInfo;
@@ -61,16 +70,30 @@ private:
     */
     void prepareVars();
 
+    /** Updates the camera jitter
+    * Is called when frame dimensions or the sample generator changed
+    */
+    void setCameraJitter(const uint2 frameDim);
+
+    /** Updates the sample pattern if it was changed
+    */
+    void updateSamplePattern();
+
     // Internal state
-    Scene::SharedPtr            mpScene;                    ///< Current scene.
-    SampleGenerator::SharedPtr  mpSampleGenerator;          ///< GPU sample generator.
+    Scene::SharedPtr            mpScene;                            ///< Current scene.
+    SampleGenerator::SharedPtr  mpSampleGenerator;                  ///< GPU sample generator.
+    CPUSampleGenerator::SharedPtr   mpCameraJitterSampleGenerator;  ///< CPU Sample generator for camera jitter.
 
     // Configuration
-    uint                        mRecursionDepth = 5;        ///< Depth of recursion (0 = none).
+    uint                        mRecursionDepth = 5;                            ///< Depth of recursion (0 = none).
+    SamplePattern               mSamplePattern = SamplePattern::DirectX;         ///< Which camera jitter sample pattern to use.
+    uint32_t                    mSampleCount = 8;                              ///< Sample count for camera jitter.
 
      // Runtime data
     uint                        mFrameCount = 0;            ///< Frame count since last Reset
     bool                        mOptionsChanged = false;
+    bool                        mJitterGenChanged = false;
+    uint2                       mFrameDim = { 0,0 };
 
     //Ray Tracing Program
     struct RayTraceProgramHelper

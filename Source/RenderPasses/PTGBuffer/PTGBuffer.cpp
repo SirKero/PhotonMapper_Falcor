@@ -60,6 +60,15 @@ namespace
         { "throughputMatID", "gThpMatID",       "Throughput and material id(w)",     false , ResourceFormat::RGBA32Float },
         { "emissive",       "gEmissive",        "Emissive color",                    false , ResourceFormat::RGBA32Float },
     };
+
+    // UI variables.
+    const Gui::DropdownList kSamplePatternList =
+    {
+        { (uint32_t)PTGBuffer::SamplePattern::Center, "Center" },
+        { (uint32_t)PTGBuffer::SamplePattern::DirectX, "DirectX" },
+        { (uint32_t)PTGBuffer::SamplePattern::Halton, "Halton" },
+        { (uint32_t)PTGBuffer::SamplePattern::Stratified, "Stratified" },
+    };
 }
 
 PTGBuffer::SharedPtr PTGBuffer::create(RenderContext* pRenderContext, const Dictionary& dict)
@@ -106,6 +115,12 @@ void PTGBuffer::execute(RenderContext* pRenderContext, const RenderData& renderD
     if (is_set(mpScene->getUpdates(), Scene::UpdateFlags::GeometryChanged))
         throw std::runtime_error("This render pass does not support scene geometry changes. Aborting.");
 
+    //Check if camera jitter sample gen needs to be set
+    if (mFrameDim != renderData.getDefaultTextureDims() || mJitterGenChanged ) {
+        setCameraJitter(renderData.getDefaultTextureDims());
+        mJitterGenChanged = false;
+    }
+
     //clear all output images
     auto clear = [&](const ChannelDesc& channel)
     {
@@ -143,11 +158,10 @@ void PTGBuffer::execute(RenderContext* pRenderContext, const RenderData& renderD
     for (auto& output : kOutputChannels) bindAsTex(output);
 
     // Get dimensions of ray dispatch.
-    const uint2 targetDim = renderData.getDefaultTextureDims();
-    FALCOR_ASSERT(targetDim.x > 0 && targetDim.y > 0);
+    FALCOR_ASSERT(mFrameDim.x > 0 && mFrameDim.y > 0);
 
     // Trace the Scene
-    mpScene->raytrace(pRenderContext, mTracer.pProgram.get(), mTracer.pVars, uint3(targetDim, 1));
+    mpScene->raytrace(pRenderContext, mTracer.pProgram.get(), mTracer.pVars, uint3(mFrameDim, 1));
 
     mFrameCount++;
 }
@@ -188,15 +202,26 @@ void PTGBuffer::setScene(RenderContext* pRenderContext, const Scene::SharedPtr& 
 
 void PTGBuffer::renderUI(Gui::Widgets& widget)
 {
-    bool dirty = false;
-
-    //miscellaneous
-    dirty |= widget.slider("Max Recursion Depth", mRecursionDepth, 1u, 32u);
+    //Recursion Settings
+    mOptionsChanged |= widget.slider("Max Recursion Depth", mRecursionDepth, 1u, 32u);
     widget.tooltip("Maximum path length for Photon Bounces");
 
-    //set flag to indicate that settings have changed and the pass has to be rebuild
-    if (dirty)
-        mOptionsChanged = true;
+    // Sample pattern controls.
+    bool updatePattern = widget.dropdown("Sample pattern", kSamplePatternList, (uint32_t&)mSamplePattern);
+    widget.tooltip("Selects sample pattern for anti-aliasing over multiple frames.\n\n"
+        "The camera jitter is set at the start of each frame based on the chosen pattern. All render passes should see the same jitter.\n"
+        "'Center' disables anti-aliasing by always sampling at the center of the pixel.", true);
+    if (mSamplePattern != SamplePattern::Center)
+    {
+        updatePattern |= widget.var("Sample count", mSampleCount, 1u);
+        widget.tooltip("Number of samples in the anti-aliasing sample pattern.", true);
+    }
+    if (updatePattern)
+    {
+        updateSamplePattern();
+        mJitterGenChanged = true;
+    }
+   
 }
 
 void PTGBuffer::prepareVars()
@@ -214,4 +239,36 @@ void PTGBuffer::prepareVars()
     // Bind utility classes into shared data.
     auto var = mTracer.pVars->getRootVar();
     mpSampleGenerator->setShaderData(var);
+}
+
+static CPUSampleGenerator::SharedPtr createSamplePattern(PTGBuffer::SamplePattern type, uint32_t sampleCount)
+{
+    switch (type)
+    {
+    case PTGBuffer::SamplePattern::Center:
+        return nullptr;
+    case PTGBuffer::SamplePattern::DirectX:
+        return DxSamplePattern::create(sampleCount);
+    case PTGBuffer::SamplePattern::Halton:
+        return HaltonSamplePattern::create(sampleCount);
+    case PTGBuffer::SamplePattern::Stratified:
+        return StratifiedSamplePattern::create(sampleCount);
+    default:
+        FALCOR_UNREACHABLE();
+        return nullptr;
+    }
+}
+
+void PTGBuffer::setCameraJitter(const uint2 frameDim) {
+    FALCOR_ASSERT(frameDim.x > 0 && frameDim.y > 0);
+    mFrameDim = frameDim;
+    float2 mInvFrameDim = 1.f / float2(frameDim);
+
+    // Update sample generator for camera jitter.
+    if (mpScene) mpScene->getCamera()->setPatternGenerator(mpCameraJitterSampleGenerator, mInvFrameDim);
+}
+
+void PTGBuffer::updateSamplePattern() {
+    mpCameraJitterSampleGenerator = createSamplePattern(mSamplePattern, mSampleCount);
+    if (mpCameraJitterSampleGenerator) mSampleCount = mpCameraJitterSampleGenerator->getSampleCount();
 }
