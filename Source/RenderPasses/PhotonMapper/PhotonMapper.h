@@ -117,7 +117,7 @@ private:
     uint                        mNumPhotons = 500000;                   ///< Number of Photons shot
     bool                        mUsePhotonMapper = false;               ///< Activates ReStir for global photons
     float3                      mDirLightWorldPos = float3(0.f, 10.f, 0.f); ///< Testing purposes only
-    float                       mIntensityScalar = 25.0f;                ///<Scales the intensity of the light sources
+    float                       mIntensityScalar = 1.0f;                ///<Scales the intensity of emissive light sources
     bool                        mResetIterations = false;               ///<Resets the iterations counter once
     bool                        mAlwaysResetIterations = false;         ///<Resets the iteration counter every frame
     bool                        mDisableGlobalCollection = false;       ///<Disabled the collection of global photons

@@ -255,7 +255,8 @@ void rayGen()
     float3 lightPos = float3(0);
     float3 lightDir = float3(0, 1, 0);
     float3 lightIntensity = float3(0);
-    float maxCosineAngle = 0;
+    float maxSpotAngle = 0;
+    float penumbra = 0.0;
 
     uint type = 0;  //0 == Point, 1 == Area, 2 == Spot
 
@@ -274,7 +275,8 @@ void rayGen()
         lightPos = currentLight.posW;
         lightDir = currentLight.dirW;
         lightIntensity = currentLight.intensity;
-        maxCosineAngle = currentLight.cosOpeningAngle;
+        maxSpotAngle = currentLight.openingAngle;
+        penumbra = currentLight.penumbraAngle;
     }
     //emissive triangle light
     else
@@ -289,7 +291,7 @@ void rayGen()
         float3 bay = float3(RS.x, RS.y, 1.0 - (RS.x + RS.y));
         lightPos = emiTri.getPosition(bay);
         lightDir = emiTri.normal;
-        lightIntensity = lc.getAverageRadiance(triIndex);
+        lightIntensity = lc.getAverageRadiance(triIndex) * gEmissiveScale;
         type = 1;
     }
 
@@ -297,8 +299,9 @@ void rayGen()
     
     RayDesc ray;
     float lightDirPDF = 0.0;
-    float2 lightRnd = sampleNext2D(rayData.sg);
-    calcLightDirection(lightDir, lightRnd, ray.Direction, lightDirPDF, type, maxCosineAngle);
+    float3 lightRnd = sampleNext3D(rayData.sg);
+    float spotAngle = maxSpotAngle - penumbra * lightRnd.z;
+    calcLightDirection(lightDir, lightRnd.xy, ray.Direction, lightDirPDF, type, cos(spotAngle));
 
     //create photon
     float3 photonPos = float3(0, 0, 0);
@@ -309,7 +312,7 @@ void rayGen()
     photon.pad2 = 0.f;
     
     //light flux
-    float3 lightFlux = lightIntensity * lightDirPDF * invPdf * gEmissiveScale;
+    float3 lightFlux = lightIntensity * lightDirPDF * invPdf ;
     photon.flux = lightFlux / float3(launchDim.x * launchDim.y);
 
     //ray tracing vars
