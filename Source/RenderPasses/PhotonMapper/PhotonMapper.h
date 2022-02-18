@@ -101,12 +101,12 @@ private:
     SampleGenerator::SharedPtr  mpSampleGenerator;          ///< GPU sample generator.
 
     //Constants
-    const float                 kMinPhotonRadius = 0.005f;                ///< At radius 0.005 Photons are still visible
+    const float                 kMinPhotonRadius = 0.0001f;                ///< At radius 0.005 Photons are still visible
 
     // Configuration
     uint                        mMaxBounces = 5;                        ///< Depth of recursion (0 = none).
-    float                       mCausticRadiusStart = 0.04f;            ///< Start value for the caustic Radius
-    float                       mGlobalRadiusStart = 0.1f;             ///< Start value for the caustic Radius
+    float                       mCausticRadiusStart = 0.01f;            ///< Start value for the caustic Radius
+    float                       mGlobalRadiusStart = 0.05f;             ///< Start value for the caustic Radius
     float                       mCausticRadius = 1.f;                 ///< Current Radius for caustic Photons
     float                       mGlobalRadius = 1.f;                  ///< Current Radius for global Photons
     float                       mRussianRoulette = 0.3f;                ///< Probabilty that a Global photon is saved
@@ -114,7 +114,7 @@ private:
     float                       mSPPMAlphaGlobal = 0.7f;                 ///< Global Alpha for SPPM
     float                       mSPPMAlphaCaustic = 0.7f;                ///< Caustic Alpha for SPPM
 
-    uint                        mNumPhotons = 500000;                   ///< Number of Photons shot
+    uint                        mNumPhotons = 2000000;                   ///< Number of Photons shot
     bool                        mUsePhotonMapper = false;               ///< Activates ReStir for global photons
     float3                      mDirLightWorldPos = float3(0.f, 10.f, 0.f); ///< Testing purposes only
     float                       mIntensityScalar = 1.0f;                ///<Scales the intensity of emissive light sources
