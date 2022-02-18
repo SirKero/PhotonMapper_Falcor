@@ -242,10 +242,11 @@ void rayGen()
     LightCollection lc = gScene.lightCollection;
        
     const uint analyticLightCount = kUseAnalyticLights ? gScene.getLightCount() : 0;
-    const uint emissiveLightCount = kUseEmissiveLights ? lc.getActiveTriangleCount() : 0;
+    //we approximate the real count of emissive lights by the mesh count (as meshes are merged together this is not always the case)
+    const uint emissiveLightCount = kUseEmissiveLights ? lc.meshCount : 0;      
     const uint lightCount = analyticLightCount + emissiveLightCount;
     
-    if (lightCount == 0)        //If that case happens we have a problem 
+    if (lightCount == 0)        //No Photons can be shot if there is no light
         return;
     
     // Pick one of the analytic light sources randomly with equal probability.
