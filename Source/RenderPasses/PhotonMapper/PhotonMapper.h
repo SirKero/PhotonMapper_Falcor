@@ -65,6 +65,10 @@ private:
     */
     bool preparePhotonBuffers();
 
+    /** Creates the photon counter for caustic and global photon buffers
+    */
+    void preparePhotonCounters();
+
     /** Creates the Generate Photon pass, where the photons are shot through the scene and saved in an AABB and information buffer
     */
     void generatePhotons(RenderContext* pRenderContext, const RenderData& renderData);
@@ -86,11 +90,11 @@ private:
 
     /** Creates the TLAS for the Photon AABBs
     */
-    void createTopLevelAS(RenderContext* pContext);
+    void createTopLevelAS(RenderContext* pContext, bool rebuild = false);
 
     /** Creates the BLAS for the Photon AABBs
    */
-    void createBottomLevelAS(RenderContext* pContext, const std::vector<uint>& aabbCount);
+    void createBottomLevelAS(RenderContext* pContext, const std::vector<uint>& aabbCount, bool rebuild = false);
 
     /** Prepares the buffer that holds the seeds for the SampleGenerator
     */
@@ -101,7 +105,7 @@ private:
     SampleGenerator::SharedPtr  mpSampleGenerator;          ///< GPU sample generator.
 
     //Constants
-    const float                 kMinPhotonRadius = 0.0001f;                ///< At radius 0.005 Photons are still visible
+    const float                 kMinPhotonRadius = 0.0001f;                ///< At radius 0.0001 Photons are still visible
 
     // Configuration
     uint                        mMaxBounces = 5;                        ///< Depth of recursion (0 = none).
@@ -128,6 +132,8 @@ private:
     uint                        mFrameCount = 0;            ///< Frame count since last Reset
     std::vector<uint>           mPhotonCount = { 0,0 };
     bool                        mOptionsChanged = false;
+    bool                        mResizePhotonBuffers = true;    ///< If true resize the Photon Buffers
+    bool                        mRebuildAS = false;
 
     // Ray tracing program.
     struct RayTraceProgramHelper

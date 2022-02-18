@@ -66,7 +66,9 @@ static const bool kUseEnvLight = USE_ENV_LIGHT;
 static const bool kUseEnvBackground = USE_ENV_BACKGROUND;
 static const float3 kDefaultBackgroundColor = float3(0, 0, 0);
 static const float kRayTMax = FLT_MAX;
-static const uint kMaxPhotonIndex = MAX_PHOTON_INDEX;
+static const uint kMaxPhotonIndexGLB = MAX_PHOTON_INDEX_GLOBAL;
+static const uint kMaxPhotonIndexCAU = MAX_PHOTON_INDEX_CAUSTIC;
+static const bool kAllowWrites = ALLOW_WRITES;
 
 static const float k_2Pi = 6.28318530717958647692;
 static const float k_4Pi = 12.5663706143591729538;
@@ -185,32 +187,6 @@ void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleInt
     rayData.thp = valid ? bsdfSample.weight : float3(0);
     rayData.lobeType = bsdfSample.lobe;
     rayData.direction = bsdfSample.wo;
-
-    /*
-    float pdf = 0.f;
-    uint lobe = 0;
-    float3 wiLocal = sd.toLocal(sd.V);
-    float3 woLocal = { }, weight = { };
-
-    FalcorBSDF bsdf;
-    bsdf.setup(sd);
-    bool valid = bsdf.sample(wiLocal, woLocal, pdf, weight, lobe, rayData.sg);
-
-    float3 res = bsdf.eval(wiLocal, woLocal);
-
-    bool transmission = (lobe & (uint) LobeType::Transmission) > 0;
-    bool isDelta = (lobe & (uint) LobeType::Delta) > 0; //checks if its a delta reflection/transmission. For Glas-Materials
-    //compute ray origin for the new ray
-    float3 rayOrigin = sd.computeNewRayOrigin(!transmission);   //false is for transmissions
-    
-    //set ray data
-    rayData.origin = rayOrigin;
-    rayData.direction = sd.fromLocal(woLocal);
-    rayData.thp = valid ? isDelta ? float3(1.0) : res / pdf : float3(0); //Throughput depending if it is valid. IsDelta checks for Glas Material (res and pdf are 0 for them)
-    rayData.lobeType = lobe;                         //save lobe type
-    //rayData.thp = min(max(rayData.thp, float3(0)), float3(1.0));        //there is a low probabilty that transmission creates a valid ray with broken thp
-    rayData.thp *= weight;
-    */
     
     //if throughput is 0, return
     if(!any(rayData.thp > 0.f))
@@ -324,9 +300,7 @@ void rayGen()
 
     bool wasReflectedSpecular = false;
     bool reflectedDiffuse = false;
-    
-   
-    
+  
     //recursion where the photons are shot
     for (uint i = 0; i < kMaxRecursion && !rayData.terminated; i++)
     {
@@ -347,28 +321,32 @@ void rayGen()
         
         if (reflectedDiffuse)
         {
+            uint photonIndex = 0;
+            photon.radius = wasReflectedSpecular ? gCausticRadius : gGlobalRadius;
+            AABB photonAABB = calcPhotonAABB(photonPos, photon.radius);
             //caustic photon
             if (wasReflectedSpecular)
             {
-                photon.radius = gCausticRadius;
-                uint photonIndex = 0;
                 InterlockedAdd(gPhotonCounter[0].caustic, 1u, photonIndex);
-                photonIndex = min(photonIndex, kMaxPhotonIndex);
-                AABB photonAABB = calcPhotonAABB(photonPos, gCausticRadius);
-                gCaustic[photonIndex] = photon; 
-                gCausticAABB[photonIndex] = photonAABB;
+                photonIndex = min(photonIndex, kMaxPhotonIndexCAU);
+                if (kAllowWrites)
+                {
+                    gCaustic[photonIndex] = photon;
+                    gCausticAABB[photonIndex] = photonAABB;
+                }
             }
             //Global photon
             else if(roulette)
             {
                 photon.flux = photon.flux / gRussianRoulette;
-                photon.radius = gGlobalRadius;
-                uint photonIndex = 0;
                 InterlockedAdd(gPhotonCounter[0].global, 1u, photonIndex);
-                photonIndex = min(photonIndex, kMaxPhotonIndex);
-                AABB photonAABB = calcPhotonAABB(photonPos, gGlobalRadius);
-                gGlobal[photonIndex] = photon;
-                gGlobalAABB[photonIndex] = photonAABB;
+                photonIndex = min(photonIndex, kMaxPhotonIndexGLB);
+                if (kAllowWrites)
+                {
+                    gGlobal[photonIndex] = photon;
+                    gGlobalAABB[photonIndex] = photonAABB;
+                }
+                
             }
         }
         

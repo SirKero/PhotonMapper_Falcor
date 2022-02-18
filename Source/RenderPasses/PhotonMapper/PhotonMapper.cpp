@@ -162,6 +162,17 @@ void PhotonMapper::execute(RenderContext* pRenderContext, const RenderData& rend
         mpScene->getLightCollection(pRenderContext);
     }
 
+    if (mResizePhotonBuffers) {
+        //if size of conter is 0 wait till next iteration
+        if (mPhotonCount[0] > 0 || mPhotonCount[1] > 0) {
+            //Set size as max + 10%
+            mCausticBuffers.maxSize = (uint)(mPhotonCount[0] * 1.1f);
+            mGlobalBuffers.maxSize = (uint)(mPhotonCount[1] * 1.1f);
+            mResizePhotonBuffers = false;
+            mPhotonBuffersReady = false;
+            mRebuildAS = true;
+        }
+    }
     
     if (!mPhotonBuffersReady) {
         mPhotonBuffersReady = preparePhotonBuffers();
@@ -183,7 +194,7 @@ void PhotonMapper::execute(RenderContext* pRenderContext, const RenderData& rend
     bool valid = syncPasses(pRenderContext);
 
     //Gather the photons with short rays
-    if(valid)
+    if (valid && !mResizePhotonBuffers) {
         collectPhotons(pRenderContext, renderData);
         mFrameCount++;
 
@@ -196,7 +207,10 @@ void PhotonMapper::execute(RenderContext* pRenderContext, const RenderData& rend
             mGlobalRadius = std::max(mGlobalRadius, kMinPhotonRadius);
             mCausticRadius = std::max(mCausticRadius, kMinPhotonRadius);
         }
-    
+    }
+    //check if the photon buffers needs to be resized (max size reached)
+    if (mPhotonCount[0] >= mCausticBuffers.maxSize || mPhotonCount[1] >= mGlobalBuffers.maxSize)
+        mResizePhotonBuffers = true;
 }
 
 void PhotonMapper::generatePhotons(RenderContext* pRenderContext, const RenderData& renderData)
@@ -218,7 +232,9 @@ void PhotonMapper::generatePhotons(RenderContext* pRenderContext, const RenderDa
     mTracerGenerate.pProgram->addDefine("USE_EMISSIVE_LIGHTS", mpScene->useEmissiveLights() ? "1" : "0");
     mTracerGenerate.pProgram->addDefine("USE_ENV_LIGHT", mpScene->useEnvLight() ? "1" : "0");
     mTracerGenerate.pProgram->addDefine("USE_ENV_BACKGROUND", mpScene->useEnvBackground() ? "1" : "0");
-    mTracerGenerate.pProgram->addDefine("MAX_PHOTON_INDEX", std::to_string(mNumPhotons));
+    mTracerGenerate.pProgram->addDefine("MAX_PHOTON_INDEX_GLOBAL", std::to_string(mGlobalBuffers.maxSize));
+    mTracerGenerate.pProgram->addDefine("MAX_PHOTON_INDEX_CAUSTIC", std::to_string(mCausticBuffers.maxSize));
+    mTracerGenerate.pProgram->addDefine("ALLOW_WRITES", mResizePhotonBuffers ? "0" : "1");
 
     
     // Prepare program vars. This may trigger shader compilation.
@@ -282,7 +298,8 @@ bool PhotonMapper::syncPasses(RenderContext* pRenderContext)
     std::memcpy(mPhotonCount.data(), data, sizeof(uint) * 2);
     mPhotonCounterBuffer.cpuCopy->unmap();
 
-    if (mPhotonCount[0] == 0)
+    //When there are no photons or the photon buffer is not ready abort
+    if (mPhotonCount[0] == 0 || !mPhotonBuffersReady)
         return false;
 
     createAccelerationStructure(pRenderContext, mPhotonCount);
@@ -364,10 +381,10 @@ void PhotonMapper::renderUI(Gui::Widgets& widget)
 
     //Info
     widget.text("Iterations: " + std::to_string(mFrameCount));
-    widget.text("Caustic Photons: " + std::to_string(mPhotonCount[0]));
-    widget.tooltip("Caustic Photons for this Iteration");
-    widget.text("Global Photons: " + std::to_string(mPhotonCount[1]));
-    widget.tooltip("Global Photons for this Iteration");
+    widget.text("Caustic Photons: " + std::to_string(mPhotonCount[0]) + " / " + std::to_string(mCausticBuffers.maxSize));
+    widget.tooltip("Photons for current Iteration / Buffer Size");
+    widget.text("Global Photons: " + std::to_string(mPhotonCount[1]) + " / " + std::to_string(mGlobalBuffers.maxSize));
+    widget.tooltip("Photons for current Iteration / Buffer Size");
 
     widget.text("Current Global Radius: " + std::to_string(mGlobalRadius));
     widget.text("Current Caustic Radius: " + std::to_string(mCausticRadius));
@@ -429,6 +446,11 @@ void PhotonMapper::setScene(RenderContext* pRenderContext, const Scene::SharedPt
     mTracerCollect = RayTraceProgramHelper::create();
     mFrameCount = 0;
 
+    //For Photon Buffers and resize
+    mResizePhotonBuffers = true; mPhotonBuffersReady = false;
+    mCausticBuffers.maxSize = 0; mGlobalBuffers.maxSize = 0;
+    mPhotonCount[0] = 0; mPhotonCount[1] = 0;
+    
     // Set new scene.
     mpScene = pScene;
 
@@ -482,6 +504,9 @@ void PhotonMapper::setScene(RenderContext* pRenderContext, const Scene::SharedPt
             mTracerCollect.pProgram = RtProgram::create(desc, mpScene->getSceneDefines());
         }
     }
+
+    //init the photon counters
+    preparePhotonCounters();
 }
 
 void PhotonMapper::prepareVars()
@@ -502,11 +527,8 @@ void PhotonMapper::prepareVars()
 
 bool PhotonMapper::preparePhotonBuffers()
 {
-    //caustic
-    
-    //if size is not initilized give it a standard value
-    if (mCausticBuffers.maxSize == 0)
-        mCausticBuffers.maxSize = mNumPhotons;
+    if (mCausticBuffers.maxSize == 0 || mGlobalBuffers.maxSize == 0)
+        return false;
 
     //TODO: Change Buffer Generation to initilize with program
     mCausticBuffers.aabb = Buffer::createStructured(sizeof(D3D12_RAYTRACING_AABB), mCausticBuffers.maxSize);
@@ -515,12 +537,6 @@ bool PhotonMapper::preparePhotonBuffers()
     mCausticBuffers.info->setName("PhotonMapper::mCausticBuffers.info");
 
     FALCOR_ASSERT(mCausticBuffers.aabb);   FALCOR_ASSERT(mCausticBuffers.info);
-
-    //global
-
-     //if size is not initilized give it a standard value
-    if (mGlobalBuffers.maxSize == 0)
-        mGlobalBuffers.maxSize = mNumPhotons;
 
     //only set aabb buffer if it is used
     if (!mUsePhotonMapper) {
@@ -535,6 +551,12 @@ bool PhotonMapper::preparePhotonBuffers()
 
     FALCOR_ASSERT(mGlobalBuffers.info);
 
+
+    return true;
+}
+
+void PhotonMapper::preparePhotonCounters()
+{
     //photon counter
     mPhotonCounterBuffer.counter = Buffer::createStructured(sizeof(uint), 2);
     mPhotonCounterBuffer.counter->setName("PhotonMapper::PhotonCounter");
@@ -544,19 +566,27 @@ bool PhotonMapper::preparePhotonBuffers()
     uint32_t oneInit[2] = { 1,1 };
     mPhotonCounterBuffer.cpuCopy = Buffer::create(sizeof(uint64_t), ResourceBindFlags::None, Buffer::CpuAccess::Read, oneInit);
     mPhotonCounterBuffer.cpuCopy->setName("PhotonMapper::PhotonCounterCPU");
-
-    return true;
 }
 
 void PhotonMapper::createAccelerationStructure(RenderContext* pContext, const std::vector<uint>& aabbCount) {
-    createBottomLevelAS(pContext, aabbCount);
-    createTopLevelAS(pContext);
+
+    //clear all previous data
+    if (mRebuildAS) {
+        mBlasData.clear();
+        mPhotonInstanceDesc.clear();
+        mTlasScratch = nullptr;
+        mPhotonTlas.pInstanceDescs = nullptr; mPhotonTlas.pSrv = nullptr; mPhotonTlas.pTlas = nullptr;
+    }
+    createBottomLevelAS(pContext, aabbCount, mRebuildAS);
+    createTopLevelAS(pContext, mRebuildAS);
+    if (mRebuildAS) mRebuildAS = false; //AS was rebuild so dont do that again
+
 }
-void PhotonMapper::createTopLevelAS(RenderContext* pContext) {
+void PhotonMapper::createTopLevelAS(RenderContext* pContext, bool rebuild) {
     //TODO:: Update instead of bilding new
 
     //fill the instance description if empty
-    if (mPhotonInstanceDesc.empty()) {
+    if (mPhotonInstanceDesc.empty() || rebuild) {
         for (int i = 0; i < 2; i++) {
             D3D12_RAYTRACING_INSTANCE_DESC desc = {};
             desc.AccelerationStructure = i == 0 ? mCausticBuffers.blas->getGpuAddress() : mGlobalBuffers.blas->getGpuAddress();
@@ -581,7 +611,7 @@ void PhotonMapper::createTopLevelAS(RenderContext* pContext) {
     inputs.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_BUILD;
 
     //if scratch is empty, create one
-    if (mTlasScratch == nullptr) {
+    if (mTlasScratch == nullptr || rebuild) {
         //Prebuild
         FALCOR_GET_COM_INTERFACE(gpDevice->getApiHandle(), ID3D12Device5, pDevice5);
         pDevice5->GetRaytracingAccelerationStructurePrebuildInfo(&inputs, &mTlasPrebuildInfo);
@@ -590,8 +620,7 @@ void PhotonMapper::createTopLevelAS(RenderContext* pContext) {
     }
 
     //if buffers for the tlas are empty create them
-    if (mPhotonTlas.pTlas == nullptr) {
-        FALCOR_ASSERT(mPhotonTlas.pInstanceDescs == nullptr); //the instance descriptions should also be null
+    if (mPhotonTlas.pTlas == nullptr || rebuild) {
         mPhotonTlas.pTlas = Buffer::create(mTlasPrebuildInfo.ResultDataMaxSizeInBytes, Buffer::BindFlags::AccelerationStructure, Buffer::CpuAccess::None);
         mPhotonTlas.pTlas->setName("PhotonMapper::TLAS");
         mPhotonTlas.pInstanceDescs = Buffer::create((uint32_t)mPhotonInstanceDesc.size() * sizeof(D3D12_RAYTRACING_INSTANCE_DESC), Buffer::BindFlags::None, Buffer::CpuAccess::Write, mPhotonInstanceDesc.data());
@@ -611,15 +640,15 @@ void PhotonMapper::createTopLevelAS(RenderContext* pContext) {
     pContext->uavBarrier(mPhotonTlas.pTlas.get());                   //barrier for the tlas so we can use it savely after creation
 
     //Create TLAS Shader Ressource View
-    if (mPhotonTlas.pSrv == nullptr) {
+    if (mPhotonTlas.pSrv == nullptr || rebuild) {
         mPhotonTlas.pSrv = ShaderResourceView::createViewForAccelerationStructure(mPhotonTlas.pTlas);
     }
 
 }
-void PhotonMapper::createBottomLevelAS(RenderContext* pContext, const std::vector<uint>& aabbCount) {
+void PhotonMapper::createBottomLevelAS(RenderContext* pContext, const std::vector<uint>& aabbCount, bool rebuild) {
 
     //Init the blas with a maximum size for scratch and result buffer
-    if (mBlasData.empty()) {
+    if (mBlasData.empty() || rebuild) {
         mBlasData.resize(mUsePhotonMapper ? 1 : 2);
         uint64_t maxScratchSize = 0;
         //Prebuild
@@ -629,7 +658,7 @@ void PhotonMapper::createBottomLevelAS(RenderContext* pContext, const std::vecto
             D3D12_RAYTRACING_GEOMETRY_DESC& desc = blas.geomDescs;
             desc.Type = D3D12_RAYTRACING_GEOMETRY_TYPE_PROCEDURAL_PRIMITIVE_AABBS;
             desc.Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_NO_DUPLICATE_ANYHIT_INVOCATION;       //TODO: Check if opaque is needed
-            desc.AABBs.AABBCount = mNumPhotons;                     //TODO: Put at max for the respective side (caustic or global)
+            desc.AABBs.AABBCount = i == 0 ? mCausticBuffers.maxSize : mGlobalBuffers.maxSize;                     //TODO: Put at max for the respective side (caustic or global)
             desc.AABBs.AABBs.StartAddress = i == 0 ? mCausticBuffers.aabb->getGpuAddress() : mGlobalBuffers.aabb->getGpuAddress();
             desc.AABBs.AABBs.StrideInBytes = sizeof(D3D12_RAYTRACING_AABB);
 
