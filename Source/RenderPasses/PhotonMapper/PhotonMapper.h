@@ -69,6 +69,14 @@ private:
     */
     void preparePhotonCounters();
 
+    /** Resets buffer and runtime vars. Used for scene change or number of photons change
+    */
+    void resetPhotonMapper();
+
+    /** Applies the changes to the number of photons
+    */
+    void changeNumPhotons();
+
     /** Creates the Generate Photon pass, where the photons are shot through the scene and saved in an AABB and information buffer
     */
     void generatePhotons(RenderContext* pRenderContext, const RenderData& renderData);
@@ -119,6 +127,7 @@ private:
     float                       mSPPMAlphaCaustic = 0.7f;                ///< Caustic Alpha for SPPM
 
     uint                        mNumPhotons = 2000000;                   ///< Number of Photons shot
+    uint                        mNumPhotonsUI = mNumPhotons;            ///< For UI. It is decopled from the runtime var because changes have to be confirmed
     bool                        mUsePhotonMapper = false;               ///< Activates ReStir for global photons
     float3                      mDirLightWorldPos = float3(0.f, 10.f, 0.f); ///< Testing purposes only
     float                       mIntensityScalar = 1.0f;                ///<Scales the intensity of emissive light sources
@@ -126,9 +135,12 @@ private:
     bool                        mAlwaysResetIterations = false;         ///<Resets the iteration counter every frame
     bool                        mDisableGlobalCollection = false;       ///<Disabled the collection of global photons
     bool                        mDisableCausticCollection = false;       ///<Disabled the collection of caustic photons
+    bool                        mNumPhotonsChanged = false;             ///<If true buffers needs to be restarted and Number of photons needs to be changed
 
 
     // Runtime data
+
+    
     uint                        mFrameCount = 0;            ///< Frame count since last Reset
     std::vector<uint>           mPhotonCount = { 0,0 };
     bool                        mOptionsChanged = false;

@@ -139,6 +139,12 @@ void PhotonMapper::execute(RenderContext* pRenderContext, const RenderData& rend
         return;
     }
 
+    if (mNumPhotonsChanged) {
+        changeNumPhotons();
+        mNumPhotonsChanged = false;
+    }
+        
+
     //Reset Frame Count if conditions are met
     if (mResetIterations || mAlwaysResetIterations || is_set(mpScene->getUpdates(), Scene::UpdateFlags::CameraMoved)) {
         mFrameCount = 0;
@@ -291,7 +297,7 @@ bool PhotonMapper::syncPasses(RenderContext* pRenderContext)
     pRenderContext->uavBarrier(mPhotonCounterBuffer.counter.get());
     pRenderContext->copyBufferRegion(mPhotonCounterBuffer.cpuCopy.get(),0, mPhotonCounterBuffer.counter.get(),0, sizeof(uint32_t) * 2);
 
-    //TODO:: Implement a better way than a full flush
+    //TODO:: Create own flush for rebuild, wait time for gpu should be higher than falcor standard
     pRenderContext->flush(true);
 
     void* data = mPhotonCounterBuffer.cpuCopy->map(Buffer::MapType::Read);
@@ -389,6 +395,12 @@ void PhotonMapper::renderUI(Gui::Widgets& widget)
     widget.text("Current Global Radius: " + std::to_string(mGlobalRadius));
     widget.text("Current Caustic Radius: " + std::to_string(mCausticRadius));
 
+    widget.dummy("",float2(0,15));
+    widget.var("Number Photons", mNumPhotonsUI, 1000u, UINT_MAX, 1000u);
+    widget.tooltip("The number of photons that are shot per iteration. Press \"Apply\" to apply the change");
+    mNumPhotonsChanged |= widget.button("Apply");
+    widget.dummy("", float2(0, 15));
+
     //Progressive PM
     dirty |= widget.checkbox("Use SPPM", mUseStatisticProgressivePM);
     widget.tooltip("Activate Statistically Progressive Photon Mapping");
@@ -441,15 +453,11 @@ void PhotonMapper::renderUI(Gui::Widgets& widget)
 void PhotonMapper::setScene(RenderContext* pRenderContext, const Scene::SharedPtr& pScene)
 {
     // Clear data for previous scene.
-   // After changing scene, the raytracing program should to be recreated.
+    resetPhotonMapper();
+
+    // After changing scene, the raytracing program should to be recreated.
     mTracerGenerate = RayTraceProgramHelper::create();
     mTracerCollect = RayTraceProgramHelper::create();
-    mFrameCount = 0;
-
-    //For Photon Buffers and resize
-    mResizePhotonBuffers = true; mPhotonBuffersReady = false;
-    mCausticBuffers.maxSize = 0; mGlobalBuffers.maxSize = 0;
-    mPhotonCount[0] = 0; mPhotonCount[1] = 0;
     
     // Set new scene.
     mpScene = pScene;
@@ -507,6 +515,30 @@ void PhotonMapper::setScene(RenderContext* pRenderContext, const Scene::SharedPt
 
     //init the photon counters
     preparePhotonCounters();
+}
+
+void PhotonMapper::resetPhotonMapper()
+{
+    mFrameCount = 0;
+
+    //For Photon Buffers and resize
+    mResizePhotonBuffers = true; mPhotonBuffersReady = false;
+    mCausticBuffers.maxSize = 0; mGlobalBuffers.maxSize = 0;
+    mPhotonCount[0] = 0; mPhotonCount[1] = 0;
+}
+
+void PhotonMapper::changeNumPhotons()
+{
+    //If the number stayed the same return
+    if (mNumPhotonsUI == mNumPhotons) {
+        return;
+    }
+
+    //Correct the number of photons. They need to be splittable into two
+    uint tmpPhotons = static_cast<uint>(ceil(sqrt(mNumPhotonsUI)) + 0.001);     //take the next higher uint (so total number can be higher)
+    mNumPhotons = tmpPhotons * tmpPhotons;
+    mNumPhotonsUI = mNumPhotons;
+    resetPhotonMapper();
 }
 
 void PhotonMapper::prepareVars()
