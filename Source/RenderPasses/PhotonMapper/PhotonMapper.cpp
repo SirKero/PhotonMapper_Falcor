@@ -172,6 +172,13 @@ void PhotonMapper::execute(RenderContext* pRenderContext, const RenderData& rend
     }
 
     if (mResizePhotonBuffers) {
+        if (mFitBuffersToPhotonShot) {
+            if (mPhotonCount[0] > 0 && mPhotonCount[1] > 0) {
+                mCausticBufferSizeUI = static_cast<uint>(mPhotonCount[0] * 1.1);
+                mGlobalBufferSizeUI = static_cast<uint>(mPhotonCount[1] * 1.1);
+            }
+            mFitBuffersToPhotonShot = false;
+        }
         //if size of conter is 0 wait till next iteration
         mCausticBuffers.maxSize = mCausticBufferSizeUI;
         mGlobalBuffers.maxSize = mGlobalBufferSizeUI;
@@ -383,7 +390,13 @@ void PhotonMapper::renderUI(Gui::Widgets& widget)
     widget.var("Size Caustic Buffer", mCausticBufferSizeUI, 1000u, UINT_MAX, 1000u);
     widget.var("Size Global Buffer", mGlobalBufferSizeUI, 1000u, UINT_MAX, 1000u);
     mNumPhotonsChanged |= widget.button("Apply");
+    widget.dummy("", float2(15,0), true);
+    mFitBuffersToPhotonShot |= widget.button("Fit Buffers", true);
+    widget.tooltip("Fitts the Caustic and Global Buffer to current number of photons shot + 10 %");
     widget.dummy("", float2(0, 15));
+
+    //If fit buffers is triggered, also trigger the photon change routine
+    mNumPhotonsChanged |= mFitBuffersToPhotonShot;  
 
     //Progressive PM
     dirty |= widget.checkbox("Use SPPM", mUseStatisticProgressivePM);
@@ -522,7 +535,7 @@ void PhotonMapper::changeNumPhotons()
     //Reset state of Photon Mapper
     mFrameCount = 0;
 
-    if (mGlobalBuffers.maxSize != mGlobalBufferSizeUI || mCausticBuffers.maxSize != mCausticBufferSizeUI) {
+    if (mGlobalBuffers.maxSize != mGlobalBufferSizeUI || mCausticBuffers.maxSize != mCausticBufferSizeUI || mFitBuffersToPhotonShot) {
         mResizePhotonBuffers = true; mPhotonBuffersReady = false;
         mCausticBuffers.maxSize = 0; mGlobalBuffers.maxSize = 0;
     }

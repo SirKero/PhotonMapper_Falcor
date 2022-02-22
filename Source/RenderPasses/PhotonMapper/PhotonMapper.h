@@ -136,6 +136,7 @@ private:
     bool                        mDisableGlobalCollection = false;       ///<Disabled the collection of global photons
     bool                        mDisableCausticCollection = false;       ///<Disabled the collection of caustic photons
     bool                        mNumPhotonsChanged = false;             ///<If true buffers needs to be restarted and Number of photons needs to be changed
+    bool                        mFitBuffersToPhotonShot = false;        ///<Changes the buffer size to be around the number of photons shot
 
 
     // Runtime data
