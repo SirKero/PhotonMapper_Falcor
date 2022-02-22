@@ -77,15 +77,13 @@ private:
     */
     void changeNumPhotons();
 
+    /** Copies the photon counter to a cpu buffer
+    */
+    void copyPhotonCounter(RenderContext* pRenderContext);
+
     /** Creates the Generate Photon pass, where the photons are shot through the scene and saved in an AABB and information buffer
     */
     void generatePhotons(RenderContext* pRenderContext, const RenderData& renderData);
-
-    /** Sync Pass which syncs the resources which were used by the generate Photon Pass and are nedded by the Trace Photon Pass.
-    * It also will create the Acceleration Structure which is needed for the next pass
-    * Returns false if Acceleration Structure could not be created (photon Counter is zero for example)
-    */
-    bool syncPasses(RenderContext* pRenderContext);
 
     /** Pass that collect the photons. It will shoot a infinit small ray at the current camera position and collect all photons.
     * The needed position etc. has to be provided by a gBuffer

@@ -139,6 +139,9 @@ void PhotonMapper::execute(RenderContext* pRenderContext, const RenderData& rend
         return;
     }
 
+    //Copy Photon Counter for UI
+    copyPhotonCounter(pRenderContext);
+
     if (mNumPhotonsChanged) {
         changeNumPhotons();
         mNumPhotonsChanged = false;
@@ -185,31 +188,33 @@ void PhotonMapper::execute(RenderContext* pRenderContext, const RenderData& rend
         prepareRandomSeedBuffer(renderData.getDefaultTextureDims());
     }
 
-
     //
     // Generate Ray Pass
     //
 
     generatePhotons(pRenderContext, renderData);
 
+
+    //Barrier for the AABB buffers (they need to be ready)
+    pRenderContext->uavBarrier(mGlobalBuffers.aabb.get());
+    pRenderContext->uavBarrier(mCausticBuffers.aabb.get());
+
+    createAccelerationStructure(pRenderContext, { mCausticBuffers.maxSize, mGlobalBuffers.maxSize });
          
-    //barrier for the aabb buffers and copying the needed datas
-    bool valid = syncPasses(pRenderContext);
-
+    
     //Gather the photons with short rays
-    if (valid && !mResizePhotonBuffers) {
-        collectPhotons(pRenderContext, renderData);
-        mFrameCount++;
+    collectPhotons(pRenderContext, renderData);
+    mFrameCount++;
 
-        if (mUseStatisticProgressivePM) {
-            float itF = static_cast<float>(mFrameCount);
-            mGlobalRadius *= sqrt((itF + mSPPMAlphaGlobal) / (itF + 1.0f));
-            mCausticRadius *= sqrt((itF + mSPPMAlphaCaustic) / (itF + 1.0f));
+    if (mUseStatisticProgressivePM) {
+        float itF = static_cast<float>(mFrameCount);
+        mGlobalRadius *= sqrt((itF + mSPPMAlphaGlobal) / (itF + 1.0f));
+        mCausticRadius *= sqrt((itF + mSPPMAlphaCaustic) / (itF + 1.0f));
 
-            //Clamp to min radius
-            mGlobalRadius = std::max(mGlobalRadius, kMinPhotonRadius);
-            mCausticRadius = std::max(mCausticRadius, kMinPhotonRadius);
-        }
+        //Clamp to min radius
+
+        mGlobalRadius = std::max(mGlobalRadius, kMinPhotonRadius);
+        mCausticRadius = std::max(mCausticRadius, kMinPhotonRadius);
     }
 }
 
@@ -220,6 +225,12 @@ void PhotonMapper::generatePhotons(RenderContext* pRenderContext, const RenderDa
     pRenderContext->copyBufferRegion(mPhotonCounterBuffer.counter.get(), 0, mPhotonCounterBuffer.reset.get(), 0, sizeof(uint64_t));
     pRenderContext->resourceBarrier(mPhotonCounterBuffer.counter.get(), Resource::State::ShaderResource);
 
+    //Clear the photon Buffers
+    pRenderContext->clearUAV(mGlobalBuffers.aabb.get()->getUAV().get(), uint4(0, 0, 0, 0));
+    pRenderContext->clearUAV(mGlobalBuffers.info.get()->getUAV().get(), uint4(0, 0, 0, 0));
+    pRenderContext->clearUAV(mCausticBuffers.aabb.get()->getUAV().get(), uint4(0, 0, 0, 0));
+    pRenderContext->clearUAV(mCausticBuffers.info.get()->getUAV().get(), uint4(0, 0, 0, 0));
+    
 
     auto lights = mpScene->getLights();
     auto lightCollection = mpScene->getLightCollection(pRenderContext);
@@ -281,28 +292,6 @@ void PhotonMapper::generatePhotons(RenderContext* pRenderContext, const RenderDa
 
     // Trace the photons
     mpScene->raytrace(pRenderContext, mTracerGenerate.pProgram.get(), mTracerGenerate.pVars, uint3(targetDim, 1));
-}
-
-bool PhotonMapper::syncPasses(RenderContext* pRenderContext)
-{
-    FALCOR_PROFILE("syncPasses");
-    //Copy the photonConter to a CPU Buffer
-    pRenderContext->uavBarrier(mPhotonCounterBuffer.counter.get());
-    pRenderContext->copyBufferRegion(mPhotonCounterBuffer.cpuCopy.get(),0, mPhotonCounterBuffer.counter.get(),0, sizeof(uint32_t) * 2);
-
-    //TODO:: Create own flush for rebuild, wait time for gpu should be higher than falcor standard
-    pRenderContext->flush(true);
-
-    void* data = mPhotonCounterBuffer.cpuCopy->map(Buffer::MapType::Read);
-    std::memcpy(mPhotonCount.data(), data, sizeof(uint) * 2);
-    mPhotonCounterBuffer.cpuCopy->unmap();
-
-    //When there are no photons or the photon buffer is not ready abort
-    if (mPhotonCount[0] == 0 || !mPhotonBuffersReady)
-        return false;
-
-    createAccelerationStructure(pRenderContext, mPhotonCount);
-    return true;
 }
 
 void PhotonMapper::collectPhotons(RenderContext* pRenderContext, const RenderData& renderData)
@@ -538,6 +527,16 @@ void PhotonMapper::changeNumPhotons()
         mCausticBuffers.maxSize = 0; mGlobalBuffers.maxSize = 0;
     }
 
+}
+
+void PhotonMapper::copyPhotonCounter(RenderContext* pRenderContext)
+{
+    //Copy the photonConter to a CPU Buffer
+    pRenderContext->copyBufferRegion(mPhotonCounterBuffer.cpuCopy.get(), 0, mPhotonCounterBuffer.counter.get(), 0, sizeof(uint32_t) * 2);
+
+    void* data = mPhotonCounterBuffer.cpuCopy->map(Buffer::MapType::Read);
+    std::memcpy(mPhotonCount.data(), data, sizeof(uint) * 2);
+    mPhotonCounterBuffer.cpuCopy->unmap();
 }
 
 void PhotonMapper::prepareVars()
