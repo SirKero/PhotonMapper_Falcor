@@ -68,7 +68,6 @@ static const float3 kDefaultBackgroundColor = float3(0, 0, 0);
 static const float kRayTMax = FLT_MAX;
 static const uint kMaxPhotonIndexGLB = MAX_PHOTON_INDEX_GLOBAL;
 static const uint kMaxPhotonIndexCAU = MAX_PHOTON_INDEX_CAUSTIC;
-static const bool kAllowWrites = ALLOW_WRITES;
 
 static const float k_2Pi = 6.28318530717958647692;
 static const float k_4Pi = 12.5663706143591729538;
@@ -330,11 +329,8 @@ void rayGen()
             {
                 InterlockedAdd(gPhotonCounter[0].caustic, 1u, photonIndex);
                 photonIndex = min(photonIndex, kMaxPhotonIndexCAU);
-                if (kAllowWrites)
-                {
-                    gCaustic[photonIndex] = photon;
-                    gCausticAABB[photonIndex] = photonAABB;
-                }
+                gCaustic[photonIndex] = photon;
+                gCausticAABB[photonIndex] = photonAABB;
             }
             //Global photon
             else if(roulette)
@@ -342,12 +338,8 @@ void rayGen()
                 photon.flux = photon.flux / gRussianRoulette;
                 InterlockedAdd(gPhotonCounter[0].global, 1u, photonIndex);
                 photonIndex = min(photonIndex, kMaxPhotonIndexGLB);
-                if (kAllowWrites)
-                {
-                    gGlobal[photonIndex] = photon;
-                    gGlobalAABB[photonIndex] = photonAABB;
-                }
-                
+                gGlobal[photonIndex] = photon;
+                gGlobalAABB[photonIndex] = photonAABB;
             }
         }
         

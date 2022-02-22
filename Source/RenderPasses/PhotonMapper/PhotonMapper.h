@@ -128,6 +128,8 @@ private:
 
     uint                        mNumPhotons = 2000000;                   ///< Number of Photons shot
     uint                        mNumPhotonsUI = mNumPhotons;            ///< For UI. It is decopled from the runtime var because changes have to be confirmed
+    uint                        mGlobalBufferSizeUI = mNumPhotons/2;    ///< Size of the Global Photon Buffer
+    uint                        mCausticBufferSizeUI = mNumPhotons/4;   ///< Size of the Caustic Photon Buffer
     bool                        mUsePhotonMapper = false;               ///< Activates ReStir for global photons
     float3                      mDirLightWorldPos = float3(0.f, 10.f, 0.f); ///< Testing purposes only
     float                       mIntensityScalar = 1.0f;                ///<Scales the intensity of emissive light sources

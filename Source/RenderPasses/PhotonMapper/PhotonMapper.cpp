@@ -170,14 +170,11 @@ void PhotonMapper::execute(RenderContext* pRenderContext, const RenderData& rend
 
     if (mResizePhotonBuffers) {
         //if size of conter is 0 wait till next iteration
-        if (mPhotonCount[0] > 0 || mPhotonCount[1] > 0) {
-            //Set size as max + 10%
-            mCausticBuffers.maxSize = (uint)(mPhotonCount[0] * 1.1f);
-            mGlobalBuffers.maxSize = (uint)(mPhotonCount[1] * 1.1f);
-            mResizePhotonBuffers = false;
-            mPhotonBuffersReady = false;
-            mRebuildAS = true;
-        }
+        mCausticBuffers.maxSize = mCausticBufferSizeUI;
+        mGlobalBuffers.maxSize = mGlobalBufferSizeUI;
+        mResizePhotonBuffers = false;
+        mPhotonBuffersReady = false;
+        mRebuildAS = true;
     }
     
     if (!mPhotonBuffersReady) {
@@ -214,9 +211,6 @@ void PhotonMapper::execute(RenderContext* pRenderContext, const RenderData& rend
             mCausticRadius = std::max(mCausticRadius, kMinPhotonRadius);
         }
     }
-    //check if the photon buffers needs to be resized (max size reached)
-    if (mPhotonCount[0] >= mCausticBuffers.maxSize || mPhotonCount[1] >= mGlobalBuffers.maxSize)
-        mResizePhotonBuffers = true;
 }
 
 void PhotonMapper::generatePhotons(RenderContext* pRenderContext, const RenderData& renderData)
@@ -240,7 +234,6 @@ void PhotonMapper::generatePhotons(RenderContext* pRenderContext, const RenderDa
     mTracerGenerate.pProgram->addDefine("USE_ENV_BACKGROUND", mpScene->useEnvBackground() ? "1" : "0");
     mTracerGenerate.pProgram->addDefine("MAX_PHOTON_INDEX_GLOBAL", std::to_string(mGlobalBuffers.maxSize));
     mTracerGenerate.pProgram->addDefine("MAX_PHOTON_INDEX_CAUSTIC", std::to_string(mCausticBuffers.maxSize));
-    mTracerGenerate.pProgram->addDefine("ALLOW_WRITES", mResizePhotonBuffers ? "0" : "1");
 
     
     // Prepare program vars. This may trigger shader compilation.
@@ -398,6 +391,8 @@ void PhotonMapper::renderUI(Gui::Widgets& widget)
     widget.dummy("",float2(0,15));
     widget.var("Number Photons", mNumPhotonsUI, 1000u, UINT_MAX, 1000u);
     widget.tooltip("The number of photons that are shot per iteration. Press \"Apply\" to apply the change");
+    widget.var("Size Caustic Buffer", mCausticBufferSizeUI, 1000u, UINT_MAX, 1000u);
+    widget.var("Size Global Buffer", mGlobalBufferSizeUI, 1000u, UINT_MAX, 1000u);
     mNumPhotonsChanged |= widget.button("Apply");
     widget.dummy("", float2(0, 15));
 
@@ -530,15 +525,19 @@ void PhotonMapper::resetPhotonMapper()
 void PhotonMapper::changeNumPhotons()
 {
     //If the number stayed the same return
-    if (mNumPhotonsUI == mNumPhotons) {
-        return;
-    }
-
     //Correct the number of photons. They need to be splittable into two
     uint tmpPhotons = static_cast<uint>(ceil(sqrt(mNumPhotonsUI)) + 0.001);     //take the next higher uint (so total number can be higher)
     mNumPhotons = tmpPhotons * tmpPhotons;
     mNumPhotonsUI = mNumPhotons;
-    resetPhotonMapper();
+
+    //Reset state of Photon Mapper
+    mFrameCount = 0;
+
+    if (mGlobalBuffers.maxSize != mGlobalBufferSizeUI || mCausticBuffers.maxSize != mCausticBufferSizeUI) {
+        mResizePhotonBuffers = true; mPhotonBuffersReady = false;
+        mCausticBuffers.maxSize = 0; mGlobalBuffers.maxSize = 0;
+    }
+
 }
 
 void PhotonMapper::prepareVars()
@@ -559,8 +558,11 @@ void PhotonMapper::prepareVars()
 
 bool PhotonMapper::preparePhotonBuffers()
 {
-    if (mCausticBuffers.maxSize == 0 || mGlobalBuffers.maxSize == 0)
-        return false;
+    FALCOR_ASSERT(mCausticBuffers.maxSize > 0 || mGlobalBuffers.maxSize > 0);
+
+    //clean buffers
+    mCausticBuffers.aabb = nullptr; mCausticBuffers.blas = nullptr; mCausticBuffers.info = nullptr;
+    mGlobalBuffers.aabb = nullptr; mGlobalBuffers.blas = nullptr; mGlobalBuffers.info = nullptr;
 
     //TODO: Change Buffer Generation to initilize with program
     mCausticBuffers.aabb = Buffer::createStructured(sizeof(D3D12_RAYTRACING_AABB), mCausticBuffers.maxSize);
