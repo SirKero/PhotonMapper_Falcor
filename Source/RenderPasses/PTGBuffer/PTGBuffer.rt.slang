@@ -72,13 +72,13 @@ void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleInt
     const uint materialID = gScene.getMaterialID(instanceID);
     let lod = ExplicitLodTextureSampler(0.f);
     ShadingData sd = gScene.materials.prepareShadingData(v, materialID, -WorldRayDirection(), lod);
-    
+        
     BSDFSample bsdfSample;
     let bsdf = gScene.materials.getBSDF(sd, lod);
+    
+    bool valid = bsdf.sample(sd, rayData.sg, bsdfSample, true /*ImportanceSampling*/);    
 
-    bool valid = bsdf.sample(sd, rayData.sg, bsdfSample, true /*ImportanceSampling*/);
-
-
+    
     float3 thpStart = rayData.thp;
     
     bool transmission = bsdfSample.isLobe(LobeType::Transmission);

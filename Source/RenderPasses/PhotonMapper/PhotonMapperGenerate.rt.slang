@@ -265,10 +265,14 @@ void rayGen()
         float2 RS = sampleNext2D(rayData.sg);
         if (RS.x + RS.y >= 1.0)            //make sure that it stays inside the triangle
             RS = 1.0 - RS;
-        float3 bay = float3(RS.x, RS.y, 1.0 - (RS.x + RS.y));
-        lightPos = emiTri.getPosition(bay);
+        const float3 barycentrics = sample_triangle(RS);
+        lightPos = emiTri.getPosition(barycentrics);
         lightDir = emiTri.normal;
-        lightIntensity = lc.getAverageRadiance(triIndex) * gEmissiveScale;
+
+        //Evaluate Emitted radiance
+        float2 uv = emiTri.getTexCoord(barycentrics);
+        lightIntensity = gScene.materials.evalEmissive(emiTri.materialID, uv);
+        lightIntensity *= gEmissiveScale;
         type = 1;
     }
 
