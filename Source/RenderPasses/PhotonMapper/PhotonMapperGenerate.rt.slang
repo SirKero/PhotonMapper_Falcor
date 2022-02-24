@@ -12,12 +12,12 @@ import Rendering.Lights.LightHelpers;
 cbuffer CB
 {
     uint        gFrameCount;        // Frame count since scene was loaded.
-    float3      gDirLightWorldPos;  // world pos for a dir light if given
     float       gCausticRadius;     // Radius for the caustic photons
     float       gGlobalRadius;      // Radius for the global photons
     float       gRussianRoulette;   // Probabilty that an global photon is saved
     float       gEmissiveScale;   //scalar for the light intenity
     uint        gPRNGDimension;     // First available PRNG dimension.
+    float       gSpecRoughCutoff;   //If roughness value is over this, interpret the material as Diffuse
 }
 
 // Inputs
@@ -86,7 +86,7 @@ struct ScatterRayData
     float3  origin;         ///< Next path segment origin.
     uint    lobeType;       ///< Mask for the type of reflection
     float3  direction;      ///< Next path segment direction.
-    uint    _pad1;
+    bool    diffuseHit;     ///< saves if the his is diffuse
 
     SampleGenerator sg;     ///< Per-ray state for the sample generator (up to 16B).
 
@@ -174,6 +174,7 @@ void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleInt
 
     BSDFSample bsdfSample;
     let bsdf = gScene.materials.getBSDF(sd, lod);
+    let bsdfProperties = bsdf.getProperties(sd);
 
     bool valid = bsdf.sample(sd, rayData.sg, bsdfSample, true /*ImportanceSampling*/);
 
@@ -186,9 +187,10 @@ void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleInt
     rayData.thp = valid ? bsdfSample.weight : float3(0);
     rayData.lobeType = bsdfSample.lobe;
     rayData.direction = bsdfSample.wo;
+    rayData.diffuseHit = bsdfSample.isLobe(LobeType::Diffuse) || (bsdfSample.isLobe(LobeType::Reflection) && (bsdfProperties.roughness > gSpecRoughCutoff));
     
     //if throughput is 0, return
-    if(!any(rayData.thp > 0.f))
+    if(!valid)
         rayData.terminated = true;
     
     rayData.pathLength++;
@@ -314,7 +316,8 @@ void rayGen()
         
         photonPos = rayData.origin;
         photon.dir = ray.Direction;
-        reflectedDiffuse = ((uint) LobeType::DiffuseReflection & rayData.lobeType) > 0;
+        //reflectedDiffuse = ((uint) LobeType::DiffuseReflection & rayData.lobeType) > 0;
+        reflectedDiffuse = rayData.diffuseHit;
 
         //save photon
         float rndRoulette = sampleNext1D(rayData.sg);

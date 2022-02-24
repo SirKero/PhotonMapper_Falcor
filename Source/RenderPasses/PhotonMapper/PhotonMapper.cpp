@@ -265,12 +265,12 @@ void PhotonMapper::generatePhotons(RenderContext* pRenderContext, const RenderDa
     // Set constants.
     auto var = mTracerGenerate.pVars->getRootVar();
     var["CB"]["gFrameCount"] = mFrameCount;
-    var["CB"]["gDirLightWorldPos"] = mDirLightWorldPos;
     var["CB"]["gCausticRadius"] = mCausticRadius;
     var["CB"]["gGlobalRadius"] = mGlobalRadius;
     var["CB"]["gRussianRoulette"] = mRussianRoulette;
     var["CB"]["gEmissiveScale"] = mIntensityScalar;
     var["CB"]["gPRNGDimension"] = dict.keyExists(kRenderPassPRNGDimension) ? dict[kRenderPassPRNGDimension] : 0u;
+    var["CB"]["gSpecRoughCutoff"] = mSpecRoughCutoff;
         
 
     //set the buffers
@@ -413,8 +413,6 @@ void PhotonMapper::renderUI(Gui::Widgets& widget)
     //miscellaneous
     dirty |= widget.slider("Max Recursion Depth", mMaxBounces, 1u, 32u);
     widget.tooltip("Maximum path length for Photon Bounces");
-    dirty |= widget.var("DirLightPos", mDirLightWorldPos, -FLT_MAX, FLT_MAX, 0.001f);
-    widget.tooltip("Position where all Dir lights come from");
 
     //Light settings
     dirty |= widget.var("IntensityScalar", mIntensityScalar, 0.0f, FLT_MAX, 0.001f);
@@ -427,6 +425,10 @@ void PhotonMapper::renderUI(Gui::Widgets& widget)
     widget.tooltip("The start value for the radius of global Photons");
     dirty |= widget.var("Russian Roulette", mRussianRoulette, 0.001f, 1.f, 0.001f);
     widget.tooltip("Probabilty that a Global Photon is saved");
+
+    //Material Settings
+    dirty |= widget.var("SpecRoughCutoff", mSpecRoughCutoff, 0.0f, 1.0f, 0.01f);
+    widget.tooltip("The cutoff for Specular Materials. All Reflections above this threshold are considered Diffuse");
 
     //Disable Photon Collecion
     widget.text("");

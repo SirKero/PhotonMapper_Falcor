@@ -129,7 +129,7 @@ private:
     uint                        mGlobalBufferSizeUI = mNumPhotons/2;    ///< Size of the Global Photon Buffer
     uint                        mCausticBufferSizeUI = mNumPhotons/4;   ///< Size of the Caustic Photon Buffer
     bool                        mUsePhotonMapper = false;               ///< Activates ReStir for global photons
-    float3                      mDirLightWorldPos = float3(0.f, 10.f, 0.f); ///< Testing purposes only
+    float                       mSpecRoughCutoff = 0.25f;               ///< If rougness is over this value interpret the material as diffuse
     float                       mIntensityScalar = 1.0f;                ///<Scales the intensity of emissive light sources
     bool                        mResetIterations = false;               ///<Resets the iterations counter once
     bool                        mAlwaysResetIterations = false;         ///<Resets the iteration counter every frame
