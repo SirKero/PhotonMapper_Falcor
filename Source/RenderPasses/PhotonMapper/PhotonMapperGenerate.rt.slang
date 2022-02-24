@@ -260,7 +260,8 @@ void rayGen()
     else
     {
         //const uint activeTriIndex = lightIndex - analyticLightCount;
-        const uint activeTriIndex = uint(sampleNext1D(rayData.sg) * lc.getActiveTriangleCount());
+        invPdf = lc.getActiveTriangleCount();   //Assume all emissive triangles as pdf
+        const uint activeTriIndex = uint(sampleNext1D(rayData.sg) * invPdf);
         const uint triIndex = lc.activeTriangles[activeTriIndex];
         EmissiveTriangle emiTri = lc.getTriangle(triIndex); //get the random triangle
         //random baycentric coordinates
