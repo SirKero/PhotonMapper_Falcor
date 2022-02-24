@@ -143,6 +143,8 @@ void PTGBuffer::execute(RenderContext* pRenderContext, const RenderData& renderD
     // Set constants.
     auto var = mTracer.pVars->getRootVar();
     var["CB"]["gFrameCount"] = mFrameCount;
+    var["CB"]["gSpecularRougnessCutoff"] = mSpecRoughCutoff;
+    var["CB"]["gEmissiveCutoff"] = mEmissiveCutoff;
     //Set Buffers
         //No Buffers needed atm
 
@@ -205,6 +207,11 @@ void PTGBuffer::renderUI(Gui::Widgets& widget)
     //Recursion Settings
     mOptionsChanged |= widget.slider("Max Recursion Depth", mRecursionDepth, 1u, 32u);
     widget.tooltip("Maximum path length for Photon Bounces");
+
+    mOptionsChanged |= widget.var("SpecRoughCutoff", mSpecRoughCutoff, 0.0f, 1.0f, 0.01f);
+    widget.tooltip("The cutoff for Specular Materials. All Reflections above this threshold are considered Diffuse");
+    mOptionsChanged |= widget.var("EmissionCutoff", mEmissiveCutoff, 0.0f, 1.0f, 0.01f);
+    widget.tooltip("The cutoff for Emissive Materials. All Reflections above this threshold are considered Emissive-Diffuse");
 
     // Sample pattern controls.
     bool updatePattern = widget.dropdown("Sample pattern", kSamplePatternList, (uint32_t&)mSamplePattern);

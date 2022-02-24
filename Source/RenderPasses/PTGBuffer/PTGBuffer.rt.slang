@@ -13,6 +13,8 @@ import Rendering.Lights.LightHelpers;
 cbuffer CB
 {
     uint gFrameCount; // Frame count since scene was loaded.
+    float gSpecularRougnessCutoff;  //cutoff for when a hit counts as diffuse
+    float gEmissiveCutoff;          //if a emissive material is over this value hit is counted as diffuse emissive
 }
 
 // Outputs
@@ -54,7 +56,7 @@ struct ScatterRayData
     }
 };
 
-
+//TODO: Add other miss colors, as throughput then has to be respected
 [shader("miss")]
 void miss(inout ScatterRayData rayData : SV_RayPayload)
 {
@@ -87,16 +89,18 @@ void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleInt
     rayData.thp *= valid ? bsdfSample.weight : float3(0);
     rayData.lobeType = bsdfSample.lobe;
     rayData.direction = bsdfSample.wo;
-   
-    //if throughput is 0, return
-    if (!any(rayData.thp > 0.f) || !valid)
-    {
-        rayData.terminated = true;
-    }
-        
 
+    //get material properties
+    let bsdfProperties = bsdf.getProperties(sd);
+
+    bool isDiffuse = bsdfProperties.roughness > gSpecularRougnessCutoff;
+    isDiffuse |= any(bsdfProperties.emission > gEmissiveCutoff);
+
+    //if ray is invalid terminate
+    rayData.terminated = !valid;
+   
     //save hit if lobe is diffuse
-    if (bsdfSample.isLobe(LobeType::Diffuse) && !rayData.terminated)
+    if ((bsdfSample.isLobe(LobeType::DiffuseReflection) || (bsdfSample.isLobe(LobeType::Reflection) && isDiffuse)) && (!rayData.terminated || isDiffuse))
     {
         // We store the final normal and tangent in the G-buffer.
          // In order to reconstruct the bitangent later, we also need to store its handedness (sign).
@@ -112,9 +116,9 @@ void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleInt
         gThpMatID[launchIndex] = float4(thpStart, asfloat(sd.materialID));
 
         // Get BSDF properties.
-        let bsdfProperties = bsdf.getProperties(sd);
-        float emissiveFactor = rayData.pathLength > 0 ? 0.5 / rayData.pathLength : 1.0;
-        gEmissive[launchIndex] = float4(bsdfProperties.emission * emissiveFactor, 0.f);
+        
+        //float emissiveFactor = rayData.pathLength > 0 ? 0.5 / rayData.pathLength : 1.0;
+        gEmissive[launchIndex] = float4(bsdfProperties.emission, 0.f);
         rayData.terminated = true;
     }
 

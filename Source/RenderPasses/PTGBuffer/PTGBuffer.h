@@ -86,8 +86,10 @@ private:
 
     // Configuration
     uint                        mRecursionDepth = 5;                            ///< Depth of recursion (0 = none).
+    float                       mSpecRoughCutoff = 0.25f;                       ///<Cutoff for when all hits are counted diffuse.
+    float                       mEmissiveCutoff = 0.2f;                       ///<When Emissive is over this value it is a emissive diffuse hit
     SamplePattern               mSamplePattern = SamplePattern::Stratified;         ///< Which camera jitter sample pattern to use.
-    uint32_t                    mSampleCount = 128;                              ///< Sample count for camera jitter.
+    uint32_t                    mSampleCount = 16;                              ///< Sample count for camera jitter.
 
      // Runtime data
     uint                        mFrameCount = 0;            ///< Frame count since last Reset
