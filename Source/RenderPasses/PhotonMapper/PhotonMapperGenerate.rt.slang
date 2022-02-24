@@ -263,8 +263,6 @@ void rayGen()
         EmissiveTriangle emiTri = lc.getTriangle(triIndex); //get the random triangle
         //random baycentric coordinates
         float2 RS = sampleNext2D(rayData.sg);
-        if (RS.x + RS.y >= 1.0)            //make sure that it stays inside the triangle
-            RS = 1.0 - RS;
         const float3 barycentrics = sample_triangle(RS);
         lightPos = emiTri.getPosition(barycentrics);
         lightDir = emiTri.normal;
