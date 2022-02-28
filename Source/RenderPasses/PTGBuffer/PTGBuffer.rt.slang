@@ -2,12 +2,11 @@
 #include "Utils/Math/MathConstants.slangh"
 
 import Scene.Raytracing;
+import Scene.Intersection;
 import Utils.Math.MathHelpers;
 import Utils.Sampling.SampleGenerator;
-import Utils.Sampling.SampleGenerator;
-import Rendering.Materials.StandardMaterial;
-//import Experimental.Scene.Material.MaterialHelpers;
 import Rendering.Lights.LightHelpers;
+import Utils.Geometry.GeometryHelpers;
 
 
 cbuffer CB
@@ -79,13 +78,11 @@ void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleInt
     let bsdf = gScene.materials.getBSDF(sd, lod);
     
     bool valid = bsdf.sample(sd, rayData.sg, bsdfSample, true /*ImportanceSampling*/);    
-
     
     float3 thpStart = rayData.thp;
     
     bool transmission = bsdfSample.isLobe(LobeType::Transmission);
-    float3 rayOrigin = sd.computeNewRayOrigin(!transmission); //false is for transmissions
-    rayData.origin = rayOrigin;
+    rayData.origin = sd.computeNewRayOrigin(!transmission); //false is for transmissions
     rayData.thp *= valid ? bsdfSample.weight : float3(0);
     rayData.lobeType = bsdfSample.lobe;
     rayData.direction = bsdfSample.wo;
@@ -98,7 +95,7 @@ void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleInt
 
     //if ray is invalid terminate
     rayData.terminated = !valid;
-   
+    
     //save hit if lobe is diffuse
     if ((bsdfSample.isLobe(LobeType::DiffuseReflection) || (bsdfSample.isLobe(LobeType::Reflection) && isDiffuse)) && (!rayData.terminated || isDiffuse))
     {
@@ -107,7 +104,7 @@ void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleInt
         float3 B = cross(sd.N, sd.T);
         float bitangentSign = dot(sd.B, B) >= 0.f ? 1.f : -1.f;
 
-        gPosW[launchIndex] = float4(rayOrigin, 1.0);
+        gPosW[launchIndex] = float4(rayData.origin, 1.0);
         gNormW[launchIndex] = float4(sd.N, 1.0);
         gTangentW[launchIndex] = float4(sd.T, bitangentSign);
         gTexC[launchIndex] = float4(sd.uv, 1.0, 1.0);
