@@ -106,6 +106,16 @@ struct ScatterRayData
     }
 };
 
+//get the area of a triangle from the vectors a and b. 
+float triangleArea(float3 a, float3 b)
+{
+    float2 len = float2(length(a), length(b));
+    float cosT = dot(a / len.x, b / len.y);
+    float sinT = sqrt(1 - cosT * cosT);
+
+    return 0.5 * len.x * len.y * sinT;
+}
+
 //transforms direction from local to world space
 void fromLocalToWorld(in float3 lightDirW, inout float3 dir)
 {
@@ -273,7 +283,10 @@ void rayGen()
         //Evaluate Emitted radiance
         float2 uv = emiTri.getTexCoord(barycentrics);
         lightIntensity = gScene.materials.evalEmissive(emiTri.materialID, uv);
-        lightIntensity *= gEmissiveScale;
+        //get triangle area for scaling
+        float3 a = emiTri.posW[1] - emiTri.posW[0];
+        float3 b = emiTri.posW[2] - emiTri.posW[0];
+        lightIntensity *= gEmissiveScale * triangleArea(a, b);
         type = 1;
     }
 
