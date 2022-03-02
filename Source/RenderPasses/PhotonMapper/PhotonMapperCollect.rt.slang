@@ -134,17 +134,14 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
     const uint primIndex = PrimitiveIndex();
     //get caustic or global photon
     PhotonInfo photon;
-    float radius = 0;
      //Instance 0 is always the caustic buffer
     if (InstanceIndex() == 0)
     {
         photon = gCaustic[primIndex];
-        radius = gCausticRadius;
     }
     else
     {
         photon = gGlobal[primIndex];
-        radius = gGlobalRadius;
     }
 
     //create a Vertex Data object
@@ -169,10 +166,8 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
         
     float3 f_r = float3(1);
     f_r = bsdf.eval(sd, -photon.dir);
-        
-    float w = 1 / (radius * radius);
-    
-    rayData.radiance += f_r * photon.flux * w;
+       
+    rayData.radiance += f_r * photon.flux;
 }
 
 //Checks if the ray start point is inside the sphere. 0 is returned if it is not in sphere and 1 if it is
@@ -251,19 +246,25 @@ void rayGen()
     ray.Direction = float3(0, 1, 0);
     
     uint rayFlags = RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | RAY_FLAG_SKIP_TRIANGLES;
-
+    float3 radiance = float3(0);
+    
     //It is faster to trace two times in the different instance mask becaus of divergence
     if (kCollectCausticPhotons && valid)
+    {
         TraceRay(gPhotonAS, rayFlags, 1 /* instanceInclusionMask */, 0 /* hitIdx */, 0 /* rayType count */, 0 /* missIdx */, ray, rayData);
-    
-    if (kCollectGlobalPhotons && valid)
-        TraceRay(gPhotonAS, rayFlags, 2 /* instanceInclusionMask */, 0 /* hitIdx */, 0 /* rayType count */, 0 /* missIdx */, ray, rayData);
-    
-    float w = 1 / M_PI;     //make this a constant
-
-    float3 radiance = float3(0);
+        float w = 1 / (M_PI * gCausticRadius * gCausticRadius); //make this a constant
+        radiance += w * rayData.radiance;
+        rayData.radiance = 0.0;
+    }
         
-    radiance = valid ? w * rayData.radiance * thpMatID.xyz : float3(0.0);
+    if (kCollectGlobalPhotons && valid)
+    {
+        TraceRay(gPhotonAS, rayFlags, 2 /* instanceInclusionMask */, 0 /* hitIdx */, 0 /* rayType count */, 0 /* missIdx */, ray, rayData);
+        float w = 1 / (M_PI * gGlobalRadius * gGlobalRadius); //make this a constant
+        radiance += w * rayData.radiance;
+    }
+        
+    radiance *= thpMatID.xyz;
 
     float3 pixEmission = gEmissive[launchIndex].xyz;
     radiance += pixEmission * thpMatID.xyz;
