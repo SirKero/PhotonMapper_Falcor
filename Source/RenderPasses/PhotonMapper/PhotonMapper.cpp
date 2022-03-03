@@ -63,14 +63,10 @@ namespace
 
     const ChannelList kInputChannels =
     {
-        {"posW",                "gWorldPosition",           "World Position",               false},
-        {"normalW",             "gWorldNormal",             "World Normals",                false},
-        {"tangentW",            "gWorldTangent",            "World Tangent",                false},
-        {"texC",                "gTextureCoordinate",       "Texture Coordinate",           false},
-        {"viewW",               "gViewWorld",               "World View Direction",         false},
-        {"faceNormal",          "gFaceNormal",              "Normal for the face",          false},
-        {"thpMatID",            "gThpMatID",                "Throughput and material id(w)",false},
-        {"emissive",            "gEmissive",                "Emissive",                     false},
+        {"vbuffer",             "gVBuffer",                 "V Buffer to get the intersected triangle",         false},
+        {"viewW",               "gViewWorld",               "World View Direction",                             false},
+        {"thpMatID",            "gThpMatID",                "Throughput and material id(w)",                    false},
+        {"emissive",            "gEmissive",                "Emissive",                                         false},
     };
 
     const ChannelList kOutputChannels =

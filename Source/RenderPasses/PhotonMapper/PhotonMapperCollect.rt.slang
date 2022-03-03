@@ -2,6 +2,7 @@
 #include "Utils/Math/MathConstants.slangh"
 
 import Scene.Raytracing;
+import Scene.Intersection;
 import Utils.Math.MathHelpers;
 import Utils.Sampling.SampleGenerator;
 import Rendering.Materials.StandardMaterial;
@@ -19,12 +20,8 @@ cbuffer CB
 }
 
 // Inputs
-Texture2D<float4> gWorldPosition;
-Texture2D<float4> gWorldNormal;
-Texture2D<float4> gWorldTangent;
-Texture2D<float2> gTextureCoordinate;
+Texture2D<PackedHitInfo> gVBuffer;
 Texture2D<float4> gViewWorld;
-Texture2D<float4> gFaceNormal;
 Texture2D<float4> gThpMatID;
 Texture2D<float4> gEmissive;
 
@@ -59,31 +56,16 @@ static const float kRayTMax = FLT_MAX;
 static const bool kCollectGlobalPhotons = COLLECT_GLOBAL_PHOTONS;
 static const bool kCollectCausticPhotons = COLLECT_CAUSTIC_PHOTONS;
 
-/** Payload for ray (128B).
+/** Payload for ray (16B).
 */
 struct RayData
 {
     float3 radiance;    ///< Accumulated outgoing radiance from path.
-    bool terminated;    ///< Set to true when path is terminated.
-    float3 wNormal;      ///< World normal
-    float texU;         ///< U of texture coordinate 
-    float3 wView;       ///< World View
-    float texV;         ///< V of texture coordinate 
-    float4 wTangent;    ///< Tangent, w component is the direction for the bitangent (either -1 or +1)
-    float3 wFaceNormal; ///< Face Normal
-    uint matID;         ///< MaterialID
+    uint pad;           ///< free space.
   
-
     __init(){
         this.radiance = float3(0);
-        this.terminated = false;
-        this.wNormal = float3(0);
-        this.texU = 0.0;
-        this.wView = float3(0);
-        this.texV = 0.0;
-        this.wTangent = float4(0);
-        this.wNormal = float3(0);
-        this.matID = 0;
+        this.pad = 0;
     }
 };
 
@@ -107,10 +89,19 @@ struct SphereAttribs
     float2 pad;
 };
 
+ShadingData loadShadingData(const HitInfo hit, const float3 rayDir, const ITextureSampler lod)
+{
+    const TriangleHit triangleHit = hit.getTriangleHit();
+    VertexData v = gScene.getVertexData(triangleHit);
+    uint materialID = gScene.getMaterialID(triangleHit.instanceID);
+
+    return gScene.materials.prepareShadingData(v, materialID, -rayDir, lod);
+}
+
 [shader("miss")]
 void miss(inout RayData rayData : SV_RayPayload)
 {
-    rayData.terminated = true;
+    // Nothing happens here. Just here for completions sake
 }
 
 [shader("closesthit")]
@@ -129,9 +120,10 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
         rayData.radiance = float3(1);
         return;
     }
-    
-    
+
+    const uint2 launchIndex = DispatchRaysIndex().xy;
     const uint primIndex = PrimitiveIndex();
+    
     //get caustic or global photon
     PhotonInfo photon;
      //Instance 0 is always the caustic buffer
@@ -144,17 +136,11 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
         photon = gGlobal[primIndex];
     }
 
-    //create a Vertex Data object
-    VertexData v;
-    v.posW = ObjectRayOrigin().xyz;
-    v.normalW = rayData.wNormal;
-    v.faceNormalW = rayData.wFaceNormal;
-    v.tangentW = rayData.wTangent;
-    v.texC = float2(rayData.texU, rayData.texV);
-    v.coneTexLODValue = 0.0;
-
+    //get hit
+    const HitInfo hit = HitInfo(gVBuffer[launchIndex]);
     let lod = ExplicitLodTextureSampler(0.f);
-    ShadingData sd = gScene.materials.prepareShadingData(v, rayData.matID, rayData.wView, lod);
+    //World Direction is set to the viewDir we get from the vBuffer
+    ShadingData sd = loadShadingData(hit, WorldRayDirection(), lod);
         
     let bsdf = gScene.materials.getBSDF(sd, lod);
     
@@ -171,16 +157,14 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
 }
 
 //Checks if the ray start point is inside the sphere. 0 is returned if it is not in sphere and 1 if it is
-float hitSphere(const float3 center, const float radius, const float3 p)
+bool hitSphere(const float3 center, const float radius, const float3 p)
 {
-    float check = 0.0;
     float3 radiusTest = p - center;
     radiusTest = radiusTest * radiusTest;
     float radiusTestF = radiusTest.x + radiusTest.y + radiusTest.z;
     if (radiusTestF < radius * radius)
-        check = 0.01; //put check as a small constant value so we can shoot little rays
-  
-    return check;
+        return true;
+    return false;
 }
 
 [shader("intersection")]
@@ -205,7 +189,7 @@ void intersection()
         radius = gGlobalRadius;
     }
         
-    float tHit = hitSphere(photonAABB.center(), radius, origin);
+    bool tHit = hitSphere(photonAABB.center(), radius, origin);
 
     SphereAttribs attribs;
     attribs.pad = float2(0);
@@ -223,27 +207,22 @@ void rayGen()
     uint2 launchIndex = DispatchRaysIndex().xy;
     uint2 launchDim = DispatchRaysDimensions().xy;
     
-    float4 wPos = gWorldPosition[launchIndex];
-    float2 texCoord = gTextureCoordinate[launchIndex];
     float4 thpMatID = gThpMatID[launchIndex];
 
     //prepare payload
     RayData rayData = RayData();
-    rayData.texU = texCoord.x;
-    rayData.wView = gViewWorld[launchIndex].xyz;
-    rayData.texV = texCoord.y;
-    rayData.wTangent = gWorldTangent[launchIndex];
-    rayData.matID = asuint(thpMatID.w); 
-    rayData.wNormal = gWorldNormal[launchIndex].xyz;
-    rayData.wFaceNormal = gFaceNormal[launchIndex].xyz;
 
-    bool valid = !(wPos.w < 0.1);   //Check if the ray is valid (value over 0.1 in w coordinate of position)
+    const HitInfo hit = HitInfo(gVBuffer[launchIndex]);
+    bool valid = hit.isValid(); //Check if the ray is valid (value over 0.1 in w coordinate of position)
+
+    const TriangleHit triangleHit = hit.getTriangleHit();
+    VertexData v = gScene.getVertexData(triangleHit);
     
     RayDesc ray;
-    ray.Origin = wPos.xyz;
+    ray.Origin = v.posW;
     ray.TMin = 0.00001;
     ray.TMax = 0.0001;
-    ray.Direction = float3(0, 1, 0);
+    ray.Direction = gViewWorld[launchIndex].xyz;    //we take the view dir as direction
     
     uint rayFlags = RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | RAY_FLAG_SKIP_TRIANGLES;
     float3 radiance = float3(0);
