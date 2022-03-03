@@ -303,6 +303,8 @@ void PTVBuffer::renderUI(Gui::Widgets& widget)
     mOptionsChanged |= widget.checkbox("Use Alpha Test", mUseAlphaTest);
     widget.tooltip("Enables Alpha Test for the VBuffer");
 
+    mOptionsChanged |= widget.checkbox("Adjust Shading Normals", mAdjustShadingNormals);
+    widget.tooltip("Adjusts the shading normals to prevent invalid pixels at the edge of specular/transparent materials");
 }
 
 void PTVBuffer::prepareVars()
