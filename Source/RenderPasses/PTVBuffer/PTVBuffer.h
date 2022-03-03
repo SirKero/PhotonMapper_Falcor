@@ -35,12 +35,12 @@ class PTVBuffer : public RenderPass
 {
 public:
     //Sample patterns for camera jitter
-    enum class SamplePattern : uint32_t
+    enum SamplePattern : uint32_t
     {
-        Center,
-        DirectX,
-        Halton,
-        Stratified,
+        Center = 0,
+        DirectX = 1,
+        Halton = 2,
+        Stratified = 3,
     };
 
     using SharedPtr = std::shared_ptr<PTVBuffer>;
@@ -83,6 +83,8 @@ private:
     */
     void updateSamplePattern();
 
+   
+
     // Internal state
     Scene::SharedPtr            mpScene;                            ///< Current scene.
     SampleGenerator::SharedPtr  mpSampleGenerator;                  ///< GPU sample generator.
@@ -95,7 +97,7 @@ private:
     uint                        mRecursionDepth = 5;                                            ///< Depth of recursion (0 = none).
     float                       mSpecRoughCutoff = 0.25f;                                       ///< Cutoff for when all hits are counted diffuse.
     float                       mEmissiveCutoff = 0.2f;                                         ///< When Emissive is over this value it is a emissive diffuse hit
-    SamplePattern               mSamplePattern = SamplePattern::Stratified;                     ///< Which camera jitter sample pattern to use.
+    uint32_t                    mSamplePattern = SamplePattern::Stratified;                     ///< Which camera jitter sample pattern to use.
     uint32_t                    mSampleCount = 32;                                              ///< Sample count for camera jitter.
     bool                        mUseAlphaTest = true;                                           ///< Enable alpha test.
     bool                        mAdjustShadingNormals = true;                                   ///< Adjust shading normals.

@@ -74,10 +74,10 @@ namespace
     // UI variables.
     const Gui::DropdownList kSamplePatternList =
     {
-        { (uint32_t)PTVBuffer::SamplePattern::Center, "Center" },
-        { (uint32_t)PTVBuffer::SamplePattern::DirectX, "DirectX" },
-        { (uint32_t)PTVBuffer::SamplePattern::Halton, "Halton" },
-        { (uint32_t)PTVBuffer::SamplePattern::Stratified, "Stratified" },
+        { PTVBuffer::SamplePattern::Center, "Center" },
+        { PTVBuffer::SamplePattern::DirectX, "DirectX" },
+        { PTVBuffer::SamplePattern::Halton, "Halton" },
+        { PTVBuffer::SamplePattern::Stratified, "Stratified" },
     };
 
     // Scripting options.
@@ -324,7 +324,7 @@ void PTVBuffer::prepareVars()
     mpSampleGenerator->setShaderData(var);
 }
 
-static CPUSampleGenerator::SharedPtr createSamplePattern(PTVBuffer::SamplePattern type, uint32_t sampleCount)
+static CPUSampleGenerator::SharedPtr createSamplePattern(uint32_t type, uint32_t sampleCount)
 {
     switch (type)
     {
