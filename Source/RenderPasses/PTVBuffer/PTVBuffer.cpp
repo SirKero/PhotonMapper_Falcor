@@ -258,7 +258,7 @@ void PTVBuffer::setScene(RenderContext* pRenderContext, const Scene::SharedPtr& 
         sbt->setRayGen(desc.addRayGen("rayGen"));
         sbt->setMiss(0, desc.addMiss("miss"));
         if (mpScene->hasGeometryType(Scene::GeometryType::TriangleMesh)) {
-            sbt->setHitGroup(0, mpScene->getGeometryIDs(Scene::GeometryType::TriangleMesh), desc.addHitGroup("closestHit"));
+            sbt->setHitGroup(0, mpScene->getGeometryIDs(Scene::GeometryType::TriangleMesh), desc.addHitGroup("closestHit", "anyHit"));
         }
 
         mTracer.pProgram = RtProgram::create(desc, mpScene->getSceneDefines());
@@ -299,6 +299,9 @@ void PTVBuffer::renderUI(Gui::Widgets& widget)
         updateSamplePattern();
         mJitterGenChanged = true;
     }
+
+    mOptionsChanged |= widget.checkbox("Use Alpha Test", mUseAlphaTest);
+    widget.tooltip("Enables Alpha Test for the VBuffer");
 
 }
 

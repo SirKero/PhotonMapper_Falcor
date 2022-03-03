@@ -96,8 +96,8 @@ private:
     float                       mSpecRoughCutoff = 0.25f;                                       ///< Cutoff for when all hits are counted diffuse.
     float                       mEmissiveCutoff = 0.2f;                                         ///< When Emissive is over this value it is a emissive diffuse hit
     SamplePattern               mSamplePattern = SamplePattern::Stratified;                     ///< Which camera jitter sample pattern to use.
-    uint32_t                    mSampleCount = 16;                                              ///< Sample count for camera jitter.
-    bool                        mUseAlphaTest = false;                                           ///< Enable alpha test.
+    uint32_t                    mSampleCount = 32;                                              ///< Sample count for camera jitter.
+    bool                        mUseAlphaTest = true;                                           ///< Enable alpha test.
     bool                        mAdjustShadingNormals = true;                                   ///< Adjust shading normals.
     bool                        mComputeDOF = false;                                   ///< Adjust shading normals.
 
