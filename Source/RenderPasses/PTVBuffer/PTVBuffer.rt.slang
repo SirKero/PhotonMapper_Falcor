@@ -152,7 +152,7 @@ void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleInt
         triangleHit.primitiveIndex = PrimitiveIndex();
         triangleHit.barycentrics = attribs.barycentrics;
         
-        writeHit(launchIndex, -WorldRayDirection(), thpStart, bsdfProperties.emission, HitInfo(triangleHit));
+        writeHit(launchIndex, WorldRayDirection(), thpStart, bsdfProperties.emission, HitInfo(triangleHit));
         
         rayData.terminated = true;
     }
