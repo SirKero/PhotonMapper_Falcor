@@ -57,7 +57,7 @@ namespace
    // These should be set as small as possible.
    //TODO: set them later to the right vals
     const uint32_t kMaxPayloadSizeBytes = 80u;
-    const uint32_t kMaxPayloadSizeBytesCollect = 96u;
+    const uint32_t kMaxPayloadSizeBytesCollect = 32u;
     const uint32_t kMaxAttributeSizeBytes = 8u;
     const uint32_t kMaxRecursionDepth = 2u;
 
@@ -308,6 +308,8 @@ void PhotonMapper::collectPhotons(RenderContext* pRenderContext, const RenderDat
 
     mTracerCollect.pProgram->addDefine("COLLECT_GLOBAL_PHOTONS", !mDisableGlobalCollection ? "1" : "0");
     mTracerCollect.pProgram->addDefine("COLLECT_CAUSTIC_PHOTONS", !mDisableCausticCollection ? "1" : "0");
+    mTracerCollect.pProgram->addDefine("RAY_TMIN", std::to_string(kCollectTMin));
+    mTracerCollect.pProgram->addDefine("RAY_TMAX", std::to_string(kCollectTMax));
 
 
     // Prepare program vars. This may trigger shader compilation.

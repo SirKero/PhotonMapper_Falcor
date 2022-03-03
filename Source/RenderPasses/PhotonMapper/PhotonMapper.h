@@ -111,7 +111,9 @@ private:
     SampleGenerator::SharedPtr  mpSampleGenerator;          ///< GPU sample generator.
 
     //Constants
-    const float                 kMinPhotonRadius = 0.0001f;                ///< At radius 0.0001 Photons are still visible
+    const float                 kMinPhotonRadius = 0.0001f;                 ///< At radius 0.0001 Photons are still visible
+    const float                 kCollectTMin = 0.000001f;                   ///<non configurable constant for collection for now
+    const float                 kCollectTMax = 0.000002f;                   ///< non configurable constant for collection for now
 
     // Configuration
     uint                        mMaxBounces = 5;                        ///< Depth of recursion (0 = none).

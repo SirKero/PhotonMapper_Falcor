@@ -51,17 +51,20 @@ RWStructuredBuffer<AABB> gGlobalAABB;
 
 // Static configuration based on defines set from the host.
 static const float3 kDefaultBackgroundColor = float3(0, 0, 0);
-static const float kRayTMax = FLT_MAX;
 
 static const bool kCollectGlobalPhotons = COLLECT_GLOBAL_PHOTONS;
 static const bool kCollectCausticPhotons = COLLECT_CAUSTIC_PHOTONS;
 
-/** Payload for ray (16B).
+static const float kRayTMin = RAY_TMIN;
+static const float kRayTMax = RAY_TMAX;
+
+/** Payload for ray (32B).
 */
 struct RayData
 {
-    float3 radiance;    ///< Accumulated outgoing radiance from path.
-    uint pad;           ///< free space.
+    float3 radiance;                ///< Accumulated outgoing radiance from path.
+    uint pad;                       ///< free space.
+    PackedHitInfo packedHitInfo;    ///< Hit info from vBuffer; Up to 16B
   
     __init(){
         this.radiance = float3(0);
@@ -137,7 +140,7 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
     }
 
     //get hit
-    const HitInfo hit = HitInfo(gVBuffer[launchIndex]);
+    const HitInfo hit = HitInfo(rayData.packedHitInfo);
     let lod = ExplicitLodTextureSampler(0.f);
     //World Direction is set to the viewDir we get from the vBuffer
     ShadingData sd = loadShadingData(hit, WorldRayDirection(), lod);
@@ -194,9 +197,9 @@ void intersection()
     SphereAttribs attribs;
     attribs.pad = float2(0);
     
-    if (tHit > 0.0)
+    if (tHit)
     {
-        ReportHit(0.00005, 0, attribs);
+        ReportHit(RAY_TMIN, 0, attribs);
     }
 }
 
@@ -211,8 +214,9 @@ void rayGen()
 
     //prepare payload
     RayData rayData = RayData();
-
-    const HitInfo hit = HitInfo(gVBuffer[launchIndex]);
+    rayData.packedHitInfo = gVBuffer[launchIndex];
+    
+    const HitInfo hit = HitInfo(rayData.packedHitInfo);
     bool valid = hit.isValid(); //Check if the ray is valid (value over 0.1 in w coordinate of position)
 
     const TriangleHit triangleHit = hit.getTriangleHit();
@@ -220,8 +224,8 @@ void rayGen()
     
     RayDesc ray;
     ray.Origin = v.posW;
-    ray.TMin = 0.00001;
-    ray.TMax = 0.0001;
+    ray.TMin = RAY_TMIN;
+    ray.TMax = RAY_TMAX;
     ray.Direction = gViewWorld[launchIndex].xyz;    //we take the view dir as direction
     
     uint rayFlags = RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | RAY_FLAG_SKIP_TRIANGLES;
