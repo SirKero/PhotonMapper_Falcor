@@ -7,6 +7,7 @@ import Utils.Math.MathHelpers;
 import Utils.Sampling.SampleGenerator;
 import Rendering.Lights.LightHelpers;
 import Utils.Geometry.GeometryHelpers;
+import Scene.Material.ShadingUtils;
 
 
 cbuffer CB
@@ -73,7 +74,9 @@ void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleInt
     const uint materialID = gScene.getMaterialID(instanceID);
     let lod = ExplicitLodTextureSampler(0.f);
     ShadingData sd = gScene.materials.prepareShadingData(v, materialID, -WorldRayDirection(), lod);
-        
+
+    adjustShadingNormal(sd, v);
+    
     BSDFSample bsdfSample;
     let bsdf = gScene.materials.getBSDF(sd, lod);
     
