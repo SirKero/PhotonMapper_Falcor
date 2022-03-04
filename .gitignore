@@ -10,6 +10,8 @@ Source/*
 !Source/RenderPasses/
 Source/RenderPasses/*
 !Source/RenderPasses/PhotonMapper/
+!Source/RenderPasses/PhotonMapperCollect/
+!Source/RenderPasses/PhotonMapperGather/
 !Source/RenderPasses/PTGBuffer/
 !Source/RenderPasses/PTVBuffer/
 !Source/Data/
