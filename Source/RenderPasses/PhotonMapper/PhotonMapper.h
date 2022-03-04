@@ -115,34 +115,49 @@ private:
     const float                 kCollectTMin = 0.000001f;                   ///<non configurable constant for collection for now
     const float                 kCollectTMax = 0.000002f;                   ///< non configurable constant for collection for now
 
+    //***************************************************************************
     // Configuration
-    uint                        mMaxBounces = 5;                        ///< Depth of recursion (0 = none).
-    float                       mCausticRadiusStart = 0.01f;            ///< Start value for the caustic Radius
-    float                       mGlobalRadiusStart = 0.05f;             ///< Start value for the caustic Radius
-    float                       mCausticRadius = 1.f;                 ///< Current Radius for caustic Photons
-    float                       mGlobalRadius = 1.f;                  ///< Current Radius for global Photons
-    float                       mRussianRoulette = 0.3f;                ///< Probabilty that a Global photon is saved
+    //***************************************************************************
+
     bool                        mUseStatisticProgressivePM = true;     ///< Activate Statistically Progressive Photon Mapping(SPPM)
     float                       mSPPMAlphaGlobal = 0.7f;                 ///< Global Alpha for SPPM
     float                       mSPPMAlphaCaustic = 0.7f;                ///< Caustic Alpha for SPPM
 
-    uint                        mNumPhotons = 2000000;                   ///< Number of Photons shot
-    uint                        mNumPhotonsUI = mNumPhotons;            ///< For UI. It is decopled from the runtime var because changes have to be confirmed
-    uint                        mGlobalBufferSizeUI = mNumPhotons/2;    ///< Size of the Global Photon Buffer
-    uint                        mCausticBufferSizeUI = mNumPhotons/4;   ///< Size of the Caustic Photon Buffer
-    bool                        mUsePhotonMapper = false;               ///< Activates ReStir for global photons
+    float                       mCausticRadiusStart = 0.01f;            ///< Start value for the caustic Radius
+    float                       mGlobalRadiusStart = 0.05f;             ///< Start value for the caustic Radius
+    float                       mCausticRadius = 1.f;                 ///< Current Radius for caustic Photons
+    float                       mGlobalRadius = 1.f;                  ///< Current Radius for global Photons
+
     float                       mSpecRoughCutoff = 0.25f;               ///< If rougness is over this value interpret the material as diffuse
-    float                       mIntensityScalar = 1.0f;                ///<Scales the intensity of emissive light sources
+
     bool                        mResetIterations = false;               ///<Resets the iterations counter once
     bool                        mAlwaysResetIterations = false;         ///<Resets the iteration counter every frame
-    bool                        mDisableGlobalCollection = false;       ///<Disabled the collection of global photons
-    bool                        mDisableCausticCollection = false;       ///<Disabled the collection of caustic photons
+
     bool                        mNumPhotonsChanged = false;             ///<If true buffers needs to be restarted and Number of photons needs to be changed
     bool                        mFitBuffersToPhotonShot = false;        ///<Changes the buffer size to be around the number of photons shot
 
+    bool                        mUseAlphaTest = true;                   ///<Uses alpha test (Generate)
+    bool                        mAdjustShadingNormals = true;           ///<Adjusts the shading normals (Generate)
 
+    // Generate only
+    uint                        mMaxBounces = 5;                        ///< Depth of recursion (0 = none).
+    float                       mRussianRoulette = 0.3f;                ///< Probabilty that a Global photon is saved
+
+    uint                        mNumPhotons = 2000000;                   ///< Number of Photons shot
+    uint                        mNumPhotonsUI = mNumPhotons;            ///< For UI. It is decopled from the runtime var because changes have to be confirmed
+    uint                        mGlobalBufferSizeUI = mNumPhotons / 2;    ///< Size of the Global Photon Buffer
+    uint                        mCausticBufferSizeUI = mNumPhotons / 4;   ///< Size of the Caustic Photon Buffer
+
+    float                       mIntensityScalar = 1.0f;                ///<Scales the intensity of emissive light sources
+
+    // Collect only
+    bool                        mDisableGlobalCollection = false;       ///<Disabled the collection of global photons
+    bool                        mDisableCausticCollection = false;       ///<Disabled the collection of caustic photons
+
+
+    //*******************************************************
     // Runtime data
-
+    //*******************************************************
     
     uint                        mFrameCount = 0;            ///< Frame count since last Reset
     std::vector<uint>           mPhotonCount = { 0,0 };

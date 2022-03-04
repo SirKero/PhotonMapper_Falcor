@@ -250,6 +250,8 @@ void PhotonMapper::generatePhotons(RenderContext* pRenderContext, const RenderDa
     mTracerGenerate.pProgram->addDefine("RUSSIAN_ROULETTE", std::to_string(mRussianRoulette));
     mTracerGenerate.pProgram->addDefine("EMISSIVE_SCALE", std::to_string(mIntensityScalar));
     mTracerGenerate.pProgram->addDefine("SPECULAR_ROUGNESS_CUTOFF", std::to_string(mSpecRoughCutoff));
+    mTracerGenerate.pProgram->addDefine("USE_ALPHA_TEST", mUseAlphaTest ? "1" : "0");
+    mTracerGenerate.pProgram->addDefine("ADJUST_SHADING_NORMALS", mAdjustShadingNormals ? "1" : "0");
     
     // Prepare program vars. This may trigger shader compilation.
     // The program should have all necessary defines set at this point.
@@ -401,11 +403,11 @@ void PhotonMapper::renderUI(Gui::Widgets& widget)
     if (mUseStatisticProgressivePM) {
         dirty |= widget.var("Global Alpha", mSPPMAlphaGlobal, 0.1f, 1.0f, 0.001f);
         widget.tooltip("Sets the Alpha in SPPM for the Global Photons");
-        dirty |= widget.var("Caustic Alpha", mSPPMAlphaGlobal, 0.1f, 1.0f, 0.001f);
+        dirty |= widget.var("Caustic Alpha", mSPPMAlphaCaustic, 0.1f, 1.0f, 0.001f);
         widget.tooltip("Sets the Alpha in SPPM for the Caustic Photons");
     }
     
-    widget.text("");
+    widget.dummy("", float2(0, 15));
     //miscellaneous
     dirty |= widget.slider("Max Recursion Depth", mMaxBounces, 1u, 32u);
     widget.tooltip("Maximum path length for Photon Bounces");
@@ -425,6 +427,10 @@ void PhotonMapper::renderUI(Gui::Widgets& widget)
     //Material Settings
     dirty |= widget.var("SpecRoughCutoff", mSpecRoughCutoff, 0.0f, 1.0f, 0.01f);
     widget.tooltip("The cutoff for Specular Materials. All Reflections above this threshold are considered Diffuse");
+    dirty |= widget.checkbox("Alpha Test", mUseAlphaTest);
+    widget.tooltip("Enables Alpha Test for Photon Generation");
+    dirty |= widget.checkbox("Adjust Shading Normals", mAdjustShadingNormals);
+    widget.tooltip("Adjusts the shading normals in the Photon Generation");
 
     //Disable Photon Collecion
     widget.text("");
@@ -480,7 +486,7 @@ void PhotonMapper::setScene(RenderContext* pRenderContext, const Scene::SharedPt
             sbt->setRayGen(desc.addRayGen("rayGen"));
             sbt->setMiss(0, desc.addMiss("miss"));
             if (mpScene->hasGeometryType(Scene::GeometryType::TriangleMesh)) {
-                sbt->setHitGroup(0, mpScene->getGeometryIDs(Scene::GeometryType::TriangleMesh), desc.addHitGroup("closestHit"));
+                sbt->setHitGroup(0, mpScene->getGeometryIDs(Scene::GeometryType::TriangleMesh), desc.addHitGroup("closestHit", "anyHit"));
             }
 
             mTracerGenerate.pProgram = RtProgram::create(desc, mpScene->getSceneDefines());
@@ -583,12 +589,12 @@ bool PhotonMapper::preparePhotonBuffers()
     FALCOR_ASSERT(mCausticBuffers.aabb);   FALCOR_ASSERT(mCausticBuffers.info);
 
     //only set aabb buffer if it is used
-    if (!mUsePhotonMapper) {
-        mGlobalBuffers.aabb = Buffer::createStructured(sizeof(D3D12_RAYTRACING_AABB), mGlobalBuffers.maxSize);
-        mGlobalBuffers.aabb->setName("PhotonMapper::mGlobalBuffers.aabb");
+    
+    mGlobalBuffers.aabb = Buffer::createStructured(sizeof(D3D12_RAYTRACING_AABB), mGlobalBuffers.maxSize);
+    mGlobalBuffers.aabb->setName("PhotonMapper::mGlobalBuffers.aabb");
 
-        FALCOR_ASSERT(mGlobalBuffers.aabb);
-    }
+    FALCOR_ASSERT(mGlobalBuffers.aabb);
+    
 
     mGlobalBuffers.info = Buffer::createStructured(sizeof(PhotonInfo), mGlobalBuffers.maxSize);
     mGlobalBuffers.info->setName("PhotonMapper::mGlobalBuffers.info");
@@ -693,7 +699,7 @@ void PhotonMapper::createBottomLevelAS(RenderContext* pContext, const std::vecto
 
     //Init the blas with a maximum size for scratch and result buffer
     if (mBlasData.empty() || rebuild) {
-        mBlasData.resize(mUsePhotonMapper ? 1 : 2);
+        mBlasData.resize(2);
         uint64_t maxScratchSize = 0;
         //Prebuild
         for (size_t i = 0; i < mBlasData.size(); i++) {
@@ -735,10 +741,10 @@ void PhotonMapper::createBottomLevelAS(RenderContext* pContext, const std::vecto
         mCausticBuffers.blas = Buffer::create(mBlasData[0].blasByteSize, Buffer::BindFlags::AccelerationStructure, Buffer::CpuAccess::None);
         mCausticBuffers.blas->setName("PhotonMapper::CausticBlasBuffer");
 
-        if (!mUsePhotonMapper) {    //create a global buffer if they are not used as light
-            mGlobalBuffers.blas = Buffer::create(mBlasData[1].blasByteSize, Buffer::BindFlags::AccelerationStructure, Buffer::CpuAccess::None);
-            mGlobalBuffers.blas->setName("PhotonMapper::GlobalBlasBuffer");
-        }
+        
+        mGlobalBuffers.blas = Buffer::create(mBlasData[1].blasByteSize, Buffer::BindFlags::AccelerationStructure, Buffer::CpuAccess::None);
+        mGlobalBuffers.blas->setName("PhotonMapper::GlobalBlasBuffer");
+        
     }
 
     FALCOR_ASSERT(mBlasData.size() <= aabbCount.size()); //size of the blas data has to be equal or smaller than the aabbCounts 
@@ -756,7 +762,7 @@ void PhotonMapper::createBottomLevelAS(RenderContext* pContext, const std::vecto
 
     //aabb buffers need to be ready
     pContext->uavBarrier(mCausticBuffers.aabb.get());
-    if(!mUsePhotonMapper)  pContext->uavBarrier(mGlobalBuffers.aabb.get());
+    pContext->uavBarrier(mGlobalBuffers.aabb.get());
 
     for (size_t i = 0; i < mBlasData.size(); i++) {
         auto& blas = mBlasData[i];

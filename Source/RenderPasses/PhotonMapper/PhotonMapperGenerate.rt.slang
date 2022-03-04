@@ -5,7 +5,7 @@ import Scene.Raytracing;
 import Utils.Math.MathHelpers;
 import Utils.Sampling.SampleGenerator;
 import Rendering.Materials.StandardMaterial;
-//import Experimental.Scene.Material.MaterialHelpers;
+import Scene.Material.ShadingUtils;
 import Rendering.Lights.LightHelpers;
 
 
@@ -67,6 +67,8 @@ static const uint kMaxPhotonIndexCAU = MAX_PHOTON_INDEX_CAUSTIC;
 static const float kRussianRoulette = RUSSIAN_ROULETTE;             // Probabilty that an global photon is saved
 static const float kEmissiveScale = EMISSIVE_SCALE;                 //scalar for the light intenity
 static const float kSpecRoughCutoff = SPECULAR_ROUGNESS_CUTOFF;     //If roughness value is over this, interpret the material as Diffuse
+static const bool kUseAlphaTest = USE_ALPHA_TEST;                   //Activate for alpha test
+static const bool kAdjustShadingNormals = ADJUST_SHADING_NORMALS;   //Adjust the shading normals
 
 static const float k_2Pi = 6.28318530717958647692;
 static const float k_4Pi = 12.5663706143591729538;
@@ -179,8 +181,13 @@ void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleInt
     const uint materialID = gScene.getMaterialID(instanceID);
     let lod = ExplicitLodTextureSampler(0.f);
     ShadingData sd = gScene.materials.prepareShadingData(v, materialID, -WorldRayDirection(), lod);
-    //ShadingData sd = prepareShadingData(v, materialID, gScene.materials[materialID], gScene.materialResources[materialID], -WorldRayDirection(), 0.f);
 
+    //Adjust shading normals if desired
+    if (kAdjustShadingNormals)
+    {
+        adjustShadingNormal(sd, v);
+    }
+    
     BSDFSample bsdfSample;
     let bsdf = gScene.materials.getBSDF(sd, lod);
     let bsdfProperties = bsdf.getProperties(sd);
@@ -205,6 +212,20 @@ void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleInt
     rayData.pathLength++;
 }
 
+//Use anyhit for alpha test if activated
+[shader("anyhit")]
+void anyHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleIntersectionAttributes attribs : SV_IntersectionAttributes)
+{
+    if (kUseAlphaTest)
+    {
+        // Alpha test for non-opaque geometry.
+        GeometryInstanceID instanceID = getGeometryInstanceID();
+        VertexData v = getVertexData(instanceID, PrimitiveIndex(), attribs);
+        uint materialID = gScene.getMaterialID(instanceID);
+        if (gScene.materials.alphaTest(v, materialID, 0.f))
+            IgnoreHit();
+    }
+}
 
 [shader("raygeneration")]
 void rayGen()
