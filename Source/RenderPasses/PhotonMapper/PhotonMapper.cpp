@@ -370,6 +370,7 @@ void PhotonMapper::collectPhotons(RenderContext* pRenderContext, const RenderDat
 
 void PhotonMapper::renderUI(Gui::Widgets& widget)
 {
+    float2 dummySpacing = float2(0, 10);
     bool dirty = false;
 
     //Info
@@ -382,7 +383,7 @@ void PhotonMapper::renderUI(Gui::Widgets& widget)
     widget.text("Current Global Radius: " + std::to_string(mGlobalRadius));
     widget.text("Current Caustic Radius: " + std::to_string(mCausticRadius));
 
-    widget.dummy("",float2(0,15));
+    widget.dummy("", dummySpacing);
     widget.var("Number Photons", mNumPhotonsUI, 1000u, UINT_MAX, 1000u);
     widget.tooltip("The number of photons that are shot per iteration. Press \"Apply\" to apply the change");
     widget.var("Size Caustic Buffer", mCausticBufferSizeUI, 1000u, UINT_MAX, 1000u);
@@ -391,7 +392,7 @@ void PhotonMapper::renderUI(Gui::Widgets& widget)
     widget.dummy("", float2(15,0), true);
     mFitBuffersToPhotonShot |= widget.button("Fit Buffers", true);
     widget.tooltip("Fitts the Caustic and Global Buffer to current number of photons shot + 10 %");
-    widget.dummy("", float2(0, 15));
+    widget.dummy("", dummySpacing);
 
     //If fit buffers is triggered, also trigger the photon change routine
     mNumPhotonsChanged |= mFitBuffersToPhotonShot;  
@@ -407,39 +408,44 @@ void PhotonMapper::renderUI(Gui::Widgets& widget)
         widget.tooltip("Sets the Alpha in SPPM for the Caustic Photons");
     }
     
-    widget.dummy("", float2(0, 15));
+    widget.dummy("", dummySpacing);
     //miscellaneous
     dirty |= widget.slider("Max Recursion Depth", mMaxBounces, 1u, 32u);
     widget.tooltip("Maximum path length for Photon Bounces");
 
-    //Light settings
-    dirty |= widget.var("IntensityScalar", mIntensityScalar, 0.0f, FLT_MAX, 0.001f);
-    widget.tooltip("Scales the intensity of all Light Sources");
-
+    widget.dummy("", dummySpacing);
     //Radius settings
-    dirty |= widget.var("Caustic Radius Start", mCausticRadiusStart, kMinPhotonRadius, FLT_MAX, 0.001f);
-    widget.tooltip("The start value for the radius of caustic Photons");
-    dirty |= widget.var("Global Radius Start", mGlobalRadiusStart, kMinPhotonRadius, FLT_MAX, 0.001f);
-    widget.tooltip("The start value for the radius of global Photons");
-    dirty |= widget.var("Russian Roulette", mRussianRoulette, 0.001f, 1.f, 0.001f);
-    widget.tooltip("Probabilty that a Global Photon is saved");
-
+    if (auto group = widget.group("Radius Options")) {
+        dirty |= widget.var("Caustic Radius Start", mCausticRadiusStart, kMinPhotonRadius, FLT_MAX, 0.001f);
+        widget.tooltip("The start value for the radius of caustic Photons");
+        dirty |= widget.var("Global Radius Start", mGlobalRadiusStart, kMinPhotonRadius, FLT_MAX, 0.001f);
+        widget.tooltip("The start value for the radius of global Photons");
+        dirty |= widget.var("Russian Roulette", mRussianRoulette, 0.001f, 1.f, 0.001f);
+        widget.tooltip("Probabilty that a Global Photon is saved");
+    }
     //Material Settings
-    dirty |= widget.var("SpecRoughCutoff", mSpecRoughCutoff, 0.0f, 1.0f, 0.01f);
-    widget.tooltip("The cutoff for Specular Materials. All Reflections above this threshold are considered Diffuse");
-    dirty |= widget.checkbox("Alpha Test", mUseAlphaTest);
-    widget.tooltip("Enables Alpha Test for Photon Generation");
-    dirty |= widget.checkbox("Adjust Shading Normals", mAdjustShadingNormals);
-    widget.tooltip("Adjusts the shading normals in the Photon Generation");
+    if (auto group = widget.group("Material Options")) {
+        dirty |= widget.var("Emissive Scalar", mIntensityScalar, 0.0f, FLT_MAX, 0.001f);
+        widget.tooltip("Scales the intensity of all emissive Light Sources");
+        dirty |= widget.var("SpecRoughCutoff", mSpecRoughCutoff, 0.0f, 1.0f, 0.01f);
+        widget.tooltip("The cutoff for Specular Materials. All Reflections above this threshold are considered Diffuse");
+        dirty |= widget.checkbox("Alpha Test", mUseAlphaTest);
+        widget.tooltip("Enables Alpha Test for Photon Generation");
+        dirty |= widget.checkbox("Adjust Shading Normals", mAdjustShadingNormals);
+        widget.tooltip("Adjusts the shading normals in the Photon Generation");
+    }
+    
 
     //Disable Photon Collecion
-    widget.text("");
-    dirty |= widget.checkbox("Disable Global Photons", mDisableGlobalCollection);
-    widget.tooltip("Disables the collection of Global Photons. However they will still be generated");
-    dirty |= widget.checkbox("Disable Caustic Photons", mDisableCausticCollection);
-    widget.tooltip("Disables the collection of Caustic Photons. However they will still be generated");
+    if (auto group = widget.group("Collect Options")) {
+        dirty |= widget.checkbox("Disable Global Photons", mDisableGlobalCollection);
+        widget.tooltip("Disables the collection of Global Photons. However they will still be generated");
+        dirty |= widget.checkbox("Disable Caustic Photons", mDisableCausticCollection);
+        widget.tooltip("Disables the collection of Caustic Photons. However they will still be generated");
+        
+    }
+    widget.dummy("", dummySpacing);
     //Reset Iterations
-    widget.text("");
     widget.checkbox("Always Reset Iterations", mAlwaysResetIterations);
     widget.tooltip("Always Resets the Iterations, currently good for moving the camera");
     mResetIterations |= widget.button("Reset Iterations");
