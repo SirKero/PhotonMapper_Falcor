@@ -14,10 +14,7 @@ cbuffer CB
     uint        gFrameCount;        // Frame count since scene was loaded.
     float       gCausticRadius;     // Radius for the caustic photons
     float       gGlobalRadius;      // Radius for the global photons
-    float       gRussianRoulette;   // Probabilty that an global photon is saved
-    float       gEmissiveScale;   //scalar for the light intenity
     uint        gPRNGDimension;     // First available PRNG dimension.
-    float       gSpecRoughCutoff;   //If roughness value is over this, interpret the material as Diffuse
 }
 
 // Inputs
@@ -59,7 +56,6 @@ RWStructuredBuffer<PhotonCounter> gPhotonCounter;
 // Static configuration based on defines set from the host.
 #define is_valid(name) (is_valid_##name != 0)
 static const uint kMaxRecursion = MAX_RECURSION;
-static const float kMaxUintF = MAX_UINT32F;
 static const bool kUseAnalyticLights = USE_ANALYTIC_LIGHTS;
 static const bool kUseEmissiveLights = USE_EMISSIVE_LIGHTS;
 static const bool kUseEnvLight = USE_ENV_LIGHT;
@@ -68,6 +64,9 @@ static const float3 kDefaultBackgroundColor = float3(0, 0, 0);
 static const float kRayTMax = FLT_MAX;
 static const uint kMaxPhotonIndexGLB = MAX_PHOTON_INDEX_GLOBAL;
 static const uint kMaxPhotonIndexCAU = MAX_PHOTON_INDEX_CAUSTIC;
+static const float kRussianRoulette = RUSSIAN_ROULETTE;             // Probabilty that an global photon is saved
+static const float kEmissiveScale = EMISSIVE_SCALE;                 //scalar for the light intenity
+static const float kSpecRoughCutoff = SPECULAR_ROUGNESS_CUTOFF;     //If roughness value is over this, interpret the material as Diffuse
 
 static const float k_2Pi = 6.28318530717958647692;
 static const float k_4Pi = 12.5663706143591729538;
@@ -197,7 +196,7 @@ void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleInt
     rayData.thp = valid ? bsdfSample.weight : float3(0);
     rayData.lobeType = bsdfSample.lobe;
     rayData.direction = bsdfSample.wo;
-    rayData.diffuseHit = bsdfSample.isLobe(LobeType::Diffuse) || (bsdfSample.isLobe(LobeType::Reflection) && (bsdfProperties.roughness > gSpecRoughCutoff));
+    rayData.diffuseHit = bsdfSample.isLobe(LobeType::Diffuse) || (bsdfSample.isLobe(LobeType::Reflection) && (bsdfProperties.roughness > kSpecRoughCutoff));
     
     //if throughput is 0, return
     if(!valid)
@@ -286,7 +285,7 @@ void rayGen()
         //get triangle area for scaling
         float3 a = emiTri.posW[1] - emiTri.posW[0];
         float3 b = emiTri.posW[2] - emiTri.posW[0];
-        lightIntensity *= gEmissiveScale * triangleArea(a, b);
+        lightIntensity *= kEmissiveScale * triangleArea(a, b);
         type = 1;
     }
 
@@ -335,7 +334,7 @@ void rayGen()
 
         //save photon
         float rndRoulette = sampleNext1D(rayData.sg);
-        bool roulette = rndRoulette <= gRussianRoulette;
+        bool roulette = rndRoulette <= kRussianRoulette;
 
         
         if (reflectedDiffuse)
@@ -354,7 +353,7 @@ void rayGen()
             //Global photon
             else if(roulette)
             {
-                photon.flux = photon.flux / gRussianRoulette;
+                photon.flux = photon.flux / kRussianRoulette;
                 InterlockedAdd(gPhotonCounter[0].global, 1u, photonIndex);
                 photonIndex = min(photonIndex, kMaxPhotonIndexGLB);
                 gGlobal[photonIndex] = photon;

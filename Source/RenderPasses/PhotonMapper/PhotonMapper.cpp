@@ -241,14 +241,15 @@ void PhotonMapper::generatePhotons(RenderContext* pRenderContext, const RenderDa
     // Specialize the Generate program.
     // These defines should not modify the program vars. Do not trigger program vars re-creation.
     mTracerGenerate.pProgram->addDefine("MAX_RECURSION", std::to_string(mMaxBounces));
-    mTracerGenerate.pProgram->addDefine("MAX_UINT32F", std::to_string(kUint32tMaxF));
     mTracerGenerate.pProgram->addDefine("USE_ANALYTIC_LIGHTS", mpScene->useAnalyticLights() ? "1" : "0");
     mTracerGenerate.pProgram->addDefine("USE_EMISSIVE_LIGHTS", mpScene->useEmissiveLights() ? "1" : "0");
     mTracerGenerate.pProgram->addDefine("USE_ENV_LIGHT", mpScene->useEnvLight() ? "1" : "0");
     mTracerGenerate.pProgram->addDefine("USE_ENV_BACKGROUND", mpScene->useEnvBackground() ? "1" : "0");
     mTracerGenerate.pProgram->addDefine("MAX_PHOTON_INDEX_GLOBAL", std::to_string(mGlobalBuffers.maxSize));
     mTracerGenerate.pProgram->addDefine("MAX_PHOTON_INDEX_CAUSTIC", std::to_string(mCausticBuffers.maxSize));
-
+    mTracerGenerate.pProgram->addDefine("RUSSIAN_ROULETTE", std::to_string(mRussianRoulette));
+    mTracerGenerate.pProgram->addDefine("EMISSIVE_SCALE", std::to_string(mIntensityScalar));
+    mTracerGenerate.pProgram->addDefine("SPECULAR_ROUGNESS_CUTOFF", std::to_string(mSpecRoughCutoff));
     
     // Prepare program vars. This may trigger shader compilation.
     // The program should have all necessary defines set at this point.
@@ -263,10 +264,7 @@ void PhotonMapper::generatePhotons(RenderContext* pRenderContext, const RenderDa
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gCausticRadius"] = mCausticRadius;
     var["CB"]["gGlobalRadius"] = mGlobalRadius;
-    var["CB"]["gRussianRoulette"] = mRussianRoulette;
-    var["CB"]["gEmissiveScale"] = mIntensityScalar;
     var["CB"]["gPRNGDimension"] = dict.keyExists(kRenderPassPRNGDimension) ? dict[kRenderPassPRNGDimension] : 0u;
-    var["CB"]["gSpecRoughCutoff"] = mSpecRoughCutoff;
         
 
     //set the buffers
