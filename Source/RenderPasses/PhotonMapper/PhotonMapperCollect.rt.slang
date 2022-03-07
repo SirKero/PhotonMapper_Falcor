@@ -123,8 +123,7 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
         rayData.radiance = float3(1);
         return;
     }
-
-    const uint2 launchIndex = DispatchRaysIndex().xy;
+    
     const uint primIndex = PrimitiveIndex();
     
     //get caustic or global photon
@@ -146,15 +145,8 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
     ShadingData sd = loadShadingData(hit, WorldRayDirection(), lod);
         
     let bsdf = gScene.materials.getBSDF(sd, lod);
-    
-    float3 woLocal = float3(dot(-photon.dir, sd.T), dot(-photon.dir, sd.B), dot(-photon.dir, sd.N));
-    float3 wiLocal = sd.toLocal(sd.V);
-
-     // Get BSDF properties.
-    let bsdfProperties = bsdf.getProperties(sd);
-        
-    float3 f_r = float3(1);
-    f_r = bsdf.eval(sd, -photon.dir);
+            
+    float3 f_r = bsdf.eval(sd, -photon.dir);
        
     rayData.radiance += f_r * photon.flux;
 }
