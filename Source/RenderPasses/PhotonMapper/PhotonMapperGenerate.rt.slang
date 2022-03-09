@@ -18,7 +18,7 @@ cbuffer CB
 }
 
 // Inputs
-
+Texture2D<int> gLightSample;
 
 //Internal Buffer Structs
 
@@ -239,7 +239,68 @@ void rayGen()
         sampleNext1D(rayData.sg);
     
     LightCollection lc = gScene.lightCollection;
-       
+
+    
+    //Get current light index and type. For emissive triangles only active ones where sampled
+    int lightIndex = gLightSample[launchIndex];
+    // 0 means invalid light index
+    if (lightIndex == 0)
+        return;
+    bool analytic = lightIndex < 0;     //Negative values are analytic lights
+    if (analytic)
+        lightIndex *= -1;           //Swap sign if analytic    
+    lightIndex -= 1;                //Change index from 1->N to 0->(N-1)
+
+    float invPdf = 1.0;             // TODO:Set ... Normally: Light selection pdf = 1.0 / lightCount.
+    float3 lightPos = float3(0);
+    float3 lightDir = float3(0, 1, 0);
+    float3 lightIntensity = float3(0);
+    float maxSpotAngle = 0;
+    float penumbra = 0.0;
+    uint type = 0; //0 == Point, 1 == Area, 2 == Spot
+    
+    if (analytic)
+    {
+        LightData currentLight = gScene.getLight(lightIndex);
+
+        //we only support point lights
+        if (currentLight.type != uint(LightType::Point))
+            return;
+
+        if (currentLight.openingAngle < (M_PI / 2.0))
+            type = 2;
+        
+        lightPos = currentLight.posW;
+        lightDir = currentLight.dirW;
+        lightIntensity = currentLight.intensity;
+        maxSpotAngle = currentLight.openingAngle;
+        penumbra = currentLight.penumbraAngle;
+    }
+    //Emissive
+    else
+    {
+        invPdf = lc.getActiveTriangleCount(); //Assume all emissive triangles as pdf
+        const uint triIndex = lc.activeTriangles[lightIndex];
+        EmissiveTriangle emiTri = lc.getTriangle(triIndex); //get the random triangle
+        //random baycentric coordinates
+        float2 RS = sampleNext2D(rayData.sg);
+        const float3 barycentrics = sample_triangle(RS);
+        lightPos = emiTri.getPosition(barycentrics);
+        lightDir = emiTri.normal;
+
+        //Evaluate Emitted radiance
+        float2 uv = emiTri.getTexCoord(barycentrics);
+        lightIntensity = gScene.materials.evalEmissive(emiTri.materialID, uv);
+        //get triangle area for scaling
+        float3 a = emiTri.posW[1] - emiTri.posW[0];
+        float3 b = emiTri.posW[2] - emiTri.posW[0];
+        lightIntensity *= kEmissiveScale;
+        type = 1;
+    }
+
+    
+    //Old Light sampling code. Might add this as an alternative option
+    /*
     const uint analyticLightCount = kUseAnalyticLights ? gScene.getLightCount() : 0;
     //we approximate the real count of emissive lights by the mesh count (as meshes are merged together this is not always the case)
     const uint emissiveLightCount = kUseEmissiveLights ? lc.meshCount : 0;      
@@ -301,7 +362,7 @@ void rayGen()
         lightIntensity *= kEmissiveScale * triangleArea(a, b);
         type = 1;
     }
-
+    */
    
     
     RayDesc ray;

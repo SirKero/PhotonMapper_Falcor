@@ -106,6 +106,16 @@ private:
     */
     void prepareRandomSeedBuffer(const uint2 screenDimensions);
 
+    /** Prepares a light sample texture for the photon generate pass
+    */
+    void createLightSampleTexture(RenderContext* pRenderContext);
+
+    /** Gets the active emissive triangles from the light collection.
+    *  This is analogous to the function from LightCollection. It is here to prevent changes to the core of Falcor.
+    *  As this is done once it has no impact on performance and only a minimal impact on CPU-Memory
+    */
+    void getActiveEmissiveTriangles(RenderContext* pRenderContext);
+
     // Internal state
     Scene::SharedPtr            mpScene;                    ///< Current scene.
     SampleGenerator::SharedPtr  mpSampleGenerator;          ///< GPU sample generator.
@@ -164,6 +174,15 @@ private:
     bool                        mOptionsChanged = false;
     bool                        mResizePhotonBuffers = true;    ///< If true resize the Photon Buffers
     bool                        mRebuildAS = false;
+
+
+    //Light
+    std::vector<uint> mActiveEmissiveTriangles;
+    Texture::SharedPtr mLightSampleTex;
+    const uint mMaxDispatchY = 512;
+    uint mPGDispatchX = 0;
+    uint mAnalyticEndIndex = 0;
+    uint mNumLights = 0;
 
     // Ray tracing program.
     struct RayTraceProgramHelper

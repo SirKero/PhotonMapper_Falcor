@@ -191,6 +191,10 @@ void PhotonMapper::execute(RenderContext* pRenderContext, const RenderData& rend
         prepareRandomSeedBuffer(renderData.getDefaultTextureDims());
     }
 
+    if (!mLightSampleTex) {
+        createLightSampleTexture(pRenderContext);
+    }
+
     //
     // Generate Ray Pass
     //
@@ -288,9 +292,12 @@ void PhotonMapper::generatePhotons(RenderContext* pRenderContext, const RenderDa
             var[desc.texname] = renderData[desc.name]->asTexture();
         }
     };
+    //Bind light sample tex
+    FALCOR_ASSERT(mLightSampleTex);
+    var["gLightSample"] = mLightSampleTex;
 
     // Get dimensions of ray dispatch.
-    const uint2 targetDim = uint2(static_cast<uint>(sqrt(mNumPhotons)));
+    const uint2 targetDim = uint2(mPGDispatchX, mMaxDispatchY);
     FALCOR_ASSERT(targetDim.x > 0 && targetDim.y > 0);
 
     // Trace the photons
@@ -524,6 +531,160 @@ void PhotonMapper::setScene(RenderContext* pRenderContext, const Scene::SharedPt
     preparePhotonCounters();
 }
 
+void PhotonMapper::getActiveEmissiveTriangles(RenderContext* pRenderContext)
+{
+    auto lightCollection = mpScene->getLightCollection(pRenderContext);
+
+    auto meshLightTriangles = lightCollection->getMeshLightTriangles();
+
+    mActiveEmissiveTriangles.clear();
+    mActiveEmissiveTriangles.reserve(meshLightTriangles.size());
+
+    for (uint32_t triIdx = 0; triIdx < (uint32_t)meshLightTriangles.size(); triIdx++)
+    {
+        if (meshLightTriangles[triIdx].flux > 0.f)
+        {
+            mActiveEmissiveTriangles.push_back(triIdx);
+        }
+    }
+}
+
+void PhotonMapper::createLightSampleTexture(RenderContext* pRenderContext)
+{
+    FALCOR_ASSERT(mpScene);    //Scene has to be set
+
+    auto analyticLights = mpScene->getActiveLights();
+    auto lightCollection = mpScene->getLightCollection(pRenderContext);
+
+    uint analyticPhotons = 0;
+    uint numEmissivePhotons = 0;
+    //If there are analytic Lights split number of Photons even between the analytic light and the number of emissive models (approximation of the number of emissive lights)
+    if (analyticLights.size() != 0){
+        uint lightsTotal = static_cast<uint>(analyticLights.size() + lightCollection->getMeshLights().size());
+        float percentAnalytic = static_cast<float>(analyticLights.size()) / static_cast<float>(lightsTotal);
+        analyticPhotons = static_cast<uint>(mNumPhotons * percentAnalytic);
+        analyticPhotons += analyticPhotons % (uint) analyticLights.size();  //add it up so every light gets the same number of photons
+        numEmissivePhotons = mNumPhotons - analyticPhotons;
+    }
+    else
+        numEmissivePhotons = mNumPhotons;
+
+    std::vector<uint> numPhotonsPerTriangle;    //only filled when there are emissive
+
+    if (numEmissivePhotons > 0) {
+        getActiveEmissiveTriangles(pRenderContext);
+        auto meshLightTriangles = lightCollection->getMeshLightTriangles();
+        //Get total area to distribute to get the number of photons per area.
+        float totalArea = 0;
+        for (uint i = 0; i < (uint) mActiveEmissiveTriangles.size(); i++) {
+            uint triIdx = mActiveEmissiveTriangles[i];
+            totalArea += meshLightTriangles[triIdx].area;
+        }
+        float photonsPerArea = numEmissivePhotons / totalArea;
+
+        //Calculate photons on a per triangle base
+        uint tmpNumEmissivePhotons = 0; //Real count will change due to rounding
+        numPhotonsPerTriangle.reserve(mActiveEmissiveTriangles.size());
+        for (uint i = 0; i < (uint)mActiveEmissiveTriangles.size(); i++) {
+            uint triIdx = mActiveEmissiveTriangles[i];
+            uint photons = static_cast<uint>(std::ceil(meshLightTriangles[triIdx].area * photonsPerArea));
+            if (photons == 0) photons = 1;  //shoot at least one photon
+            tmpNumEmissivePhotons += photons;
+            numPhotonsPerTriangle.push_back(photons);
+        }
+        numEmissivePhotons = tmpNumEmissivePhotons;     //get real photon count
+    }
+    
+    const uint blockSize = 16;
+    const uint blockSizeSq = blockSize * blockSize;
+
+    //Create texture. The texture fills 16x16 fields with information
+    uint totalNumPhotons = numEmissivePhotons + analyticPhotons;
+    uint xPhotons = (totalNumPhotons / mMaxDispatchY) + 1;
+    xPhotons += (xPhotons % blockSize == 0 && analyticPhotons > 0) ? blockSize : blockSize - (xPhotons % blockSize);  //Fill up so x to 16x16 block with at least 1 block extra when mixed
+
+    //Init the texture with the invalid index (zero)
+    //Negative indices are analytic and postivie indices are emissive
+    std::vector<int32_t> lightIdxTex(xPhotons * mMaxDispatchY, 0);
+
+    //Helper functions
+    auto getIndex = [&](uint2 idx) {
+        return idx.x + idx.y * xPhotons;
+    };
+
+    auto getBlockStartingIndex = [&](uint blockIdx) {
+        blockIdx = blockIdx * blockSize;          //Multiply by the expansion of the box in x
+        uint x = blockIdx % xPhotons;
+        uint y = (blockIdx / xPhotons) * blockSize;
+        return uint2(x, y);
+    };
+
+    //Fill analytic lights
+    if (analyticLights.size() > 0) {
+        uint numCurrentLight = 0;
+        uint step = analyticPhotons / static_cast<uint>(analyticLights.size());
+        bool stop = false;
+        for (uint i = 0; i <= analyticPhotons / blockSizeSq; i++) {
+            if (stop) break;
+            for (uint y = 0; y < blockSize; y++) {
+                if (stop) break;
+                for (uint x = 0; x < blockSize; x++) {
+                    if (numCurrentLight >= analyticPhotons) {
+                        stop = true;
+                        break;
+                    }
+                    uint2 idx = getBlockStartingIndex(i);
+                    idx += uint2(x, y);
+                    int32_t lightIdx = static_cast<int32_t>((numCurrentLight / step) + 1);  //current light index + 1
+                    lightIdx *= -1;                                                         //turn it negative as it is a analytic light
+                    lightIdxTex[getIndex(idx)] = lightIdx;
+                    numCurrentLight++;
+                }
+            }
+        }
+    }
+    
+
+    //Fill emissive lights
+    if (numEmissivePhotons > 0) {
+        uint analyticEndBlock = analyticPhotons > 0 ? (analyticPhotons / blockSizeSq) + 1 : 0;    //we have guaranteed an extra block
+        uint currentActiveTri = 0;
+        uint lightInActiveTri = 0;
+        bool stop = false;
+        for (uint i = 0; i <= numEmissivePhotons / blockSizeSq; i++) {
+            if (stop) break;
+            for (uint y = 0; y < blockSize; y++) {
+                if (stop) break;
+                for (uint x = 0; x < blockSize; x++) {
+                    if (currentActiveTri >= static_cast<uint>(numPhotonsPerTriangle.size())) {
+                        stop = true;
+                        break;
+                    }
+                    uint2 idx = getBlockStartingIndex(i + analyticEndBlock);
+                    idx += uint2(x, y);
+                    int32_t lightIdx = static_cast<int32_t>(currentActiveTri + 1);      //emissive has the positive index
+                    lightIdxTex[getIndex(idx)] = lightIdx;
+
+                    //Check if the number of photons exeed that of the current active triangle
+                    lightInActiveTri++;
+                    if (lightInActiveTri >= numPhotonsPerTriangle[currentActiveTri]) {
+                        currentActiveTri++;
+                        lightInActiveTri = 0;
+                    }
+                }
+            }
+        }
+    }
+    
+
+
+    //TODO: create texture
+    mLightSampleTex = Texture::create2D(xPhotons, mMaxDispatchY, ResourceFormat::R32Int, 1, 1, lightIdxTex.data());
+    mLightSampleTex->setName("PhotonMapper::LightSampleTex");
+
+    mPGDispatchX = xPhotons;
+}
+
 void PhotonMapper::resetPhotonMapper()
 {
     mFrameCount = 0;
@@ -532,6 +693,9 @@ void PhotonMapper::resetPhotonMapper()
     mResizePhotonBuffers = true; mPhotonBuffersReady = false;
     mCausticBuffers.maxSize = 0; mGlobalBuffers.maxSize = 0;
     mPhotonCount[0] = 0; mPhotonCount[1] = 0;
+
+    //reset light sample tex
+    mLightSampleTex = nullptr;
 }
 
 void PhotonMapper::changeNumPhotons()
