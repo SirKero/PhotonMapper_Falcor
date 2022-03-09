@@ -18,15 +18,7 @@ cbuffer CB
 }
 
 // Inputs
-Texture2D<float4> gWorldPosition;
-Texture2D<float4> gWorldNormal;
-Texture2D<float4> gWorldTangent;
-Texture2D<float2> gTextureCoordinate;
-Texture2D<float4> gDiffuseOpacity;
-Texture2D<float4> gSpecularRoughness;
-Texture2D<float4> gEmissive;
-Texture2D<float4> gMaterialExtra;
-Texture2D<float4> gViewWorld;
+
 
 //Internal Buffer Structs
 
