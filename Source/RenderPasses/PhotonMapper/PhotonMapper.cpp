@@ -982,7 +982,7 @@ void PhotonMapper::prepareRandomSeedBuffer(const uint2 screenDimensions)
     seq.generate(cpuSeeds.begin(), cpuSeeds.end());
 
     //create the gpu buffer
-    mRandNumSeedBuffer = Buffer::createStructured(sizeof(uint32_t), screenDimensions.x * screenDimensions.y, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, Buffer::CpuAccess::None, cpuSeeds.data());
+    mRandNumSeedBuffer = Texture::create2D(screenDimensions.x, screenDimensions.y, ResourceFormat::R32Uint, 1, 1, cpuSeeds.data());
     mRandNumSeedBuffer->setName("PhotonMapper::RandomSeedBuffer");
 
     FALCOR_ASSERT(mRandNumSeedBuffer);

@@ -238,7 +238,7 @@ private:
     PhotonBuffers mCausticBuffers;              ///< Buffers for the caustic photons
     PhotonBuffers mGlobalBuffers;               ///< Buffers for the global photons
 
-    Buffer::SharedPtr mRandNumSeedBuffer;       ///< Buffer for the random seeds
+    Texture::SharedPtr mRandNumSeedBuffer;       ///< Buffer for the random seeds
 
     struct BlasData
     {

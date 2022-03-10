@@ -35,7 +35,7 @@ RWStructuredBuffer<PhotonInfo> gGlobal;
 RWStructuredBuffer<AABB> gCausticAABB;
 RWStructuredBuffer<AABB> gGlobalAABB;
 
-StructuredBuffer<uint> gRndSeedBuffer;
+Texture2D<uint> gRndSeedBuffer;
 
 struct PhotonCounter
 {
@@ -227,8 +227,7 @@ void rayGen()
     uint2 launchDim = DispatchRaysDimensions().xy;
 
     //random seed
-    uint launchIndex1D = launchIndex.x + launchIndex.y * launchDim.x;
-    uint seed = gRndSeedBuffer[launchIndex1D];
+    uint seed = gRndSeedBuffer[launchIndex];
     
      // Prepare ray payload.
     ScatterRayData rayData = ScatterRayData.create();
