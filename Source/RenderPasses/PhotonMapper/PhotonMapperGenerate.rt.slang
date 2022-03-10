@@ -19,7 +19,6 @@ cbuffer CB
 
 // Inputs
 Texture2D<int> gLightSample;
-StructuredBuffer<float> gEmissiveInvPdf;        //pdf for emissive part
 //Internal Buffer Structs
 
 struct PhotonInfo {
@@ -61,7 +60,8 @@ static const float kEmissiveScale = EMISSIVE_SCALE;                 //scalar for
 static const float kSpecRoughCutoff = SPECULAR_ROUGNESS_CUTOFF;     //If roughness value is over this, interpret the material as Diffuse
 static const bool kUseAlphaTest = USE_ALPHA_TEST;                   //Activate for alpha test
 static const bool kAdjustShadingNormals = ADJUST_SHADING_NORMALS;   //Adjust the shading normals
-static const float kAnalyticInvPdf = ANALYTIC_INV_PDF;              //Inverse analytic pdf
+static const float kAnalyticInvPdf = ANALYTIC_INV_PDF;              //Inverse analytic pdf 
+static const float kEmissiveInvPdf = EMISSIVE_INV_PDF;              //Inverse emissive pdf
 
 static const float k_2Pi = 6.28318530717958647692;
 static const float k_4Pi = 12.5663706143591729538;
@@ -280,7 +280,8 @@ void rayGen()
     //Emissive
     else
     {
-        invPdf = gEmissiveInvPdf[lightIndex]; //Assume all emissive triangles as pdf
+        //invPdf = gEmissiveInvPdf[lightIndex]; //Assume all emissive triangles as pdf
+        invPdf = kEmissiveInvPdf;
         const uint triIndex = lc.activeTriangles[lightIndex];
         EmissiveTriangle emiTri = lc.getTriangle(triIndex); //get the random triangle
         //random baycentric coordinates

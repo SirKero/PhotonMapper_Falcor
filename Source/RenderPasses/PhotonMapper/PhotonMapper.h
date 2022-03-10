@@ -179,12 +179,12 @@ private:
     //Light
     std::vector<uint> mActiveEmissiveTriangles;
     Texture::SharedPtr mLightSampleTex;
-    Buffer::SharedPtr mEmissiveInvPdfBuffer;
     const uint mMaxDispatchY = 512;
     uint mPGDispatchX = 0;
     uint mAnalyticEndIndex = 0;
     uint mNumLights = 0;
-    float mInvPdfAnalytic = 0.0f;
+    float mAnalyticInvPdf = 0.0f;
+    float mEmissiveInvPdf = 0.0f;
 
     // Ray tracing program.
     struct RayTraceProgramHelper
