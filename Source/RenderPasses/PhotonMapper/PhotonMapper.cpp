@@ -256,6 +256,7 @@ void PhotonMapper::generatePhotons(RenderContext* pRenderContext, const RenderDa
     mTracerGenerate.pProgram->addDefine("SPECULAR_ROUGNESS_CUTOFF", std::to_string(mSpecRoughCutoff));
     mTracerGenerate.pProgram->addDefine("USE_ALPHA_TEST", mUseAlphaTest ? "1" : "0");
     mTracerGenerate.pProgram->addDefine("ADJUST_SHADING_NORMALS", mAdjustShadingNormals ? "1" : "0");
+    mTracerGenerate.pProgram->addDefine("ANALYTIC_INV_PDF", std::to_string(mInvPdfAnalytic));
     
     // Prepare program vars. This may trigger shader compilation.
     // The program should have all necessary defines set at this point.
@@ -295,7 +296,8 @@ void PhotonMapper::generatePhotons(RenderContext* pRenderContext, const RenderDa
     //Bind light sample tex
     FALCOR_ASSERT(mLightSampleTex);
     var["gLightSample"] = mLightSampleTex;
-
+    FALCOR_ASSERT(mEmissiveInvPdfBuffer);
+    var["gEmissiveInvPdf"] = mEmissiveInvPdfBuffer;
     // Get dimensions of ray dispatch.
     const uint2 targetDim = uint2(mPGDispatchX, mMaxDispatchY);
     FALCOR_ASSERT(targetDim.x > 0 && targetDim.y > 0);
@@ -563,7 +565,7 @@ void PhotonMapper::createLightSampleTexture(RenderContext* pRenderContext)
         uint lightsTotal = static_cast<uint>(analyticLights.size() + lightCollection->getMeshLights().size());
         float percentAnalytic = static_cast<float>(analyticLights.size()) / static_cast<float>(lightsTotal);
         analyticPhotons = static_cast<uint>(mNumPhotons * percentAnalytic);
-        analyticPhotons += analyticPhotons % (uint) analyticLights.size();  //add it up so every light gets the same number of photons
+        analyticPhotons += (uint)analyticLights.size() - (analyticPhotons % (uint) analyticLights.size());  //add it up so every light gets the same number of photons
         numEmissivePhotons = mNumPhotons - analyticPhotons;
     }
     else
@@ -594,12 +596,31 @@ void PhotonMapper::createLightSampleTexture(RenderContext* pRenderContext)
         }
         numEmissivePhotons = tmpNumEmissivePhotons;     //get real photon count
     }
-    
+
+    uint totalNumPhotons = numEmissivePhotons + analyticPhotons;
+
+    //calculate the pdf for analytic and emissive light
+    //analytic:
+    if (analyticPhotons > 0) {
+        float analyticPdf = static_cast<float>(analyticPhotons) / static_cast<float>(totalNumPhotons);
+        analyticPdf = static_cast<float>(analyticLights.size()) / analyticPdf;   //divide by the number of lights
+        mInvPdfAnalytic = analyticPdf > 0.0f ? 1.0f / analyticPdf : 0.0f;   //inverse pdf
+    }
+    //emissive:
+    std::vector<float> emissiveInvPdf(mActiveEmissiveTriangles.size() > 0 ? mActiveEmissiveTriangles.size() : 1, 0.0f);
+    if (numEmissivePhotons > 0) {
+        const float emissivePdf = static_cast<float>(numEmissivePhotons) / static_cast<float>(totalNumPhotons);
+        for (size_t i = 0; i<numPhotonsPerTriangle.size(); i++) {
+            emissiveInvPdf[i] = static_cast<float>(numPhotonsPerTriangle[i]) / emissivePdf;
+        }
+    }
+
+
     const uint blockSize = 16;
     const uint blockSizeSq = blockSize * blockSize;
 
     //Create texture. The texture fills 16x16 fields with information
-    uint totalNumPhotons = numEmissivePhotons + analyticPhotons;
+    
     uint xPhotons = (totalNumPhotons / mMaxDispatchY) + 1;
     xPhotons += (xPhotons % blockSize == 0 && analyticPhotons > 0) ? blockSize : blockSize - (xPhotons % blockSize);  //Fill up so x to 16x16 block with at least 1 block extra when mixed
 
@@ -678,9 +699,12 @@ void PhotonMapper::createLightSampleTexture(RenderContext* pRenderContext)
     
 
 
-    //TODO: create texture
+    //Create texture and Pdf buffer
     mLightSampleTex = Texture::create2D(xPhotons, mMaxDispatchY, ResourceFormat::R32Int, 1, 1, lightIdxTex.data());
     mLightSampleTex->setName("PhotonMapper::LightSampleTex");
+
+    mEmissiveInvPdfBuffer = Buffer::createStructured(sizeof(float), static_cast<uint>(emissiveInvPdf.size()), ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, Buffer::CpuAccess::None, emissiveInvPdf.data(), false);
+    mEmissiveInvPdfBuffer->setName("PhotonMapper::EmissiveLightInvPdf");
 
     mPGDispatchX = xPhotons;
 }
@@ -696,6 +720,7 @@ void PhotonMapper::resetPhotonMapper()
 
     //reset light sample tex
     mLightSampleTex = nullptr;
+    mEmissiveInvPdfBuffer = nullptr;
 }
 
 void PhotonMapper::changeNumPhotons()
