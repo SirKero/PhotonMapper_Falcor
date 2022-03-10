@@ -191,6 +191,7 @@ void PhotonMapper::execute(RenderContext* pRenderContext, const RenderData& rend
         prepareRandomSeedBuffer(renderData.getDefaultTextureDims());
     }
 
+    //Create light sample tex if empty
     if (!mLightSampleTex) {
         createLightSampleTexture(pRenderContext);
     }
@@ -706,7 +707,11 @@ void PhotonMapper::createLightSampleTexture(RenderContext* pRenderContext)
     mEmissiveInvPdfBuffer = Buffer::createStructured(sizeof(float), static_cast<uint>(emissiveInvPdf.size()), ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, Buffer::CpuAccess::None, emissiveInvPdf.data(), false);
     mEmissiveInvPdfBuffer->setName("PhotonMapper::EmissiveLightInvPdf");
 
+    //Set numPhoton variable
     mPGDispatchX = xPhotons;
+
+    mNumPhotons = mPGDispatchX * mMaxDispatchY;
+    mNumPhotonsUI = mNumPhotons;
 }
 
 void PhotonMapper::resetPhotonMapper()
@@ -725,14 +730,16 @@ void PhotonMapper::resetPhotonMapper()
 
 void PhotonMapper::changeNumPhotons()
 {
-    //If the number stayed the same return
-    //Correct the number of photons. They need to be splittable into two
-    uint tmpPhotons = static_cast<uint>(ceil(sqrt(mNumPhotonsUI)) + 0.001);     //take the next higher uint (so total number can be higher)
-    mNumPhotons = tmpPhotons * tmpPhotons;
-    mNumPhotonsUI = mNumPhotons;
+    //If photon number differ reset the light sample texture
+    if (mNumPhotonsUI != mNumPhotons) {
+        //Reset light sample tex and frame counter
+        mNumPhotons = mNumPhotonsUI;
+        mLightSampleTex = nullptr;
+        mEmissiveInvPdfBuffer = nullptr;
+        mFrameCount = 0;
+    }
 
-    //Reset state of Photon Mapper
-    mFrameCount = 0;
+    
 
     if (mGlobalBuffers.maxSize != mGlobalBufferSizeUI || mCausticBuffers.maxSize != mCausticBufferSizeUI || mFitBuffersToPhotonShot) {
         mResizePhotonBuffers = true; mPhotonBuffersReady = false;
