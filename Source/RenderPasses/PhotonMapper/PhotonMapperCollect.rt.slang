@@ -37,9 +37,9 @@ RaytracingAccelerationStructure gPhotonAS;
 struct PhotonInfo
 {
     float3 dir;
-    float radius;
+    float faceNTheta;
     float3 flux;
-    float pad2;
+    float faceNPhi;
 };
 
  //Internal Buffer Structs

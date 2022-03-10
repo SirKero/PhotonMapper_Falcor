@@ -23,9 +23,9 @@ Texture2D<int> gLightSample;
 
 struct PhotonInfo {
         float3 dir;
-        float radius;
+        float faceNTheta;
         float3 flux;
-        float pad2;
+        float faceNPhi;
 };
 
  //Internal Buffer Structs
@@ -187,7 +187,6 @@ void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleInt
 
     bool valid = bsdf.sample(sd, rayData.sg, bsdfSample, true /*ImportanceSampling*/);
 
-
     float3 thpStart = rayData.thp;
     
     bool transmission = bsdfSample.isLobe(LobeType::Transmission);
@@ -292,9 +291,6 @@ void rayGen()
         //Evaluate Emitted radiance
         float2 uv = emiTri.getTexCoord(barycentrics);
         lightIntensity = gScene.materials.evalEmissive(emiTri.materialID, uv);
-        //get triangle area for scaling
-        float3 a = emiTri.posW[1] - emiTri.posW[0];
-        float3 b = emiTri.posW[2] - emiTri.posW[0];
         lightIntensity *= kEmissiveScale;
         type = 1;
     }
@@ -376,9 +372,9 @@ void rayGen()
     float3 photonPos = float3(0, 0, 0);
     PhotonInfo photon;
     photon.dir = float3(0, 0, 0);
-    photon.radius = 0.f;
+    photon.faceNTheta = 0.f;
     photon.flux = float3(0, 0, 0);
-    photon.pad2 = 0.f;
+    photon.faceNPhi = 0.f;
     
     //light flux
     float3 lightFlux = lightIntensity * lightDirPDF * invPdf ;
@@ -415,8 +411,8 @@ void rayGen()
         if (reflectedDiffuse)
         {
             uint photonIndex = 0;
-            photon.radius = wasReflectedSpecular ? gCausticRadius : gGlobalRadius;
-            AABB photonAABB = calcPhotonAABB(photonPos, photon.radius);
+            float radius = wasReflectedSpecular ? gCausticRadius : gGlobalRadius;
+            AABB photonAABB = calcPhotonAABB(photonPos, radius);
             //caustic photon
             if (wasReflectedSpecular)
             {
