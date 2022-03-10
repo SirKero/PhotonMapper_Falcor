@@ -138,7 +138,7 @@ private:
     float                       mCausticRadius = 1.f;                 ///< Current Radius for caustic Photons
     float                       mGlobalRadius = 1.f;                  ///< Current Radius for global Photons
 
-    float                       mSpecRoughCutoff = 0.25f;               ///< If rougness is over this value interpret the material as diffuse
+    float                       mSpecRoughCutoff = 0.5f;               ///< If rougness is over this value interpret the material as diffuse
 
     bool                        mResetIterations = false;               ///<Resets the iterations counter once
     bool                        mAlwaysResetIterations = false;         ///<Resets the iteration counter every frame

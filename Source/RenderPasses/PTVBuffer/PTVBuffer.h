@@ -95,10 +95,10 @@ private:
     RenderPassHelpers::IOSize   mOutputSizeSelection = RenderPassHelpers::IOSize::Default;      ///< Selected output size.
     uint2                       mFixedOutputSize = { 512, 512 };                                ///< Output size in pixels when 'Fixed' size is selected.
     uint                        mRecursionDepth = 5;                                            ///< Depth of recursion (0 = none).
-    float                       mSpecRoughCutoff = 0.25f;                                       ///< Cutoff for when all hits are counted diffuse.
+    float                       mSpecRoughCutoff = 0.5f;                                       ///< Cutoff for when all hits are counted diffuse.
     float                       mEmissiveCutoff = 0.2f;                                         ///< When Emissive is over this value it is a emissive diffuse hit
     uint32_t                    mSamplePattern = SamplePattern::Stratified;                     ///< Which camera jitter sample pattern to use.
-    uint32_t                    mSampleCount = 32;                                              ///< Sample count for camera jitter.
+    uint32_t                    mSampleCount = 64;                                              ///< Sample count for camera jitter.
     bool                        mUseAlphaTest = true;                                           ///< Enable alpha test.
     bool                        mAdjustShadingNormals = true;                                   ///< Adjust shading normals.
     bool                        mComputeDOF = false;                                   ///< Adjust shading normals.
