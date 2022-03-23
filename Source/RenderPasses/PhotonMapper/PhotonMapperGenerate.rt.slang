@@ -377,7 +377,7 @@ void rayGen()
     photon.faceNPhi = 0.f;
     
     //light flux
-    float3 lightFlux = lightIntensity * lightDirPDF * invPdf ;
+    float3 lightFlux = (dot(lightDir, ray.Direction) * lightIntensity * invPdf) / lightDirPDF;
     photon.flux = lightFlux / float3(launchDim.x * launchDim.y);
 
     //ray tracing vars
