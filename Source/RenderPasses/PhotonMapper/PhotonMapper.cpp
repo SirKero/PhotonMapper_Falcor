@@ -74,6 +74,12 @@ namespace
         { "PhotonImage",          "gPhotonImage",               "An image that shows the caustics and indirect light from global photons" , false , ResourceFormat::RGBA32Float }
     };
 
+    const Gui::DropdownList kInfoTexDropdownList{
+        //{(uint)PhotonMapper::TextureFormat::_8Bit , "8Bits"},
+        {(uint)PhotonMapper::TextureFormat::_16Bit , "16Bits"},
+        {(uint)PhotonMapper::TextureFormat::_32Bit , "32Bits"}
+    };
+    
 }
 
 PhotonMapper::SharedPtr PhotonMapper::create(RenderContext* pRenderContext, const Dictionary& dict)
@@ -183,7 +189,13 @@ void PhotonMapper::execute(RenderContext* pRenderContext, const RenderData& rend
         mPhotonBuffersReady = false;
         mRebuildAS = true;
     }
-    
+
+    //Only change format if we dont rebuild the buffers
+    if (mPhotonBuffersReady && mPhotonInfoFormatChanged) {
+        preparePhotonInfoTexture();
+        mPhotonInfoFormatChanged = false;
+    }
+
     if (!mPhotonBuffersReady) {
         mPhotonBuffersReady = preparePhotonBuffers();
     }
@@ -453,6 +465,10 @@ void PhotonMapper::renderUI(Gui::Widgets& widget)
         widget.tooltip("Adjusts the shading normals in the Photon Generation");
     }
     
+    mPhotonInfoFormatChanged |= widget.dropdown("Photon Info size", kInfoTexDropdownList, mInfoTexFormat);
+    widget.tooltip("Determines the resolution of each element of the photon info struct.");
+
+    dirty |= mPhotonInfoFormatChanged;  //Reset iterations if format is changed
 
     //Disable Photon Collecion
     if (auto group = widget.group("Collect Options")) {
@@ -769,38 +785,70 @@ void PhotonMapper::prepareVars()
     mpSampleGenerator->setShaderData(var);
 }
 
+ResourceFormat inline getFormatRGBA(uint format, bool flux = true)
+{
+    switch (format) {
+    case static_cast<uint>(PhotonMapper::TextureFormat::_8Bit):
+        if (flux) 
+            return ResourceFormat::RGBA8Unorm;
+        else
+            return ResourceFormat::RGBA8Snorm;
+    case static_cast<uint>(PhotonMapper::TextureFormat::_16Bit):
+        return ResourceFormat::RGBA16Float;
+    case static_cast<uint>(PhotonMapper::TextureFormat::_32Bit):
+        return ResourceFormat::RGBA32Float;
+    }
+
+    //If invalid format return highest possible format
+    return ResourceFormat::RGBA32Float;
+}
+
+void PhotonMapper::preparePhotonInfoTexture()
+{
+    FALCOR_ASSERT(mCausticBuffers.maxSize > 0 || mGlobalBuffers.maxSize > 0);
+    //clean tex
+    mCausticBuffers.infoFlux.reset(); mCausticBuffers.infoDir.reset();
+    mGlobalBuffers.infoFlux.reset(); mGlobalBuffers.infoDir.reset();
+
+    //Caustic
+    mCausticBuffers.infoFlux = Texture::create2D(mCausticBuffers.maxSize / kInfoTexHeight, kInfoTexHeight, getFormatRGBA(mInfoTexFormat, true), 1, 1, nullptr, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
+    mCausticBuffers.infoFlux->setName("PhotonMapper::mCausticBuffers.fluxInfo");
+    mCausticBuffers.infoDir = Texture::create2D(mCausticBuffers.maxSize / kInfoTexHeight, kInfoTexHeight, getFormatRGBA(mInfoTexFormat, false), 1, 1, nullptr, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
+    mCausticBuffers.infoDir->setName("PhotonMapper::mCausticBuffers.dirInfo");
+
+    FALCOR_ASSERT(mCausticBuffers.infoFlux); FALCOR_ASSERT(mCausticBuffers.infoDir);
+
+    mGlobalBuffers.infoFlux = Texture::create2D(mGlobalBuffers.maxSize / kInfoTexHeight, kInfoTexHeight, getFormatRGBA(mInfoTexFormat, true), 1, 1, nullptr, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
+    mGlobalBuffers.infoFlux->setName("PhotonMapper::mGlobalBuffers.fluxInfo");
+    mGlobalBuffers.infoDir = Texture::create2D(mGlobalBuffers.maxSize / kInfoTexHeight, kInfoTexHeight, getFormatRGBA(mInfoTexFormat, false), 1, 1, nullptr, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
+    mGlobalBuffers.infoDir->setName("PhotonMapper::mGlobalBuffers.dirInfo");
+
+    FALCOR_ASSERT(mGlobalBuffers.infoFlux); FALCOR_ASSERT(mGlobalBuffers.infoDir);
+}
+
 bool PhotonMapper::preparePhotonBuffers()
 {
     FALCOR_ASSERT(mCausticBuffers.maxSize > 0 || mGlobalBuffers.maxSize > 0);
 
+
     //clean buffers
-    mCausticBuffers.aabb.reset(); mCausticBuffers.blas.reset(); mCausticBuffers.infoFlux.reset(); mCausticBuffers.infoDir.reset();
-    mGlobalBuffers.aabb.reset(); mGlobalBuffers.blas.reset(); mGlobalBuffers.infoFlux.reset(); mGlobalBuffers.infoDir.reset();
+    mCausticBuffers.aabb.reset(); mCausticBuffers.blas.reset();
+    mGlobalBuffers.aabb.reset(); mGlobalBuffers.blas.reset(); 
 
     //TODO: Change Buffer Generation to initilize with program
     mCausticBuffers.aabb = Buffer::createStructured(sizeof(D3D12_RAYTRACING_AABB), mCausticBuffers.maxSize);
     mCausticBuffers.aabb->setName("PhotonMapper::mCausticBuffers.aabb");
-    mCausticBuffers.infoFlux = Texture::create2D(mCausticBuffers.maxSize/kInfoTexHeight, kInfoTexHeight,ResourceFormat::RGBA32Float,1,1,nullptr, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
-    mCausticBuffers.infoFlux->setName("PhotonMapper::mCausticBuffers.fluxInfo");
-    mCausticBuffers.infoDir = Texture::create2D(mCausticBuffers.maxSize / kInfoTexHeight, kInfoTexHeight, ResourceFormat::RGBA32Float, 1, 1, nullptr, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
-    mCausticBuffers.infoDir->setName("PhotonMapper::mCausticBuffers.dirInfo");
-
-    FALCOR_ASSERT(mCausticBuffers.aabb); FALCOR_ASSERT(mCausticBuffers.infoFlux); FALCOR_ASSERT(mCausticBuffers.infoDir);
-
+    
+    FALCOR_ASSERT(mCausticBuffers.aabb);
 
     mGlobalBuffers.aabb = Buffer::createStructured(sizeof(D3D12_RAYTRACING_AABB), mGlobalBuffers.maxSize);
     mGlobalBuffers.aabb->setName("PhotonMapper::mGlobalBuffers.aabb");
 
     FALCOR_ASSERT(mGlobalBuffers.aabb);
 
-    mGlobalBuffers.infoFlux = Texture::create2D(mGlobalBuffers.maxSize / kInfoTexHeight, kInfoTexHeight, ResourceFormat::RGBA32Float, 1, 1, nullptr, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
-    mGlobalBuffers.infoFlux->setName("PhotonMapper::mGlobalBuffers.fluxInfo");
-    mGlobalBuffers.infoDir = Texture::create2D(mGlobalBuffers.maxSize / kInfoTexHeight, kInfoTexHeight, ResourceFormat::RGBA32Float, 1, 1, nullptr, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
-    mGlobalBuffers.infoDir->setName("PhotonMapper::mGlobalBuffers.dirInfo");
-
-    FALCOR_ASSERT(mGlobalBuffers.infoFlux); FALCOR_ASSERT(mGlobalBuffers.infoDir);
-
-
+    //Create/recreate the textures
+    preparePhotonInfoTexture();
+    
     return true;
 }
 
