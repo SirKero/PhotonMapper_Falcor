@@ -124,6 +124,7 @@ private:
     const float                 kMinPhotonRadius = 0.0001f;                 ///< At radius 0.0001 Photons are still visible
     const float                 kCollectTMin = 0.000001f;                   ///<non configurable constant for collection for now
     const float                 kCollectTMax = 0.000002f;                   ///< non configurable constant for collection for now
+    const uint                  kInfoTexHeight = 512;                       ///< Height of the info tex as it is too big for 1D tex
 
     //***************************************************************************
     // Configuration
@@ -223,7 +224,8 @@ private:
 
     struct PhotonBuffers {
         uint maxSize = 0;
-        Buffer::SharedPtr info;
+        Texture::SharedPtr infoFlux;
+        Texture::SharedPtr infoDir;
         Buffer::SharedPtr aabb;
         Buffer::SharedPtr blas;
     };

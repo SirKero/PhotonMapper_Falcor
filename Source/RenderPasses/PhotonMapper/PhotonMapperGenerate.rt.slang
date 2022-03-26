@@ -30,8 +30,10 @@ struct PhotonInfo {
 
  //Internal Buffer Structs
 
-RWStructuredBuffer<PhotonInfo> gCaustic;
-RWStructuredBuffer<PhotonInfo> gGlobal;
+RWTexture2D<float4> gCausticFlux;
+RWTexture2D<float4> gCausticDir;
+RWTexture2D<float4> gGlobalFlux;
+RWTexture2D<float4> gGlobalDir;
 RWStructuredBuffer<AABB> gCausticAABB;
 RWStructuredBuffer<AABB> gGlobalAABB;
 
@@ -62,6 +64,7 @@ static const bool kUseAlphaTest = USE_ALPHA_TEST;                   //Activate f
 static const bool kAdjustShadingNormals = ADJUST_SHADING_NORMALS;   //Adjust the shading normals
 static const float kAnalyticInvPdf = ANALYTIC_INV_PDF;              //Inverse analytic pdf 
 static const float kEmissiveInvPdf = EMISSIVE_INV_PDF;              //Inverse emissive pdf
+static const uint kInfoTexHeight = INFO_TEXTURE_HEIGHT;
 
 static const float k_2Pi = 6.28318530717958647692;
 static const float k_4Pi = 12.5663706143591729538;
@@ -418,7 +421,9 @@ void rayGen()
             {
                 InterlockedAdd(gPhotonCounter[0].caustic, 1u, photonIndex);
                 photonIndex = min(photonIndex, kMaxPhotonIndexCAU);
-                gCaustic[photonIndex] = photon;
+                uint2 photonIndex2D = uint2(photonIndex % kInfoTexHeight, photonIndex / kInfoTexHeight);
+                gCausticFlux[photonIndex2D] = float4(photon.flux, 1);
+                gCausticDir[photonIndex2D] = float4(photon.dir, 1);
                 gCausticAABB[photonIndex] = photonAABB;
             }
             //Global photon
@@ -427,7 +432,9 @@ void rayGen()
                 photon.flux = photon.flux / kRussianRoulette;
                 InterlockedAdd(gPhotonCounter[0].global, 1u, photonIndex);
                 photonIndex = min(photonIndex, kMaxPhotonIndexGLB);
-                gGlobal[photonIndex] = photon;
+                uint2 photonIndex2D = uint2(photonIndex % kInfoTexHeight, photonIndex / kInfoTexHeight);
+                gGlobalFlux[photonIndex2D] = float4(photon.flux, 1);
+                gGlobalDir[photonIndex2D] = float4(photon.dir, 1);
                 gGlobalAABB[photonIndex] = photonAABB;
             }
         }

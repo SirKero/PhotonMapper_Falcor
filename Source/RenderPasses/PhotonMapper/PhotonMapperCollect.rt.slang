@@ -44,16 +44,19 @@ struct PhotonInfo
 
  //Internal Buffer Structs
 
-RWStructuredBuffer<PhotonInfo> gCaustic;
-RWStructuredBuffer<PhotonInfo> gGlobal;
-RWStructuredBuffer<AABB> gCausticAABB;
-RWStructuredBuffer<AABB> gGlobalAABB;
+Texture2D<float4> gCausticFlux;
+Texture2D<float4> gCausticDir;
+Texture2D<float4> gGlobalFlux;
+Texture2D<float4> gGlobalDir;
+StructuredBuffer<AABB> gCausticAABB;
+StructuredBuffer<AABB> gGlobalAABB;
 
 // Static configuration based on defines set from the host.
 static const float3 kDefaultBackgroundColor = float3(0, 0, 0);
 
 static const bool kCollectGlobalPhotons = COLLECT_GLOBAL_PHOTONS;
 static const bool kCollectCausticPhotons = COLLECT_CAUSTIC_PHOTONS;
+static const uint kInfoTexHeight = INFO_TEXTURE_HEIGHT;
 
 static const float kRayTMin = RAY_TMIN;
 static const float kRayTMax = RAY_TMAX;
@@ -125,17 +128,19 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
     }
     
     const uint primIndex = PrimitiveIndex();
-    
+    const uint2 primIndex2D = uint2(primIndex % kInfoTexHeight, primIndex / kInfoTexHeight);
     //get caustic or global photon
     PhotonInfo photon;
      //Instance 0 is always the caustic buffer
     if (InstanceIndex() == 0)
     {
-        photon = gCaustic[primIndex];
+        photon.flux = gCausticFlux[primIndex2D].xyz;
+        photon.dir = gCausticDir[primIndex2D].xyz;
     }
     else
     {
-        photon = gGlobal[primIndex];
+        photon.flux = gGlobalFlux[primIndex2D].xyz;
+        photon.dir = gGlobalDir[primIndex2D].xyz;
     }
 
     //get hit
