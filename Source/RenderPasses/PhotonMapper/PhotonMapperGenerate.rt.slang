@@ -73,16 +73,14 @@ static const float Inv2Pi = 0.15915494309189533577;
 static const float Inv4Pi = 0.07957747154594766788;
 
 
-/** Payload for scatter ray (80B).
+/** Payload for scatter ray (64B).
 */
-struct ScatterRayData
+struct RayData
 {
-    float3  radiance;       ///< Accumulated outgoing radiance from path.
-    bool    terminated;     ///< Set to true when path is terminated.
     float3  thp;            ///< Current path throughput. This is updated at each path vertex.
     uint    pathLength;     ///< Path length in number of path segments (0 at origin, 1 at first secondary hit, etc.). Max 2^31.
     float3  origin;         ///< Next path segment origin.
-    uint    lobeType;       ///< Mask for the type of reflection
+    bool terminated; ///< Set to true when path is terminated.
     float3  direction;      ///< Next path segment direction.
     bool    diffuseHit;     ///< saves if the his is diffuse
 
@@ -90,13 +88,11 @@ struct ScatterRayData
 
     /** Create ray payload with default parameters.
     */
-    static ScatterRayData create()
+    static RayData create()
     {
-        ScatterRayData d;
+        RayData d;
         d.terminated = false;
-        d.lobeType = 0;
         d.pathLength = 0;
-        d.radiance = float3(0, 0, 0);
         d.thp = float3(1, 1, 1);
         d.origin = float3(0, 0, 0);
         d.direction = float3(0, 0, 0);
@@ -162,7 +158,7 @@ AABB calcPhotonAABB(in float3 center, in float radius)
 }
 
 [shader("miss")]
-void miss(inout ScatterRayData rayData : SV_RayPayload)
+void miss(inout RayData rayData : SV_RayPayload)
 {
     rayData.terminated = true;
 
@@ -170,7 +166,7 @@ void miss(inout ScatterRayData rayData : SV_RayPayload)
 }
 
 [shader("closesthit")]
-void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleIntersectionAttributes attribs: SV_IntersectionAttributes)
+void closestHit(inout RayData rayData : SV_RayPayload, BuiltInTriangleIntersectionAttributes attribs : SV_IntersectionAttributes)
 {
     // Evaluate Falcor's material parameters at the hit point.
     GeometryInstanceID instanceID = getGeometryInstanceID();
@@ -197,7 +193,6 @@ void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleInt
     float3 rayOrigin = sd.computeNewRayOrigin(!transmission); //false is for transmissions
     rayData.origin = rayOrigin;
     rayData.thp *= valid ? bsdfSample.weight : float3(0);
-    rayData.lobeType = bsdfSample.lobe;
     rayData.direction = bsdfSample.wo;
     rayData.diffuseHit = bsdfSample.isLobe(LobeType::Diffuse) || (bsdfSample.isLobe(LobeType::Reflection) && (bsdfProperties.roughness > kSpecRoughCutoff));
     
@@ -210,7 +205,7 @@ void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleInt
 
 //Use anyhit for alpha test if activated
 [shader("anyhit")]
-void anyHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleIntersectionAttributes attribs : SV_IntersectionAttributes)
+void anyHit(inout RayData rayData : SV_RayPayload, BuiltInTriangleIntersectionAttributes attribs : SV_IntersectionAttributes)
 {
     if (kUseAlphaTest)
     {
@@ -233,7 +228,7 @@ void rayGen()
     uint seed = gRndSeedBuffer[launchIndex];
     
      // Prepare ray payload.
-    ScatterRayData rayData = ScatterRayData.create();
+    RayData rayData = RayData.create();
     rayData.sg = SampleGenerator(launchIndex, seed + gFrameCount);
 
     // Advance the generator to the first available dimension.
@@ -337,7 +332,6 @@ void rayGen()
         
         photonPos = rayData.origin;
         photon.dir = ray.Direction;
-        //reflectedDiffuse = ((uint) LobeType::DiffuseReflection & rayData.lobeType) > 0;
         reflectedDiffuse = rayData.diffuseHit;
 
         //rejection
@@ -375,7 +369,6 @@ void rayGen()
    
         //Russian Roulette
         const float rrVal = luminance(rayData.thp);
-        //const float rrVal = (rayData.thp.x + rayData.thp.y + rayData.thp.z)/3;
         const float prob = max(0.f, 1.f - rrVal);
         float rnd = sampleNext1D(rayData.sg);
         if (rnd < prob)
