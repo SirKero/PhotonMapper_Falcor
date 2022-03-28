@@ -128,7 +128,7 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
     }
     
     const uint primIndex = PrimitiveIndex();
-    const uint2 primIndex2D = uint2(primIndex % kInfoTexHeight, primIndex / kInfoTexHeight);
+    const uint2 primIndex2D = uint2(primIndex / kInfoTexHeight, primIndex % kInfoTexHeight);
     //get caustic or global photon
     PhotonInfo photon;
      //Instance 0 is always the caustic buffer

@@ -7,6 +7,7 @@ import Utils.Sampling.SampleGenerator;
 import Rendering.Materials.StandardMaterial;
 import Scene.Material.ShadingUtils;
 import Rendering.Lights.LightHelpers;
+import Utils.Color.ColorHelpers;
 
 
 cbuffer CB
@@ -195,13 +196,13 @@ void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleInt
     bool transmission = bsdfSample.isLobe(LobeType::Transmission);
     float3 rayOrigin = sd.computeNewRayOrigin(!transmission); //false is for transmissions
     rayData.origin = rayOrigin;
-    rayData.thp = valid ? bsdfSample.weight : float3(0);
+    rayData.thp *= valid ? bsdfSample.weight : float3(0);
     rayData.lobeType = bsdfSample.lobe;
     rayData.direction = bsdfSample.wo;
     rayData.diffuseHit = bsdfSample.isLobe(LobeType::Diffuse) || (bsdfSample.isLobe(LobeType::Reflection) && (bsdfProperties.roughness > kSpecRoughCutoff));
     
     //if throughput is 0, return
-    if(!valid)
+    if (!valid || any(rayData.thp < 0))
         rayData.terminated = true;
     
     rayData.pathLength++;
@@ -297,73 +298,6 @@ void rayGen()
         lightIntensity *= kEmissiveScale;
         type = 1;
     }
-
-    
-    //Old Light sampling code. Might add this as an alternative option
-    /*
-    const uint analyticLightCount = kUseAnalyticLights ? gScene.getLightCount() : 0;
-    //we approximate the real count of emissive lights by the mesh count (as meshes are merged together this is not always the case)
-    const uint emissiveLightCount = kUseEmissiveLights ? lc.meshCount : 0;      
-    const uint lightCount = analyticLightCount + emissiveLightCount;
-    
-    if (lightCount == 0)        //No Photons can be shot if there is no light
-        return;
-    
-    // Pick one of the analytic light sources randomly with equal probability.
-    const uint lightIndex = min(uint(sampleNext1D(rayData.sg) * lightCount), lightCount - 1);
-    float invPdf = lightCount; // Light selection pdf = 1.0 / lightCount.
-
-    float3 lightPos = float3(0);
-    float3 lightDir = float3(0, 1, 0);
-    float3 lightIntensity = float3(0);
-    float maxSpotAngle = 0;
-    float penumbra = 0.0;
-
-    uint type = 0;  //0 == Point, 1 == Area, 2 == Spot
-
-    //Point or Dir light
-    if (lightIndex < analyticLightCount)
-    {
-        LightData currentLight = gScene.getLight(lightIndex);
-
-    //we only support point and dir lights
-        if (currentLight.type != uint(LightType::Point))
-            return;
-
-        if (currentLight.openingAngle < (M_PI / 2.0))
-            type = 2;
-        
-        lightPos = currentLight.posW;
-        lightDir = currentLight.dirW;
-        lightIntensity = currentLight.intensity;
-        maxSpotAngle = currentLight.openingAngle;
-        penumbra = currentLight.penumbraAngle;
-    }
-    //emissive triangle light
-    else
-    {
-        //const uint activeTriIndex = lightIndex - analyticLightCount;
-        invPdf = lc.getActiveTriangleCount();   //Assume all emissive triangles as pdf
-        const uint activeTriIndex = uint(sampleNext1D(rayData.sg) * invPdf);
-        const uint triIndex = lc.activeTriangles[activeTriIndex];
-        EmissiveTriangle emiTri = lc.getTriangle(triIndex); //get the random triangle
-        //random baycentric coordinates
-        float2 RS = sampleNext2D(rayData.sg);
-        const float3 barycentrics = sample_triangle(RS);
-        lightPos = emiTri.getPosition(barycentrics);
-        lightDir = emiTri.normal;
-
-        //Evaluate Emitted radiance
-        float2 uv = emiTri.getTexCoord(barycentrics);
-        lightIntensity = gScene.materials.evalEmissive(emiTri.materialID, uv);
-        //get triangle area for scaling
-        float3 a = emiTri.posW[1] - emiTri.posW[0];
-        float3 b = emiTri.posW[2] - emiTri.posW[0];
-        lightIntensity *= kEmissiveScale * triangleArea(a, b);
-        type = 1;
-    }
-    */
-   
     
     RayDesc ray;
     float lightDirPDF = 0.0;
@@ -381,8 +315,8 @@ void rayGen()
     
     //light flux
     float3 lightFlux = (abs(dot(lightDir, ray.Direction)) * lightIntensity * invPdf) / lightDirPDF;
-    photon.flux = lightFlux / float3(launchDim.x * launchDim.y);
-
+    lightFlux /= float3(launchDim.x * launchDim.y);
+    
     //ray tracing vars
     ray.Origin = lightPos + 0.01 * ray.Direction;
     ray.TMin = 0.01f;
@@ -395,7 +329,7 @@ void rayGen()
     //recursion where the photons are shot
     for (uint i = 0; i < kMaxRecursion && !rayData.terminated; i++)
     {
-        
+        photon.flux = lightFlux * rayData.thp;
         TraceRay(gScene.rtAccel, rayFlags, 0xff /* instanceInclusionMask */, 0 /* hitIdx */, rayTypeCount, 0 /* missIdx */, ray, rayData);
 
         if(rayData.terminated)
@@ -406,11 +340,11 @@ void rayGen()
         //reflectedDiffuse = ((uint) LobeType::DiffuseReflection & rayData.lobeType) > 0;
         reflectedDiffuse = rayData.diffuseHit;
 
-        //save photon
+        //rejection
         float rndRoulette = sampleNext1D(rayData.sg);
         bool roulette = rndRoulette <= kRussianRoulette;
-
         
+        //save photon        
         if (reflectedDiffuse)
         {
             uint photonIndex = 0;
@@ -421,7 +355,7 @@ void rayGen()
             {
                 InterlockedAdd(gPhotonCounter[0].caustic, 1u, photonIndex);
                 photonIndex = min(photonIndex, kMaxPhotonIndexCAU);
-                uint2 photonIndex2D = uint2(photonIndex % kInfoTexHeight, photonIndex / kInfoTexHeight);
+                uint2 photonIndex2D = uint2(photonIndex / kInfoTexHeight, photonIndex % kInfoTexHeight);
                 gCausticFlux[photonIndex2D] = float4(photon.flux, 1);
                 gCausticDir[photonIndex2D] = float4(photon.dir, 1);
                 gCausticAABB[photonIndex] = photonAABB;
@@ -429,28 +363,28 @@ void rayGen()
             //Global photon
             else if(roulette)
             {
-                photon.flux = photon.flux / kRussianRoulette;
+                photon.flux /= kRussianRoulette;
                 InterlockedAdd(gPhotonCounter[0].global, 1u, photonIndex);
                 photonIndex = min(photonIndex, kMaxPhotonIndexGLB);
-                uint2 photonIndex2D = uint2(photonIndex % kInfoTexHeight, photonIndex / kInfoTexHeight);
+                uint2 photonIndex2D = uint2(photonIndex / kInfoTexHeight, photonIndex % kInfoTexHeight);
                 gGlobalFlux[photonIndex2D] = float4(photon.flux, 1);
                 gGlobalDir[photonIndex2D] = float4(photon.dir, 1);
                 gGlobalAABB[photonIndex] = photonAABB;
             }
         }
-        
-
-         //Update photon energy
-        float avgThroughput = max((rayData.thp.x + rayData.thp.y + rayData.thp.z) / 3, 0.0);
-
+   
+        //Russian Roulette
+        const float rrVal = luminance(rayData.thp);
+        //const float rrVal = (rayData.thp.x + rayData.thp.y + rayData.thp.z)/3;
+        const float prob = max(0.f, 1.f - rrVal);
         float rnd = sampleNext1D(rayData.sg);
-        if (avgThroughput < rnd)
+        if (rnd < prob)
         {
             break;      //Photon is absorbed
         }
         else
         {
-            photon.flux *= rayData.thp / avgThroughput;
+            rayData.thp /= (1.f - prob);
         }
 
         wasReflectedSpecular = !reflectedDiffuse;
