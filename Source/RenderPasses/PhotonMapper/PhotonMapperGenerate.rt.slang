@@ -78,7 +78,7 @@ static const float Inv4Pi = 0.07957747154594766788;
 struct RayData
 {
     float3  thp;            ///< Current path throughput. This is updated at each path vertex.
-    uint    pathLength;     ///< Path length in number of path segments (0 at origin, 1 at first secondary hit, etc.). Max 2^31.
+    float    cosTheta;     ///< Cos Theta
     float3  origin;         ///< Next path segment origin.
     bool terminated; ///< Set to true when path is terminated.
     float3  direction;      ///< Next path segment direction.
@@ -92,7 +92,7 @@ struct RayData
     {
         RayData d;
         d.terminated = false;
-        d.pathLength = 0;
+        d.cosTheta = 1.f;
         d.thp = float3(1, 1, 1);
         d.origin = float3(0, 0, 0);
         d.direction = float3(0, 0, 0);
@@ -195,12 +195,11 @@ void closestHit(inout RayData rayData : SV_RayPayload, BuiltInTriangleIntersecti
     rayData.thp *= valid ? bsdfSample.weight : float3(0);
     rayData.direction = bsdfSample.wo;
     rayData.diffuseHit = bsdfSample.isLobe(LobeType::Diffuse) || (bsdfSample.isLobe(LobeType::Reflection) && (bsdfProperties.roughness > kSpecRoughCutoff));
+    rayData.cosTheta = abs(dot(sd.N, rayData.direction));
     
     //if throughput is 0, return
     if (!valid || any(rayData.thp < 0))
         rayData.terminated = true;
-    
-    rayData.pathLength++;
 }
 
 //Use anyhit for alpha test if activated
@@ -256,6 +255,7 @@ void rayGen()
     float maxSpotAngle = 0;
     float penumbra = 0.0;
     uint type = 0; //0 == Point, 1 == Area, 2 == Spot
+    float lightArea = 1.f;
     
     if (analytic)
     {
@@ -286,6 +286,7 @@ void rayGen()
         const float3 barycentrics = sample_triangle(RS);
         lightPos = emiTri.getPosition(barycentrics);
         lightDir = emiTri.normal;
+        lightArea = emiTri.area;
 
         //Evaluate Emitted radiance
         float2 uv = emiTri.getTexCoord(barycentrics);
@@ -309,7 +310,7 @@ void rayGen()
     photon.faceNPhi = 0.f;
     
     //light flux
-    float3 lightFlux = (abs(dot(lightDir, ray.Direction)) * lightIntensity * invPdf) / lightDirPDF;
+    float3 lightFlux = (abs(dot(lightDir, ray.Direction)) * lightArea * lightIntensity * invPdf) / lightDirPDF;
     lightFlux /= float3(launchDim.x * launchDim.y);
     
     //ray tracing vars
@@ -320,15 +321,16 @@ void rayGen()
 
     bool wasReflectedSpecular = false;
     bool reflectedDiffuse = false;
-  
+        
     //recursion where the photons are shot
     for (uint i = 0; i < kMaxRecursion && !rayData.terminated; i++)
     {
-        photon.flux = lightFlux * rayData.thp;
+        photon.flux = lightFlux * rayData.thp * rayData.cosTheta;
         TraceRay(gScene.rtAccel, rayFlags, 0xff /* instanceInclusionMask */, 0 /* hitIdx */, rayTypeCount, 0 /* missIdx */, ray, rayData);
 
         if(rayData.terminated)
             break;
+
         
         photonPos = rayData.origin;
         photon.dir = ray.Direction;
@@ -381,7 +383,7 @@ void rayGen()
         }
 
         wasReflectedSpecular = !reflectedDiffuse;
-        
+                
         //update ray for next iteration
         ray.Origin = rayData.origin;
         ray.Direction = rayData.direction;
