@@ -16,3 +16,5 @@ Source/RenderPasses/*
 !Source/Tools
 Source/Tools/*
 !Source/Tools/RenderGraphEditor
+*.suo
+*.db
