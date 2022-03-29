@@ -54,6 +54,12 @@ public:
     virtual bool onMouseEvent(const MouseEvent& mouseEvent) override { return false; }
     virtual bool onKeyEvent(const KeyboardEvent& keyEvent) override { return false; }
 
+    enum class TextureFormat {
+        _8Bit = 0u,
+        _16Bit = 1u,
+        _32Bit = 2u
+    };
+
 private:
     PhotonMapper();
 
@@ -64,6 +70,10 @@ private:
     /** Prepares all buffers neede for the generate photon pass
     */
     bool preparePhotonBuffers();
+
+    /** Prepares the info textures. Is called inside of preparePhotonBuffers. Can be called seperate for format changes
+    */
+    void preparePhotonInfoTexture();
 
     /** Creates the photon counter for caustic and global photon buffers
     */
@@ -124,6 +134,7 @@ private:
     const float                 kMinPhotonRadius = 0.0001f;                 ///< At radius 0.0001 Photons are still visible
     const float                 kCollectTMin = 0.000001f;                   ///<non configurable constant for collection for now
     const float                 kCollectTMax = 0.000002f;                   ///< non configurable constant for collection for now
+    const uint                  kInfoTexHeight = 512;                       ///< Height of the info tex as it is too big for 1D tex
 
     //***************************************************************************
     // Configuration
@@ -173,7 +184,9 @@ private:
     std::vector<uint>           mPhotonCount = { 0,0 };
     bool                        mOptionsChanged = false;
     bool                        mResizePhotonBuffers = true;    ///< If true resize the Photon Buffers
+    bool                        mPhotonInfoFormatChanged = false;         
     bool                        mRebuildAS = false;
+    uint                        mInfoTexFormat = 1;
 
 
     //Light
@@ -223,16 +236,10 @@ private:
 
     struct PhotonBuffers {
         uint maxSize = 0;
-        Buffer::SharedPtr info;
+        Texture::SharedPtr infoFlux;
+        Texture::SharedPtr infoDir;
         Buffer::SharedPtr aabb;
         Buffer::SharedPtr blas;
-    };
-
-    struct PhotonInfo {
-        float3 pos;
-        float radius;
-        float3 flux;
-        float pad2;
     };
 
     PhotonBuffers mCausticBuffers;              ///< Buffers for the caustic photons

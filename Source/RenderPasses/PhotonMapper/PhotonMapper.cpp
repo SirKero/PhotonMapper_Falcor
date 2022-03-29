@@ -56,7 +56,7 @@ namespace
     // Ray tracing settings that affect the traversal stack size.
    // These should be set as small as possible.
    //TODO: set them later to the right vals
-    const uint32_t kMaxPayloadSizeBytes = 80u;
+    const uint32_t kMaxPayloadSizeBytes = 64u;
     const uint32_t kMaxPayloadSizeBytesCollect = 32u;
     const uint32_t kMaxAttributeSizeBytes = 8u;
     const uint32_t kMaxRecursionDepth = 2u;
@@ -74,11 +74,12 @@ namespace
         { "PhotonImage",          "gPhotonImage",               "An image that shows the caustics and indirect light from global photons" , false , ResourceFormat::RGBA32Float }
     };
 
-
-    const char kCausticAABBSName[] = "gCausticAABB";
-    const char kCausticInfoSName[] = "gCaustic";
-    const char kGlobalAABBSName[] = "gGlobalAABB";
-    const char kGlobalInfoSName[] = "gGlobal";
+    const Gui::DropdownList kInfoTexDropdownList{
+        //{(uint)PhotonMapper::TextureFormat::_8Bit , "8Bits"},
+        {(uint)PhotonMapper::TextureFormat::_16Bit , "16Bits"},
+        {(uint)PhotonMapper::TextureFormat::_32Bit , "32Bits"}
+    };
+    
 }
 
 PhotonMapper::SharedPtr PhotonMapper::create(RenderContext* pRenderContext, const Dictionary& dict)
@@ -169,20 +170,32 @@ void PhotonMapper::execute(RenderContext* pRenderContext, const RenderData& rend
 
     if (mResizePhotonBuffers) {
         if (mFitBuffersToPhotonShot) {
+            //if size of conter is 0 wait till next iteration
             if (mPhotonCount[0] > 0 && mPhotonCount[1] > 0) {
                 mCausticBufferSizeUI = static_cast<uint>(mPhotonCount[0] * 1.1);
                 mGlobalBufferSizeUI = static_cast<uint>(mPhotonCount[1] * 1.1);
             }
             mFitBuffersToPhotonShot = false;
         }
-        //if size of conter is 0 wait till next iteration
-        mCausticBuffers.maxSize = mCausticBufferSizeUI;
-        mGlobalBuffers.maxSize = mGlobalBufferSizeUI;
+        //put in new size with info tex2D height in mind
+        uint causticWidth = static_cast<uint>(std::ceil(mCausticBufferSizeUI / static_cast<float>(kInfoTexHeight)));
+        mCausticBuffers.maxSize = causticWidth * kInfoTexHeight;
+        uint globalWidth = static_cast<uint>(std::ceil(mGlobalBufferSizeUI / static_cast<float>(kInfoTexHeight)));
+        mGlobalBuffers.maxSize = globalWidth * kInfoTexHeight;
+
+        //refresh UI to new variable
+        mCausticBufferSizeUI = mCausticBuffers.maxSize; mGlobalBufferSizeUI = mGlobalBuffers.maxSize;
         mResizePhotonBuffers = false;
         mPhotonBuffersReady = false;
         mRebuildAS = true;
     }
-    
+
+    //Only change format if we dont rebuild the buffers
+    if (mPhotonBuffersReady && mPhotonInfoFormatChanged) {
+        preparePhotonInfoTexture();
+        mPhotonInfoFormatChanged = false;
+    }
+
     if (!mPhotonBuffersReady) {
         mPhotonBuffersReady = preparePhotonBuffers();
     }
@@ -235,9 +248,11 @@ void PhotonMapper::generatePhotons(RenderContext* pRenderContext, const RenderDa
 
     //Clear the photon Buffers
     pRenderContext->clearUAV(mGlobalBuffers.aabb.get()->getUAV().get(), uint4(0, 0, 0, 0));
-    pRenderContext->clearUAV(mGlobalBuffers.info.get()->getUAV().get(), uint4(0, 0, 0, 0));
+    pRenderContext->clearTexture(mGlobalBuffers.infoFlux.get(), float4(0, 0, 0, 0));
+    pRenderContext->clearTexture(mGlobalBuffers.infoDir.get(), float4(0, 0, 0, 0));
     pRenderContext->clearUAV(mCausticBuffers.aabb.get()->getUAV().get(), uint4(0, 0, 0, 0));
-    pRenderContext->clearUAV(mCausticBuffers.info.get()->getUAV().get(), uint4(0, 0, 0, 0));
+    pRenderContext->clearTexture(mCausticBuffers.infoFlux.get(), float4(0, 0, 0, 0));
+    pRenderContext->clearTexture(mCausticBuffers.infoDir.get(), float4(0, 0, 0, 0));
     
 
     auto lights = mpScene->getLights();
@@ -259,7 +274,8 @@ void PhotonMapper::generatePhotons(RenderContext* pRenderContext, const RenderDa
     mTracerGenerate.pProgram->addDefine("ADJUST_SHADING_NORMALS", mAdjustShadingNormals ? "1" : "0");
     mTracerGenerate.pProgram->addDefine("ANALYTIC_INV_PDF", std::to_string(mAnalyticInvPdf));
     mTracerGenerate.pProgram->addDefine("EMISSIVE_INV_PDF", std::to_string(mEmissiveInvPdf));
-    
+    mTracerGenerate.pProgram->addDefine("INFO_TEXTURE_HEIGHT", std::to_string(kInfoTexHeight));
+
     // Prepare program vars. This may trigger shader compilation.
     // The program should have all necessary defines set at this point.
 
@@ -278,10 +294,12 @@ void PhotonMapper::generatePhotons(RenderContext* pRenderContext, const RenderDa
 
     //set the buffers
 
-    var[kCausticAABBSName] = mCausticBuffers.aabb;
-    var[kCausticInfoSName] = mCausticBuffers.info;
-    var[kGlobalAABBSName] = mGlobalBuffers.aabb;
-    var[kGlobalInfoSName] = mGlobalBuffers.info;
+    var["gCausticAABB"] = mCausticBuffers.aabb;
+    var["gCausticFlux"] = mCausticBuffers.infoFlux;
+    var["gCausticDir"] = mCausticBuffers.infoDir;
+    var["gGlobalAABB"] = mGlobalBuffers.aabb;
+    var["gGlobalFlux"] = mGlobalBuffers.infoFlux;
+    var["gGlobalDir"] = mGlobalBuffers.infoDir;
     var["gRndSeedBuffer"] = mRandNumSeedBuffer;
 
     var["gPhotonCounter"] = mPhotonCounterBuffer.counter;
@@ -319,6 +337,7 @@ void PhotonMapper::collectPhotons(RenderContext* pRenderContext, const RenderDat
     mTracerCollect.pProgram->addDefine("COLLECT_CAUSTIC_PHOTONS", !mDisableCausticCollection ? "1" : "0");
     mTracerCollect.pProgram->addDefine("RAY_TMIN", std::to_string(kCollectTMin));
     mTracerCollect.pProgram->addDefine("RAY_TMAX", std::to_string(kCollectTMax));
+    mTracerCollect.pProgram->addDefine("INFO_TEXTURE_HEIGHT", std::to_string(kInfoTexHeight));
 
 
     // Prepare program vars. This may trigger shader compilation.
@@ -343,10 +362,12 @@ void PhotonMapper::collectPhotons(RenderContext* pRenderContext, const RenderDat
 
     //set the buffers
 
-    var[kCausticAABBSName] = mCausticBuffers.aabb;
-    var[kCausticInfoSName] = mCausticBuffers.info;
-    var[kGlobalAABBSName] = mGlobalBuffers.aabb;
-    var[kGlobalInfoSName] = mGlobalBuffers.info;
+    var["gCausticAABB"] = mCausticBuffers.aabb;
+    var["gCausticFlux"] = mCausticBuffers.infoFlux;
+    var["gCausticDir"] = mCausticBuffers.infoDir;
+    var["gGlobalAABB"] = mGlobalBuffers.aabb;
+    var["gGlobalFlux"] = mGlobalBuffers.infoFlux;
+    var["gGlobalDir"] = mGlobalBuffers.infoDir;
 
     // Lamda for binding textures. These needs to be done per-frame as the buffers may change anytime.
     auto bindAsTex = [&](const ChannelDesc& desc)
@@ -444,6 +465,10 @@ void PhotonMapper::renderUI(Gui::Widgets& widget)
         widget.tooltip("Adjusts the shading normals in the Photon Generation");
     }
     
+    mPhotonInfoFormatChanged |= widget.dropdown("Photon Info size", kInfoTexDropdownList, mInfoTexFormat);
+    widget.tooltip("Determines the resolution of each element of the photon info struct.");
+
+    dirty |= mPhotonInfoFormatChanged;  //Reset iterations if format is changed
 
     //Disable Photon Collecion
     if (auto group = widget.group("Collect Options")) {
@@ -760,36 +785,70 @@ void PhotonMapper::prepareVars()
     mpSampleGenerator->setShaderData(var);
 }
 
+ResourceFormat inline getFormatRGBA(uint format, bool flux = true)
+{
+    switch (format) {
+    case static_cast<uint>(PhotonMapper::TextureFormat::_8Bit):
+        if (flux) 
+            return ResourceFormat::RGBA8Unorm;
+        else
+            return ResourceFormat::RGBA8Snorm;
+    case static_cast<uint>(PhotonMapper::TextureFormat::_16Bit):
+        return ResourceFormat::RGBA16Float;
+    case static_cast<uint>(PhotonMapper::TextureFormat::_32Bit):
+        return ResourceFormat::RGBA32Float;
+    }
+
+    //If invalid format return highest possible format
+    return ResourceFormat::RGBA32Float;
+}
+
+void PhotonMapper::preparePhotonInfoTexture()
+{
+    FALCOR_ASSERT(mCausticBuffers.maxSize > 0 || mGlobalBuffers.maxSize > 0);
+    //clean tex
+    mCausticBuffers.infoFlux.reset(); mCausticBuffers.infoDir.reset();
+    mGlobalBuffers.infoFlux.reset(); mGlobalBuffers.infoDir.reset();
+
+    //Caustic
+    mCausticBuffers.infoFlux = Texture::create2D(mCausticBuffers.maxSize / kInfoTexHeight, kInfoTexHeight, getFormatRGBA(mInfoTexFormat, true), 1, 1, nullptr, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
+    mCausticBuffers.infoFlux->setName("PhotonMapper::mCausticBuffers.fluxInfo");
+    mCausticBuffers.infoDir = Texture::create2D(mCausticBuffers.maxSize / kInfoTexHeight, kInfoTexHeight, getFormatRGBA(mInfoTexFormat, false), 1, 1, nullptr, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
+    mCausticBuffers.infoDir->setName("PhotonMapper::mCausticBuffers.dirInfo");
+
+    FALCOR_ASSERT(mCausticBuffers.infoFlux); FALCOR_ASSERT(mCausticBuffers.infoDir);
+
+    mGlobalBuffers.infoFlux = Texture::create2D(mGlobalBuffers.maxSize / kInfoTexHeight, kInfoTexHeight, getFormatRGBA(mInfoTexFormat, true), 1, 1, nullptr, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
+    mGlobalBuffers.infoFlux->setName("PhotonMapper::mGlobalBuffers.fluxInfo");
+    mGlobalBuffers.infoDir = Texture::create2D(mGlobalBuffers.maxSize / kInfoTexHeight, kInfoTexHeight, getFormatRGBA(mInfoTexFormat, false), 1, 1, nullptr, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
+    mGlobalBuffers.infoDir->setName("PhotonMapper::mGlobalBuffers.dirInfo");
+
+    FALCOR_ASSERT(mGlobalBuffers.infoFlux); FALCOR_ASSERT(mGlobalBuffers.infoDir);
+}
+
 bool PhotonMapper::preparePhotonBuffers()
 {
     FALCOR_ASSERT(mCausticBuffers.maxSize > 0 || mGlobalBuffers.maxSize > 0);
 
+
     //clean buffers
-    mCausticBuffers.aabb = nullptr; mCausticBuffers.blas = nullptr; mCausticBuffers.info = nullptr;
-    mGlobalBuffers.aabb = nullptr; mGlobalBuffers.blas = nullptr; mGlobalBuffers.info = nullptr;
+    mCausticBuffers.aabb.reset(); mCausticBuffers.blas.reset();
+    mGlobalBuffers.aabb.reset(); mGlobalBuffers.blas.reset(); 
 
     //TODO: Change Buffer Generation to initilize with program
     mCausticBuffers.aabb = Buffer::createStructured(sizeof(D3D12_RAYTRACING_AABB), mCausticBuffers.maxSize);
     mCausticBuffers.aabb->setName("PhotonMapper::mCausticBuffers.aabb");
-    mCausticBuffers.info = Buffer::createStructured(sizeof(PhotonInfo), mCausticBuffers.maxSize);
-    mCausticBuffers.info->setName("PhotonMapper::mCausticBuffers.info");
-
-    FALCOR_ASSERT(mCausticBuffers.aabb);   FALCOR_ASSERT(mCausticBuffers.info);
-
-    //only set aabb buffer if it is used
     
+    FALCOR_ASSERT(mCausticBuffers.aabb);
+
     mGlobalBuffers.aabb = Buffer::createStructured(sizeof(D3D12_RAYTRACING_AABB), mGlobalBuffers.maxSize);
     mGlobalBuffers.aabb->setName("PhotonMapper::mGlobalBuffers.aabb");
 
     FALCOR_ASSERT(mGlobalBuffers.aabb);
+
+    //Create/recreate the textures
+    preparePhotonInfoTexture();
     
-
-    mGlobalBuffers.info = Buffer::createStructured(sizeof(PhotonInfo), mGlobalBuffers.maxSize);
-    mGlobalBuffers.info->setName("PhotonMapper::mGlobalBuffers.info");
-
-    FALCOR_ASSERT(mGlobalBuffers.info);
-
-
     return true;
 }
 

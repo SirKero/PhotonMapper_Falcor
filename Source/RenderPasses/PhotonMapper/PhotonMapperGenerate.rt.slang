@@ -7,6 +7,7 @@ import Utils.Sampling.SampleGenerator;
 import Rendering.Materials.StandardMaterial;
 import Scene.Material.ShadingUtils;
 import Rendering.Lights.LightHelpers;
+import Utils.Color.ColorHelpers;
 
 
 cbuffer CB
@@ -30,8 +31,10 @@ struct PhotonInfo {
 
  //Internal Buffer Structs
 
-RWStructuredBuffer<PhotonInfo> gCaustic;
-RWStructuredBuffer<PhotonInfo> gGlobal;
+RWTexture2D<float4> gCausticFlux;
+RWTexture2D<float4> gCausticDir;
+RWTexture2D<float4> gGlobalFlux;
+RWTexture2D<float4> gGlobalDir;
 RWStructuredBuffer<AABB> gCausticAABB;
 RWStructuredBuffer<AABB> gGlobalAABB;
 
@@ -62,6 +65,7 @@ static const bool kUseAlphaTest = USE_ALPHA_TEST;                   //Activate f
 static const bool kAdjustShadingNormals = ADJUST_SHADING_NORMALS;   //Adjust the shading normals
 static const float kAnalyticInvPdf = ANALYTIC_INV_PDF;              //Inverse analytic pdf 
 static const float kEmissiveInvPdf = EMISSIVE_INV_PDF;              //Inverse emissive pdf
+static const uint kInfoTexHeight = INFO_TEXTURE_HEIGHT;
 
 static const float k_2Pi = 6.28318530717958647692;
 static const float k_4Pi = 12.5663706143591729538;
@@ -69,16 +73,14 @@ static const float Inv2Pi = 0.15915494309189533577;
 static const float Inv4Pi = 0.07957747154594766788;
 
 
-/** Payload for scatter ray (80B).
+/** Payload for scatter ray (64B).
 */
-struct ScatterRayData
+struct RayData
 {
-    float3  radiance;       ///< Accumulated outgoing radiance from path.
-    bool    terminated;     ///< Set to true when path is terminated.
     float3  thp;            ///< Current path throughput. This is updated at each path vertex.
-    uint    pathLength;     ///< Path length in number of path segments (0 at origin, 1 at first secondary hit, etc.). Max 2^31.
+    float    cosTheta;     ///< Cos Theta
     float3  origin;         ///< Next path segment origin.
-    uint    lobeType;       ///< Mask for the type of reflection
+    bool terminated; ///< Set to true when path is terminated.
     float3  direction;      ///< Next path segment direction.
     bool    diffuseHit;     ///< saves if the his is diffuse
 
@@ -86,13 +88,11 @@ struct ScatterRayData
 
     /** Create ray payload with default parameters.
     */
-    static ScatterRayData create()
+    static RayData create()
     {
-        ScatterRayData d;
+        RayData d;
         d.terminated = false;
-        d.lobeType = 0;
-        d.pathLength = 0;
-        d.radiance = float3(0, 0, 0);
+        d.cosTheta = 1.f;
         d.thp = float3(1, 1, 1);
         d.origin = float3(0, 0, 0);
         d.direction = float3(0, 0, 0);
@@ -158,7 +158,7 @@ AABB calcPhotonAABB(in float3 center, in float radius)
 }
 
 [shader("miss")]
-void miss(inout ScatterRayData rayData : SV_RayPayload)
+void miss(inout RayData rayData : SV_RayPayload)
 {
     rayData.terminated = true;
 
@@ -166,7 +166,7 @@ void miss(inout ScatterRayData rayData : SV_RayPayload)
 }
 
 [shader("closesthit")]
-void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleIntersectionAttributes attribs: SV_IntersectionAttributes)
+void closestHit(inout RayData rayData : SV_RayPayload, BuiltInTriangleIntersectionAttributes attribs : SV_IntersectionAttributes)
 {
     // Evaluate Falcor's material parameters at the hit point.
     GeometryInstanceID instanceID = getGeometryInstanceID();
@@ -192,21 +192,19 @@ void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleInt
     bool transmission = bsdfSample.isLobe(LobeType::Transmission);
     float3 rayOrigin = sd.computeNewRayOrigin(!transmission); //false is for transmissions
     rayData.origin = rayOrigin;
-    rayData.thp = valid ? bsdfSample.weight : float3(0);
-    rayData.lobeType = bsdfSample.lobe;
+    rayData.thp *= valid ? bsdfSample.weight : float3(0);
     rayData.direction = bsdfSample.wo;
     rayData.diffuseHit = bsdfSample.isLobe(LobeType::Diffuse) || (bsdfSample.isLobe(LobeType::Reflection) && (bsdfProperties.roughness > kSpecRoughCutoff));
+    rayData.cosTheta = abs(dot(sd.N, rayData.direction));
     
     //if throughput is 0, return
-    if(!valid)
+    if (!valid || any(rayData.thp < 0))
         rayData.terminated = true;
-    
-    rayData.pathLength++;
 }
 
 //Use anyhit for alpha test if activated
 [shader("anyhit")]
-void anyHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleIntersectionAttributes attribs : SV_IntersectionAttributes)
+void anyHit(inout RayData rayData : SV_RayPayload, BuiltInTriangleIntersectionAttributes attribs : SV_IntersectionAttributes)
 {
     if (kUseAlphaTest)
     {
@@ -229,7 +227,7 @@ void rayGen()
     uint seed = gRndSeedBuffer[launchIndex];
     
      // Prepare ray payload.
-    ScatterRayData rayData = ScatterRayData.create();
+    RayData rayData = RayData.create();
     rayData.sg = SampleGenerator(launchIndex, seed + gFrameCount);
 
     // Advance the generator to the first available dimension.
@@ -257,6 +255,7 @@ void rayGen()
     float maxSpotAngle = 0;
     float penumbra = 0.0;
     uint type = 0; //0 == Point, 1 == Area, 2 == Spot
+    float lightArea = 1.f;
     
     if (analytic)
     {
@@ -287,6 +286,7 @@ void rayGen()
         const float3 barycentrics = sample_triangle(RS);
         lightPos = emiTri.getPosition(barycentrics);
         lightDir = emiTri.normal;
+        lightArea = emiTri.area;
 
         //Evaluate Emitted radiance
         float2 uv = emiTri.getTexCoord(barycentrics);
@@ -294,73 +294,6 @@ void rayGen()
         lightIntensity *= kEmissiveScale;
         type = 1;
     }
-
-    
-    //Old Light sampling code. Might add this as an alternative option
-    /*
-    const uint analyticLightCount = kUseAnalyticLights ? gScene.getLightCount() : 0;
-    //we approximate the real count of emissive lights by the mesh count (as meshes are merged together this is not always the case)
-    const uint emissiveLightCount = kUseEmissiveLights ? lc.meshCount : 0;      
-    const uint lightCount = analyticLightCount + emissiveLightCount;
-    
-    if (lightCount == 0)        //No Photons can be shot if there is no light
-        return;
-    
-    // Pick one of the analytic light sources randomly with equal probability.
-    const uint lightIndex = min(uint(sampleNext1D(rayData.sg) * lightCount), lightCount - 1);
-    float invPdf = lightCount; // Light selection pdf = 1.0 / lightCount.
-
-    float3 lightPos = float3(0);
-    float3 lightDir = float3(0, 1, 0);
-    float3 lightIntensity = float3(0);
-    float maxSpotAngle = 0;
-    float penumbra = 0.0;
-
-    uint type = 0;  //0 == Point, 1 == Area, 2 == Spot
-
-    //Point or Dir light
-    if (lightIndex < analyticLightCount)
-    {
-        LightData currentLight = gScene.getLight(lightIndex);
-
-    //we only support point and dir lights
-        if (currentLight.type != uint(LightType::Point))
-            return;
-
-        if (currentLight.openingAngle < (M_PI / 2.0))
-            type = 2;
-        
-        lightPos = currentLight.posW;
-        lightDir = currentLight.dirW;
-        lightIntensity = currentLight.intensity;
-        maxSpotAngle = currentLight.openingAngle;
-        penumbra = currentLight.penumbraAngle;
-    }
-    //emissive triangle light
-    else
-    {
-        //const uint activeTriIndex = lightIndex - analyticLightCount;
-        invPdf = lc.getActiveTriangleCount();   //Assume all emissive triangles as pdf
-        const uint activeTriIndex = uint(sampleNext1D(rayData.sg) * invPdf);
-        const uint triIndex = lc.activeTriangles[activeTriIndex];
-        EmissiveTriangle emiTri = lc.getTriangle(triIndex); //get the random triangle
-        //random baycentric coordinates
-        float2 RS = sampleNext2D(rayData.sg);
-        const float3 barycentrics = sample_triangle(RS);
-        lightPos = emiTri.getPosition(barycentrics);
-        lightDir = emiTri.normal;
-
-        //Evaluate Emitted radiance
-        float2 uv = emiTri.getTexCoord(barycentrics);
-        lightIntensity = gScene.materials.evalEmissive(emiTri.materialID, uv);
-        //get triangle area for scaling
-        float3 a = emiTri.posW[1] - emiTri.posW[0];
-        float3 b = emiTri.posW[2] - emiTri.posW[0];
-        lightIntensity *= kEmissiveScale * triangleArea(a, b);
-        type = 1;
-    }
-    */
-   
     
     RayDesc ray;
     float lightDirPDF = 0.0;
@@ -377,9 +310,9 @@ void rayGen()
     photon.faceNPhi = 0.f;
     
     //light flux
-    float3 lightFlux = lightIntensity * lightDirPDF * invPdf ;
-    photon.flux = lightFlux / float3(launchDim.x * launchDim.y);
-
+    float3 lightFlux = (abs(dot(lightDir, ray.Direction)) * lightArea * lightIntensity * invPdf) / lightDirPDF;
+    lightFlux /= float3(launchDim.x * launchDim.y);
+    
     //ray tracing vars
     ray.Origin = lightPos + 0.01 * ray.Direction;
     ray.TMin = 0.01f;
@@ -388,26 +321,26 @@ void rayGen()
 
     bool wasReflectedSpecular = false;
     bool reflectedDiffuse = false;
-  
+        
     //recursion where the photons are shot
     for (uint i = 0; i < kMaxRecursion && !rayData.terminated; i++)
     {
-        
+        photon.flux = lightFlux * rayData.thp * rayData.cosTheta;
         TraceRay(gScene.rtAccel, rayFlags, 0xff /* instanceInclusionMask */, 0 /* hitIdx */, rayTypeCount, 0 /* missIdx */, ray, rayData);
 
         if(rayData.terminated)
             break;
+
         
         photonPos = rayData.origin;
         photon.dir = ray.Direction;
-        //reflectedDiffuse = ((uint) LobeType::DiffuseReflection & rayData.lobeType) > 0;
         reflectedDiffuse = rayData.diffuseHit;
 
-        //save photon
+        //rejection
         float rndRoulette = sampleNext1D(rayData.sg);
         bool roulette = rndRoulette <= kRussianRoulette;
-
         
+        //save photon        
         if (reflectedDiffuse)
         {
             uint photonIndex = 0;
@@ -418,36 +351,39 @@ void rayGen()
             {
                 InterlockedAdd(gPhotonCounter[0].caustic, 1u, photonIndex);
                 photonIndex = min(photonIndex, kMaxPhotonIndexCAU);
-                gCaustic[photonIndex] = photon;
+                uint2 photonIndex2D = uint2(photonIndex / kInfoTexHeight, photonIndex % kInfoTexHeight);
+                gCausticFlux[photonIndex2D] = float4(photon.flux, 1);
+                gCausticDir[photonIndex2D] = float4(photon.dir, 1);
                 gCausticAABB[photonIndex] = photonAABB;
             }
             //Global photon
             else if(roulette)
             {
-                photon.flux = photon.flux / kRussianRoulette;
+                photon.flux /= kRussianRoulette;
                 InterlockedAdd(gPhotonCounter[0].global, 1u, photonIndex);
                 photonIndex = min(photonIndex, kMaxPhotonIndexGLB);
-                gGlobal[photonIndex] = photon;
+                uint2 photonIndex2D = uint2(photonIndex / kInfoTexHeight, photonIndex % kInfoTexHeight);
+                gGlobalFlux[photonIndex2D] = float4(photon.flux, 1);
+                gGlobalDir[photonIndex2D] = float4(photon.dir, 1);
                 gGlobalAABB[photonIndex] = photonAABB;
             }
         }
-        
-
-         //Update photon energy
-        float avgThroughput = max((rayData.thp.x + rayData.thp.y + rayData.thp.z) / 3, 0.0);
-
+   
+        //Russian Roulette
+        const float rrVal = luminance(rayData.thp);
+        const float prob = max(0.f, 1.f - rrVal);
         float rnd = sampleNext1D(rayData.sg);
-        if (avgThroughput < rnd)
+        if (rnd < prob)
         {
             break;      //Photon is absorbed
         }
         else
         {
-            photon.flux *= rayData.thp / avgThroughput;
+            rayData.thp /= (1.f - prob);
         }
 
         wasReflectedSpecular = !reflectedDiffuse;
-        
+                
         //update ray for next iteration
         ray.Origin = rayData.origin;
         ray.Direction = rayData.direction;
