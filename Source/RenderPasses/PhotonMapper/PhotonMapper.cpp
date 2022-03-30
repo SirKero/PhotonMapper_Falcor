@@ -303,19 +303,11 @@ void PhotonMapper::generatePhotons(RenderContext* pRenderContext, const RenderDa
     var["gRndSeedBuffer"] = mRandNumSeedBuffer;
 
     var["gPhotonCounter"] = mPhotonCounterBuffer.counter;
-   
 
-    // Bind Output Textures. These needs to be done per-frame as the buffers may change anytime.
-    auto bindAsTex = [&](const ChannelDesc& desc)
-    {
-        if (!desc.texname.empty())
-        {
-            var[desc.texname] = renderData[desc.name]->asTexture();
-        }
-    };
     //Bind light sample tex
-    FALCOR_ASSERT(mLightSampleTex);
     var["gLightSample"] = mLightSampleTex;
+    var["gNumPhotonsPerEmissive"] = mPhotonsPerTriangle;
+
     // Get dimensions of ray dispatch.
     const uint2 targetDim = uint2(mPGDispatchX, mMaxDispatchY);
     FALCOR_ASSERT(targetDim.x > 0 && targetDim.y > 0);
@@ -578,6 +570,9 @@ void PhotonMapper::getActiveEmissiveTriangles(RenderContext* pRenderContext)
 
 void PhotonMapper::createLightSampleTexture(RenderContext* pRenderContext)
 {
+    if (mPhotonsPerTriangle) mPhotonsPerTriangle.reset();
+    if (mLightSampleTex) mLightSampleTex.reset();
+
     FALCOR_ASSERT(mpScene);    //Scene has to be set
 
     auto analyticLights = mpScene->getActiveLights();
@@ -719,6 +714,14 @@ void PhotonMapper::createLightSampleTexture(RenderContext* pRenderContext)
     //Create texture and Pdf buffer
     mLightSampleTex = Texture::create2D(xPhotons, mMaxDispatchY, ResourceFormat::R32Int, 1, 1, lightIdxTex.data());
     mLightSampleTex->setName("PhotonMapper::LightSampleTex");
+
+    //Create a buffer for num photons per triangle
+    if (numPhotonsPerTriangle.size() == 0) {
+        numPhotonsPerTriangle.push_back(0);
+    }
+    mPhotonsPerTriangle = Buffer::createStructured(sizeof(uint), static_cast<uint32_t>(numPhotonsPerTriangle.size()), ResourceBindFlags::ShaderResource, Buffer::CpuAccess::None, numPhotonsPerTriangle.data());
+    mPhotonsPerTriangle->setName("PhotonMapper::mPhotonsPerTriangleEmissive");
+
 
     //Set numPhoton variable
     mPGDispatchX = xPhotons;

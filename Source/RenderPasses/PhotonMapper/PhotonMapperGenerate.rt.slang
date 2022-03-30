@@ -20,6 +20,7 @@ cbuffer CB
 
 // Inputs
 Texture2D<int> gLightSample;
+StructuredBuffer<uint> gNumPhotonsPerEmissive;
 //Internal Buffer Structs
 
 struct PhotonInfo {
@@ -195,7 +196,7 @@ void closestHit(inout RayData rayData : SV_RayPayload, BuiltInTriangleIntersecti
     rayData.thp *= valid ? bsdfSample.weight : float3(0);
     rayData.direction = bsdfSample.wo;
     rayData.diffuseHit = bsdfSample.isLobe(LobeType::Diffuse) || (bsdfSample.isLobe(LobeType::Reflection) && (bsdfProperties.roughness > kSpecRoughCutoff));
-    rayData.cosTheta = abs(dot(sd.N, rayData.direction));
+    //rayData.cosTheta = abs(dot(sd.N, rayData.direction));
     
     //if throughput is 0, return
     if (!valid || any(rayData.thp < 0))
@@ -248,7 +249,7 @@ void rayGen()
         lightIndex *= -1;           //Swap sign if analytic    
     lightIndex -= 1;                //Change index from 1->N to 0->(N-1)
 
-    float invPdf = kAnalyticInvPdf;             //Set to analytic pdf by default. If Emissive it is set later
+    float invPdf = kAnalyticInvPdf; //Set to analytic pdf by default. If Emissive it is set later
     float3 lightPos = float3(0);
     float3 lightDir = float3(0, 1, 0);
     float3 lightIntensity = float3(0);
@@ -278,7 +279,7 @@ void rayGen()
     else
     {
         //invPdf = gEmissiveInvPdf[lightIndex]; //Assume all emissive triangles as pdf
-        invPdf = kEmissiveInvPdf;
+        invPdf = 1.f/gNumPhotonsPerEmissive[lightIndex];
         const uint triIndex = lc.activeTriangles[lightIndex];
         EmissiveTriangle emiTri = lc.getTriangle(triIndex); //get the random triangle
         //random baycentric coordinates
@@ -310,9 +311,9 @@ void rayGen()
     photon.faceNPhi = 0.f;
     
     //light flux
-    float3 lightFlux = (abs(dot(lightDir, ray.Direction)) * lightArea * lightIntensity * invPdf) / lightDirPDF;
-    lightFlux /= float3(launchDim.x * launchDim.y);
-    
+    float3 lightFlux = lightIntensity * invPdf;
+    if (!analytic) lightFlux *= abs(dot(lightDir, ray.Direction)) * lightArea * M_PI_2;   //Convert L to flux
+    lightFlux /= analytic ? float(launchDim.x * launchDim.y) * lightDirPDF : lightDirPDF; //Total number of photons is in the invPDF for emissive
     //ray tracing vars
     ray.Origin = lightPos + 0.01 * ray.Direction;
     ray.TMin = 0.01f;
@@ -325,7 +326,7 @@ void rayGen()
     //recursion where the photons are shot
     for (uint i = 0; i < kMaxRecursion && !rayData.terminated; i++)
     {
-        photon.flux = lightFlux * rayData.thp * rayData.cosTheta;
+        photon.flux = lightFlux * rayData.thp;
         TraceRay(gScene.rtAccel, rayFlags, 0xff /* instanceInclusionMask */, 0 /* hitIdx */, rayTypeCount, 0 /* missIdx */, ray, rayData);
 
         if(rayData.terminated)

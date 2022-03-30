@@ -192,6 +192,7 @@ private:
     //Light
     std::vector<uint> mActiveEmissiveTriangles;
     Texture::SharedPtr mLightSampleTex;
+    Buffer::SharedPtr mPhotonsPerTriangle;
     const uint mMaxDispatchY = 512;
     uint mPGDispatchX = 0;
     uint mAnalyticEndIndex = 0;
