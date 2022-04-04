@@ -94,6 +94,17 @@ uint hash(int3 cell)
     return res;
 }
 
+//Checks if the ray start point is inside the sphere. 0 is returned if it is not in sphere and 1 if it is
+bool hitSphere(const float3 center, const float radius, const float3 p)
+{
+    float3 radiusTest = p - center;
+    radiusTest = radiusTest * radiusTest;
+    float radiusTestF = radiusTest.x + radiusTest.y + radiusTest.z;
+    if (radiusTestF < radius * radius)
+        return true;
+    return false;
+}
+
 ShadingData loadShadingData(const HitInfo hit, const float3 rayDir, const ITextureSampler lod)
 {
     const TriangleHit triangleHit = hit.getTriangleHit();
@@ -103,23 +114,31 @@ ShadingData loadShadingData(const HitInfo hit, const float3 rayDir, const ITextu
     return gScene.materials.prepareShadingData(v, materialID, -rayDir, lod);
 }
 
-float3 photonContribution(in ShadingData sd, uint photonIndex ,  bool isCaustic)
+float3 photonContribution(in ShadingData sd, uint photonIndex , bool isCaustic)
 {
     const uint2 photonIndex2D = uint2(photonIndex / kInfoTexHeight, photonIndex % kInfoTexHeight);
     //get caustic or global photon
+    float radius = isCaustic ? gCausticRadius : gGlobalRadius;
     PhotonInfo photon;
+    float3 photonPos;
      //Instance 0 is always the caustic buffer
     if (isCaustic)
     {
+        photonPos = gCausticPos[photonIndex2D].xyz;
         photon.flux = gCausticFlux[photonIndex2D].xyz;
         photon.dir = gCausticDir[photonIndex2D].xyz;
     }
     else
     {
+        photonPos = gCausticPos[photonIndex2D].xyz;
         photon.flux = gGlobalFlux[photonIndex2D].xyz;
         photon.dir = gGlobalDir[photonIndex2D].xyz;
     }
 
+    //Radius test
+    if (!hitSphere(photonPos, radius, sd.posW))
+        return float3(0);
+    
     let lod = ExplicitLodTextureSampler(0.f);
     let bsdf = gScene.materials.getBSDF(sd, lod);
             
@@ -202,14 +221,14 @@ void main(uint2 DTid : SV_DispatchThreadID, uint2 Gid : SV_GroupID, uint2 GTid :
         radiance += w * causticRadiance;
     }
     
-    /*    
+        
     if (kCollectGlobalPhotons && valid)
     {
         float3 globalRadiance = collectPhotons(hit, viewVec, false);
         float w = 1 / (M_PI * gGlobalRadius * gGlobalRadius); //make this a constant
         radiance += w * globalRadiance;
     }
-    */
+    
     
     radiance *= thpMatID.xyz;   //Add throughput for path
 
