@@ -4,22 +4,27 @@
 import Scene.Raytracing;
 import Scene.Intersection;
 import Utils.Math.MathHelpers;
-import Utils.Sampling.SampleGenerator;
 import Rendering.Materials.StandardMaterial;
 import Rendering.Lights.LightHelpers;
 
 import PhotonMapperHashFunctions;
 
-cbuffer CB
+cbuffer PerFrame
 {
     uint gFrameCount; // Frame count since scene was loaded.
     float gCausticRadius; // Radius for the caustic photons
     float gGlobalRadius; // Radius for the global photons
-    bool gNoColorOutput; // Skips light calculation if activated and outputs 1 on all channels
-    float gEmissiveScale; // Scale for the emissive part
     float gCausticHashScaleFactor; //Hash scale factor for caustic hash cells
     float gGlobalHashScaleFactor;
 }
+
+cbuffer CB
+{
+    float gEmissiveScale; // Scale for the emissive part
+    bool gCollectGlobalPhotons;
+    bool gCollectCausticPhotons;
+    uint gQuadProbeIt;  //Max num of quadratic probe iterations
+};
 
 // Inputs
 Texture2D<PackedHitInfo> gVBuffer;
@@ -65,15 +70,9 @@ RWTexture2D<float4> gGlobalDir;
 
 // Static configuration based on defines set from the host.
 static const float3 kDefaultBackgroundColor = float3(0, 0, 0);
-
-static const bool kCollectGlobalPhotons = COLLECT_GLOBAL_PHOTONS;
-static const bool kCollectCausticPhotons = COLLECT_CAUSTIC_PHOTONS;
+    
 static const uint kInfoTexHeight = INFO_TEXTURE_HEIGHT;
 static const uint kNumBuckets = NUM_BUCKETS; //Total number of buckets in 2^x
-
-static const float kRayTMin = RAY_TMIN;
-static const float kRayTMax = RAY_TMAX;
-
 
 
 //Checks if the ray start point is inside the sphere. 0 is returned if it is not in sphere and 1 if it is
@@ -151,7 +150,7 @@ float3 collectPhotons(in HitInfo hitInfo, in float3 dirVec,bool isCaustic)
                 uint d = 0;
                 
                 //Quadratic Probe with an maximum
-                for (uint i = 0; i < 10; i++)
+                for (uint i = 0; i < gQuadProbeIt; i++)
                 {
                     int bucketSize = isCaustic ? gCausticHashBucket[b].size : gGlobalHashBucket[b].size;
                     int bucketCell = isCaustic ? gCausticHashBucket[b].cell : gGlobalHashBucket[b].cell;
@@ -200,14 +199,14 @@ void main(uint2 DTid : SV_DispatchThreadID, uint2 Gid : SV_GroupID, uint2 GTid :
     float3 radiance = float3(0);
 
 
-    if (kCollectGlobalPhotons && valid)
+    if (gCollectGlobalPhotons && valid)
     {
         float3 globalRadiance = collectPhotons(hit, viewVec, false);
         float w = 1 / (M_PI * gGlobalRadius * gGlobalRadius); //make this a constant
         radiance += w * globalRadiance;
     }
     
-    if (kCollectCausticPhotons && valid)
+    if (gCollectCausticPhotons && valid)
     {
         float3 causticRadiance = collectPhotons(hit, viewVec, true);
         float w = 1 / (M_PI * gCausticRadius * gCausticRadius); //make this a constant

@@ -11,15 +11,27 @@ import Utils.Color.ColorHelpers;
 
 import PhotonMapperHashFunctions;
 
-cbuffer CB
+cbuffer PerFrame
 {
     uint        gFrameCount;        // Frame count since scene was loaded.
     float       gCausticRadius;     // Radius for the caustic photons
     float       gGlobalRadius;      // Radius for the global photons
-    uint        gPRNGDimension;     // First available PRNG dimension.
     float       gCausticHashScaleFactor; //Hash scale factor for caustic hash cells
     float       gGlobalHashScaleFactor;
 }
+
+cbuffer CB
+{
+    uint gPRNGDimension;        // First available PRNG dimension.
+    float gGlobalRejection;     // Probabilty that an global photon is saved
+    float gEmissiveScale;       // Scale for emissive ligth sources
+    float gSpecRoughCutoff;     // Cutoff for specular reflections
+
+    uint gMaxRecursion;         //Max Iterations per path
+    bool gUseAlphaTest;         //Enable Alpha Test
+    bool gAdjustShadingNormals; //Adjust shading Normals
+    uint gQuadProbeIt;          //Max number of quadratic probe iterations
+};
 
 // Inputs
 Texture2D<int> gLightSample;
@@ -61,9 +73,7 @@ struct PhotonCounter
 };
 RWStructuredBuffer<PhotonCounter> gPhotonCounter;
 
-// Static configuration based on defines set from the host.
-#define is_valid(name) (is_valid_##name != 0)
-static const uint kMaxRecursion = MAX_RECURSION;
+// Static configuration based on defines set from the host
 static const bool kUseAnalyticLights = USE_ANALYTIC_LIGHTS;
 static const bool kUseEmissiveLights = USE_EMISSIVE_LIGHTS;
 static const bool kUseEnvLight = USE_ENV_LIGHT;
@@ -71,14 +81,8 @@ static const bool kUseEnvBackground = USE_ENV_BACKGROUND;
 static const float3 kDefaultBackgroundColor = float3(0, 0, 0);
 static const float kRayTMax = FLT_MAX;
 static const uint kMaxPhotonIndexGLB = MAX_PHOTON_INDEX_GLOBAL;
-static const uint kMaxPhotonIndexCAU = MAX_PHOTON_INDEX_CAUSTIC;
-static const float kRussianRoulette = RUSSIAN_ROULETTE;             // Probabilty that an global photon is saved
-static const float kEmissiveScale = EMISSIVE_SCALE;                 //scalar for the light intenity
-static const float kSpecRoughCutoff = SPECULAR_ROUGNESS_CUTOFF;     //If roughness value is over this, interpret the material as Diffuse
-static const bool kUseAlphaTest = USE_ALPHA_TEST;                   //Activate for alpha test
-static const bool kAdjustShadingNormals = ADJUST_SHADING_NORMALS;   //Adjust the shading normals
+static const uint kMaxPhotonIndexCAU = MAX_PHOTON_INDEX_CAUSTIC;    
 static const float kAnalyticInvPdf = ANALYTIC_INV_PDF;              //Inverse analytic pdf 
-static const float kEmissiveInvPdf = EMISSIVE_INV_PDF;              //Inverse emissive pdf
 static const uint kInfoTexHeight = INFO_TEXTURE_HEIGHT;
 static const uint kNumBuckets = NUM_BUCKETS;                        //Total number of buckets in 2^x
 
@@ -191,7 +195,7 @@ void closestHit(inout RayData rayData : SV_RayPayload, BuiltInTriangleIntersecti
     ShadingData sd = gScene.materials.prepareShadingData(v, materialID, -WorldRayDirection(), lod);
 
     //Adjust shading normals if desired
-    if (kAdjustShadingNormals)
+    if (gAdjustShadingNormals)
     {
         adjustShadingNormal(sd, v);
     }
@@ -209,7 +213,7 @@ void closestHit(inout RayData rayData : SV_RayPayload, BuiltInTriangleIntersecti
     rayData.origin = rayOrigin;
     rayData.thp *= valid ? bsdfSample.weight : float3(0);
     rayData.direction = bsdfSample.wo;
-    rayData.diffuseHit = bsdfSample.isLobe(LobeType::Diffuse) || (bsdfSample.isLobe(LobeType::Reflection) && (bsdfProperties.roughness > kSpecRoughCutoff));
+    rayData.diffuseHit = bsdfSample.isLobe(LobeType::Diffuse) || (bsdfSample.isLobe(LobeType::Reflection) && (bsdfProperties.roughness > gSpecRoughCutoff));
     //rayData.cosTheta = abs(dot(sd.N, rayData.direction));
     
     //if throughput is 0, return
@@ -221,7 +225,7 @@ void closestHit(inout RayData rayData : SV_RayPayload, BuiltInTriangleIntersecti
 [shader("anyhit")]
 void anyHit(inout RayData rayData : SV_RayPayload, BuiltInTriangleIntersectionAttributes attribs : SV_IntersectionAttributes)
 {
-    if (kUseAlphaTest)
+    if (gUseAlphaTest)
     {
         // Alpha test for non-opaque geometry.
         GeometryInstanceID instanceID = getGeometryInstanceID();
@@ -306,7 +310,7 @@ void rayGen()
         //Evaluate Emitted radiance
         float2 uv = emiTri.getTexCoord(barycentrics);
         lightIntensity = gScene.materials.evalEmissive(emiTri.materialID, uv);
-        lightIntensity *= kEmissiveScale;
+        lightIntensity *= gEmissiveScale;
         type = 1;
     }
     
@@ -338,7 +342,7 @@ void rayGen()
     bool reflectedDiffuse = false;
         
     //recursion where the photons are shot
-    for (uint i = 0; i < kMaxRecursion && !rayData.terminated; i++)
+    for (uint i = 0; i < gMaxRecursion && !rayData.terminated; i++)
     {
         photon.flux = lightFlux * rayData.thp;
         TraceRay(gScene.rtAccel, rayFlags, 0xff /* instanceInclusionMask */, 0 /* hitIdx */, rayTypeCount, 0 /* missIdx */, ray, rayData);
@@ -358,7 +362,7 @@ void rayGen()
             uint photonBucketIndex = 0;
             //rejection
             float rndRoulette = sampleNext1D(rayData.sg);
-            bool roulette = rndRoulette <= kRussianRoulette;
+            bool roulette = rndRoulette <= gGlobalRejection;
             
             //hash scale
             float cellScale = wasReflectedSpecular ? gCausticHashScaleFactor : gGlobalHashScaleFactor;
@@ -375,7 +379,7 @@ void rayGen()
             if (wasReflectedSpecular)
             {
                 
-                for (uint i = 0; i <= 10; i++)
+                for (uint i = 0; i <= gQuadProbeIt; i++)
                 {
                     int origValue;
                     InterlockedCompareExchange(gCausticHashBucket[bucketIdx].cell, 0, cellXY, origValue);
@@ -403,7 +407,7 @@ void rayGen()
             //Global photon
             else if(roulette)
             {
-                for (uint i = 0; i <= 10; i++)
+                for (uint i = 0; i <= gQuadProbeIt; i++)
                 {
                     int origValue = 1;
                     InterlockedCompareExchange(gGlobalHashBucket[bucketIdx].cell, 0, cellXY, origValue);
@@ -412,7 +416,7 @@ void rayGen()
                         InterlockedAdd(gGlobalHashBucket[bucketIdx].size, 1u, photonBucketIndex);
                         if (photonBucketIndex < NUM_PHOTONS_PER_BUCKET)
                         {
-                            photon.flux /= kRussianRoulette;
+                            photon.flux /= gGlobalRejection;
                             InterlockedAdd(gPhotonCounter[0].global, 1u, photonIndex);
                             photonIndex = min(photonIndex, kMaxPhotonIndexGLB);
                             gGlobalHashBucket[bucketIdx].photonIdx[photonBucketIndex] = photonIndex;

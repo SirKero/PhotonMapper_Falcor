@@ -155,6 +155,7 @@ private:
 
     uint                        mNumBucketBits = 18;                    ///< 2^NumBucketBits is the total amount of possible buckets
     uint                        mNumPhotonsPerBucket = 12;              ///< Max Photons per hash grid.
+    uint                        mQuadraticProbeIterations = 10;         ///< Number of quadartic probe iteratons per hash. 
 
     // Generate only
     uint                        mMaxBounces = 5;                        ///< Depth of recursion (0 = none).
@@ -180,6 +181,7 @@ private:
     std::vector<uint>           mPhotonCount = { 0,0 };
     bool                        mOptionsChanged = false;
     bool                        mResetCS = true;
+    bool                        mSetConstantBuffers = true;
     bool                        mResizePhotonBuffers = true;    ///< If true resize the Photon Buffers
     bool                        mPhotonInfoFormatChanged = false;         
     bool                        mRebuildAS = false;
@@ -196,7 +198,6 @@ private:
     uint mAnalyticEndIndex = 0;
     uint mNumLights = 0;
     float mAnalyticInvPdf = 0.0f;
-    float mEmissiveInvPdf = 0.0f;
 
     // Ray tracing program.
     struct RayTraceProgramHelper

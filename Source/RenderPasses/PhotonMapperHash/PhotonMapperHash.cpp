@@ -127,6 +127,7 @@ void PhotonMapperHash::execute(RenderContext* pRenderContext, const RenderData& 
         auto flags = dict.getValue(kRenderPassRefreshFlags, RenderPassRefreshFlags::None);
         dict[Falcor::kRenderPassRefreshFlags] = flags | Falcor::RenderPassRefreshFlags::RenderOptionsChanged;
         mResetIterations = true;
+        mSetConstantBuffers = true;
         mOptionsChanged = false;
     }
 
@@ -234,6 +235,9 @@ void PhotonMapperHash::execute(RenderContext* pRenderContext, const RenderData& 
         mGlobalRadius = std::max(mGlobalRadius, kMinPhotonRadius);
         mCausticRadius = std::max(mCausticRadius, kMinPhotonRadius);
     }
+
+    if (mSetConstantBuffers)
+        mSetConstantBuffers = false;
 }
 
 void PhotonMapperHash::generatePhotons(RenderContext* pRenderContext, const RenderData& renderData)
@@ -259,20 +263,13 @@ void PhotonMapperHash::generatePhotons(RenderContext* pRenderContext, const Rend
 
     // Specialize the Generate program.
     // These defines should not modify the program vars. Do not trigger program vars re-creation.
-    mTracerGenerate.pProgram->addDefine("MAX_RECURSION", std::to_string(mMaxBounces));
     mTracerGenerate.pProgram->addDefine("USE_ANALYTIC_LIGHTS", mpScene->useAnalyticLights() ? "1" : "0");
     mTracerGenerate.pProgram->addDefine("USE_EMISSIVE_LIGHTS", mpScene->useEmissiveLights() ? "1" : "0");
     mTracerGenerate.pProgram->addDefine("USE_ENV_LIGHT", mpScene->useEnvLight() ? "1" : "0");
     mTracerGenerate.pProgram->addDefine("USE_ENV_BACKGROUND", mpScene->useEnvBackground() ? "1" : "0");
     mTracerGenerate.pProgram->addDefine("MAX_PHOTON_INDEX_GLOBAL", std::to_string(mGlobalBuffers.maxSize));
     mTracerGenerate.pProgram->addDefine("MAX_PHOTON_INDEX_CAUSTIC", std::to_string(mCausticBuffers.maxSize));
-    mTracerGenerate.pProgram->addDefine("RUSSIAN_ROULETTE", std::to_string(mRussianRoulette));
-    mTracerGenerate.pProgram->addDefine("EMISSIVE_SCALE", std::to_string(mIntensityScalar));
-    mTracerGenerate.pProgram->addDefine("SPECULAR_ROUGNESS_CUTOFF", std::to_string(mSpecRoughCutoff));
-    mTracerGenerate.pProgram->addDefine("USE_ALPHA_TEST", mUseAlphaTest ? "1" : "0");
-    mTracerGenerate.pProgram->addDefine("ADJUST_SHADING_NORMALS", mAdjustShadingNormals ? "1" : "0");
     mTracerGenerate.pProgram->addDefine("ANALYTIC_INV_PDF", std::to_string(mAnalyticInvPdf));
-    mTracerGenerate.pProgram->addDefine("EMISSIVE_INV_PDF", std::to_string(mEmissiveInvPdf));
     mTracerGenerate.pProgram->addDefine("INFO_TEXTURE_HEIGHT", std::to_string(kInfoTexHeight));
     mTracerGenerate.pProgram->addDefine("NUM_PHOTONS_PER_BUCKET", std::to_string(mNumPhotonsPerBucket));
     mTracerGenerate.pProgram->addDefine("NUM_BUCKETS", std::to_string(mNumBuckets));
@@ -288,15 +285,31 @@ void PhotonMapperHash::generatePhotons(RenderContext* pRenderContext, const Rend
     //Calculate cell size depending on the radius
 
 
-    // Set constants.
+    // Set buffers
     auto var = mTracerGenerate.pVars->getRootVar();
-    var["CB"]["gFrameCount"] = mFrameCount;
-    var["CB"]["gCausticRadius"] = mCausticRadius;
-    var["CB"]["gGlobalRadius"] = mGlobalRadius;
-    var["CB"]["gPRNGDimension"] = dict.keyExists(kRenderPassPRNGDimension) ? dict[kRenderPassPRNGDimension] : 0u;
-    var["CB"]["gCausticHashScaleFactor"] = 1.f / mCausticRadius;
-    var["CB"]["gGlobalHashScaleFactor"] = 1.f / mGlobalRadius;
 
+    //PerFrame Constant Buffer
+    std::string nameBuf = "PerFrame";
+    var[nameBuf]["gFrameCount"] = mFrameCount;
+    var[nameBuf]["gCausticRadius"] = mCausticRadius;
+    var[nameBuf]["gGlobalRadius"] = mGlobalRadius;
+    var[nameBuf]["gCausticHashScaleFactor"] = 1.f / mCausticRadius;
+    var[nameBuf]["gGlobalHashScaleFactor"] = 1.f / mGlobalRadius;
+
+    //Constant Buffer is only set when options changed
+    if (mSetConstantBuffers) {
+        nameBuf = "CB";
+        var[nameBuf]["gPRNGDimension"] = dict.keyExists(kRenderPassPRNGDimension) ? dict[kRenderPassPRNGDimension] : 0u;
+        var[nameBuf]["gGlobalRejection"] = mRussianRoulette;
+        var[nameBuf]["gEmissiveScale"] = mIntensityScalar;
+        var[nameBuf]["gSpecRoughCutoff"] = mSpecRoughCutoff;
+
+        var[nameBuf]["gMaxRecursion"] = mMaxBounces;
+        var[nameBuf]["gSpecRoughCutoff"] = mUseAlphaTest;
+        var[nameBuf]["gSpecRoughCutoff"] = mAdjustShadingNormals;
+        var[nameBuf]["gQuadProbeIt"] = mQuadraticProbeIterations;
+    }
+    
     //set the buffers
     var["gCausticPos"] = mCausticBuffers.position;
     var["gCausticFlux"] = mCausticBuffers.infoFlux;
@@ -336,13 +349,7 @@ void PhotonMapperHash::collectPhotons(RenderContext* pRenderContext, const Rende
 
         Program::DefineList defines;
         defines.add(mpScene->getSceneDefines());
-        defines.add(mpSampleGenerator->getDefines());
 
-
-        defines.add("COLLECT_GLOBAL_PHOTONS", !mDisableGlobalCollection ? "1" : "0");
-        defines.add("COLLECT_CAUSTIC_PHOTONS", !mDisableCausticCollection ? "1" : "0");
-        defines.add("RAY_TMIN", std::to_string(kCollectTMin));
-        defines.add("RAY_TMAX", std::to_string(kCollectTMax));
         defines.add("INFO_TEXTURE_HEIGHT", std::to_string(kInfoTexHeight));
         defines.add("NUM_PHOTONS_PER_BUCKET", std::to_string(mNumPhotonsPerBucket));
         defines.add("NUM_BUCKETS", std::to_string(mNumBuckets));
@@ -354,15 +361,24 @@ void PhotonMapperHash::collectPhotons(RenderContext* pRenderContext, const Rende
 
     // Set constants.
     auto var = mpCSCollect->getRootVar();
+    //Set Scene data. Is needed for shading
     mpScene->setRaytracingShaderData(pRenderContext, var, 1);
-    mpSampleGenerator->setShaderData(var);
-    var["CB"]["gFrameCount"] = mFrameCount;
-    var["CB"]["gCausticRadius"] = mCausticRadius;
-    var["CB"]["gGlobalRadius"] = mGlobalRadius;
-    var["CB"]["gNoColorOutput"] = false;            //TODO: save as variable
-    var["CB"]["gEmissiveScale"] = mIntensityScalar;
-    var["CB"]["gCausticHashScaleFactor"] = 1.f / mCausticRadius;
-    var["CB"]["gGlobalHashScaleFactor"] = 1.f / mGlobalRadius;
+
+    std::string nameBuf = "PerFrame";
+    var[nameBuf]["gFrameCount"] = mFrameCount;
+    var[nameBuf]["gCausticRadius"] = mCausticRadius;
+    var[nameBuf]["gGlobalRadius"] = mGlobalRadius;
+    var[nameBuf]["gCausticHashScaleFactor"] = 1.f / mCausticRadius;
+    var[nameBuf]["gGlobalHashScaleFactor"] = 1.f / mGlobalRadius;
+
+    //Set constant buffer only if changes where made
+    if (mSetConstantBuffers) {
+        nameBuf = "CB";
+        var[nameBuf]["gEmissiveScale"] = mIntensityScalar;
+        var[nameBuf]["gCollectGlobalPhotons"] = !mDisableGlobalCollection;
+        var[nameBuf]["gCollectCausticPhotons"] = !mDisableCausticCollection;
+    }
+
 
     var["gGlobalHashBucket"] = mpGlobalBuckets;
     var["gCausticHashBucket"] = mpCausticBuckets;
@@ -465,7 +481,14 @@ void PhotonMapperHash::renderUI(Gui::Widgets& widget)
         dirty |= widget.checkbox("Adjust Shading Normals", mAdjustShadingNormals);
         widget.tooltip("Adjusts the shading normals in the Photon Generation");
     }
-    
+    //Hash Settings
+    if (auto group = widget.group("Hash Options")) {
+        dirty |= widget.var("Quadradic Probe Iterations", mQuadraticProbeIterations, 0u, 100u, 1u);
+        widget.tooltip("Max iterations that are used for quadratic probe");
+
+    }
+
+
     mPhotonInfoFormatChanged |= widget.dropdown("Photon Info size", kInfoTexDropdownList, mInfoTexFormat);
     widget.tooltip("Determines the resolution of each element of the photon info struct.");
 
@@ -473,11 +496,10 @@ void PhotonMapperHash::renderUI(Gui::Widgets& widget)
 
     //Disable Photon Collecion
     if (auto group = widget.group("Collect Options")) {
-        mResetCS |= widget.checkbox("Disable Global Photons", mDisableGlobalCollection);
+        dirty |= widget.checkbox("Disable Global Photons", mDisableGlobalCollection);
         widget.tooltip("Disables the collection of Global Photons. However they will still be generated");
-        mResetCS |= widget.checkbox("Disable Caustic Photons", mDisableCausticCollection);
+        dirty |= widget.checkbox("Disable Caustic Photons", mDisableCausticCollection);
         widget.tooltip("Disables the collection of Caustic Photons. However they will still be generated");
-        dirty |= mResetCS;
     }
     widget.dummy("", dummySpacing);
     //Reset Iterations
@@ -500,6 +522,7 @@ void PhotonMapperHash::setScene(RenderContext* pRenderContext, const Scene::Shar
     // After changing scene, the raytracing program should to be recreated.
     mTracerGenerate = RayTraceProgramHelper::create();
     mpCSCollect.reset();
+    mSetConstantBuffers = true;
     
     // Set new scene.
     mpScene = pScene;
@@ -610,11 +633,7 @@ void PhotonMapperHash::createLightSampleTexture(RenderContext* pRenderContext)
     //calculate the pdf for analytic and emissive light
     if (analyticPhotons > 0 && analyticLights.size() > 0) {
         mAnalyticInvPdf = (static_cast<float>(totalNumPhotons) * static_cast<float>(analyticLights.size())) / static_cast<float>(analyticPhotons);
-    }
-    if (numEmissivePhotons > 0 && lightCollection->getActiveLightCount()) {
-        mEmissiveInvPdf = (static_cast<float>(totalNumPhotons) * lightCollection->getActiveLightCount()) / static_cast<float>(numEmissivePhotons);
-    }
-   
+    }   
 
     const uint blockSize = 16;
     const uint blockSizeSq = blockSize * blockSize;
