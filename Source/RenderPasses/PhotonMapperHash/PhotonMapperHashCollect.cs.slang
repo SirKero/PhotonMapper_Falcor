@@ -112,7 +112,7 @@ float3 photonContribution(in ShadingData sd, uint photonIndex , bool isCaustic)
     }
     else
     {
-        photonPos = gCausticPos[photonIndex2D].xyz;
+        photonPos = gGlobalPos[photonIndex2D].xyz;
         photon.flux = gGlobalFlux[photonIndex2D].xyz;
         photon.dir = gGlobalDir[photonIndex2D].xyz;
     }
