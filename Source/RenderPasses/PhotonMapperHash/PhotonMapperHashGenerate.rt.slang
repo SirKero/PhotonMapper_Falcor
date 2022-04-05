@@ -181,7 +181,9 @@ uint hash(int3 cell)
     cells = cell.y;
     cells &= 0xFFFFFFFF;
     key |= cells << 32;
-    key |= cell.z << 16;
+    cells = cell.z;
+    cells &= 0xFFFFFFFF;
+    key |= cells << 16;
 
     key = (~key) + (key << 18);
     key = key ^ (key >> 31);
@@ -428,7 +430,7 @@ void rayGen()
                 {
                     int origValue = 1;
                     InterlockedCompareExchange(gGlobalHashBucket[bucketIdx].cell, 0, cellXY, origValue);
-                    if (gGlobalHashBucket[bucketIdx].cell == cellXY)
+                    if (origValue == 0 || origValue == cellXY)
                     {
                         InterlockedAdd(gGlobalHashBucket[bucketIdx].size, 1u, photonBucketIndex);
                         if (photonBucketIndex < NUM_PHOTONS_PER_BUCKET)

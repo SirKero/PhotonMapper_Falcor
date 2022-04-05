@@ -83,7 +83,9 @@ uint hash(int3 cell)
     cells = cell.y;
     cells &= 0xFFFFFFFF;
     key |= cells << 32;
-    key |= cell.z << 16;
+    cells = cell.z;
+    cells &= 0xFFFFFFFF;
+    key |= cells << 16;
 
     key = (~key) + (key << 18);
     key = key ^ (key >> 31);
@@ -136,8 +138,10 @@ float3 photonContribution(in ShadingData sd, uint photonIndex , bool isCaustic)
     }
 
     //Radius test
+    /*
     if (!hitSphere(photonPos, radius, sd.posW))
         return float3(0);
+    */
     
     let lod = ExplicitLodTextureSampler(0.f);
     let bsdf = gScene.materials.getBSDF(sd, lod);
@@ -152,8 +156,8 @@ float3 collectPhotons(in HitInfo hitInfo, in float3 dirVec,bool isCaustic)
     float3 radiance = float3(0);
     let lod = ExplicitLodTextureSampler(0.f);
     ShadingData sd = loadShadingData(hitInfo, dirVec, lod);
-    float radius = gCausticRadius;
-    float scale = gCausticHashScaleFactor;
+    float radius = isCaustic ? gCausticRadius : gGlobalRadius;
+    float scale = isCaustic ? gCausticHashScaleFactor : gGlobalHashScaleFactor;
     int3 gridCenter = int3(floor(sd.posW * scale));
     int gridRadius = int(ceil(radius * scale));
     //Loop over whole hash grid
@@ -172,6 +176,8 @@ float3 collectPhotons(in HitInfo hitInfo, in float3 dirVec,bool isCaustic)
                     int bucketSize = isCaustic ? gCausticHashBucket[b].size : gGlobalHashBucket[b].size;
                     int bucketCell = isCaustic ? gCausticHashBucket[b].cell : gGlobalHashBucket[b].cell;
                     int cellXY = (x << 16) | (y & 0xFFFFFFFF);
+                    if (cellXY == 0)
+                        cellXY = 0xFFFFFFFFFFFFFFFF; //avoid zero cell index
                     //int cellXY = x;
                     //Stop on empty bucket
                     if (bucketSize == 0)
@@ -212,7 +218,14 @@ void main(uint2 DTid : SV_DispatchThreadID, uint2 Gid : SV_GroupID, uint2 GTid :
     const HitInfo hit = HitInfo(packedHitInfo);
     bool valid = hit.isValid(); //Check if the ray is valid
     float3 radiance = float3(0);
-    
+
+
+    if (kCollectGlobalPhotons && valid)
+    {
+        float3 globalRadiance = collectPhotons(hit, viewVec, false);
+        float w = 1 / (M_PI * gGlobalRadius * gGlobalRadius); //make this a constant
+        radiance += w * globalRadiance;
+    }
     
     if (kCollectCausticPhotons && valid)
     {
@@ -222,12 +235,7 @@ void main(uint2 DTid : SV_DispatchThreadID, uint2 Gid : SV_GroupID, uint2 GTid :
     }
     
         
-    if (kCollectGlobalPhotons && valid)
-    {
-        float3 globalRadiance = collectPhotons(hit, viewVec, false);
-        float w = 1 / (M_PI * gGlobalRadius * gGlobalRadius); //make this a constant
-        radiance += w * globalRadiance;
-    }
+    
     
     
     radiance *= thpMatID.xyz;   //Add throughput for path
