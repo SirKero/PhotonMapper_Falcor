@@ -11,4 +11,7 @@
     <ShaderSource Include="PhotonMapperHashGenerate.rt.slang" />
     <ShaderSource Include="PhotonMapperHashCollect.cs.slang" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="PhotonMapperHashFunctions.slang" />
+  </ItemGroup>
 </Project>

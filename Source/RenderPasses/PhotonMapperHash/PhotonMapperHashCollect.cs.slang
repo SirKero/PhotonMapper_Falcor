@@ -8,6 +8,7 @@ import Utils.Sampling.SampleGenerator;
 import Rendering.Materials.StandardMaterial;
 import Rendering.Lights.LightHelpers;
 
+import PhotonMapperHashFunctions;
 
 cbuffer CB
 {
@@ -73,28 +74,7 @@ static const uint kNumBuckets = NUM_BUCKETS; //Total number of buckets in 2^x
 static const float kRayTMin = RAY_TMIN;
 static const float kRayTMax = RAY_TMAX;
 
-uint hash(int3 cell)
-{
-    //convert to uint64
-    uint64_t key = 0;
-    uint64_t cells = cell.x;
-    cells &= 0xFFFFFFFF;
-    key |= cells << 48;
-    cells = cell.y;
-    cells &= 0xFFFFFFFF;
-    key |= cells << 32;
-    cells = cell.z;
-    cells &= 0xFFFFFFFF;
-    key |= cells << 16;
 
-    key = (~key) + (key << 18);
-    key = key ^ (key >> 31);
-    key *= 21;
-    key = key ^ (key >> 11);
-    key = key + (key << 6);
-    uint res = uint(key) ^ uint(key >> 22);
-    return res;
-}
 
 //Checks if the ray start point is inside the sphere. 0 is returned if it is not in sphere and 1 if it is
 bool hitSphere(const float3 center, const float radius, const float3 p)
@@ -138,10 +118,10 @@ float3 photonContribution(in ShadingData sd, uint photonIndex , bool isCaustic)
     }
 
     //Radius test
-    /*
+    
     if (!hitSphere(photonPos, radius, sd.posW))
         return float3(0);
-    */
+    
     
     let lod = ExplicitLodTextureSampler(0.f);
     let bsdf = gScene.materials.getBSDF(sd, lod);

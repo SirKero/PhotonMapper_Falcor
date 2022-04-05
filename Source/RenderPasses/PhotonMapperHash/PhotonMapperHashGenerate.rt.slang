@@ -9,6 +9,7 @@ import Scene.Material.ShadingUtils;
 import Rendering.Lights.LightHelpers;
 import Utils.Color.ColorHelpers;
 
+import PhotonMapperHashFunctions;
 
 cbuffer CB
 {
@@ -170,30 +171,6 @@ AABB calcPhotonAABB(in float3 center, in float radius)
     AABB aabb = AABB(center - radius, center + radius);
     return aabb;
 }
-
-uint hash(int3 cell)
-{
-    //convert to uint64
-    uint64_t key = 0;
-    uint64_t cells = cell.x;
-    cells &= 0xFFFFFFFF;
-    key |= cells << 48;
-    cells = cell.y;
-    cells &= 0xFFFFFFFF;
-    key |= cells << 32;
-    cells = cell.z;
-    cells &= 0xFFFFFFFF;
-    key |= cells << 16;
-
-    key = (~key) + (key << 18);
-    key = key ^ (key >> 31);
-    key *= 21;
-    key = key ^ (key >> 11);
-    key = key + (key << 6);
-    uint res = uint(key) ^ uint(key >> 22);
-    return res;
-}
-
 
 [shader("miss")]
 void miss(inout RayData rayData : SV_RayPayload)

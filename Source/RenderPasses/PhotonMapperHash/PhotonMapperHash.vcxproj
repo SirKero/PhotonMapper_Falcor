@@ -40,6 +40,9 @@
     <ShaderSource Include="PhotonMapperHashCollect.rt.slang" />
     <ShaderSource Include="PhotonMapperHashGenerate.rt.slang" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="PhotonMapperHashFunctions.slang" />
+  </ItemGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
