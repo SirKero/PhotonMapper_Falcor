@@ -155,9 +155,9 @@ float3 collectPhotons(in HitInfo hitInfo, in float3 dirVec,bool isCaustic)
                 {
                     int bucketSize = isCaustic ? gCausticHashBucket[b].size : gGlobalHashBucket[b].size;
                     int bucketCell = isCaustic ? gCausticHashBucket[b].cell : gGlobalHashBucket[b].cell;
-                    int cellXY = (x << 16) | (y & 0xFFFFFFFF);
+                    int cellXY = (x << 16) | (y & 0xFFFF);
                     if (cellXY == 0)
-                        cellXY = 0xFFFFFFFFFFFFFFFF; //avoid zero cell index
+                        cellXY = 0xFFFFFFFF; //avoid zero cell index
                     //int cellXY = x;
                     //Stop on empty bucket
                     if (bucketSize == 0)

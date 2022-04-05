@@ -366,10 +366,10 @@ void rayGen()
             uint bucketIdx = hash(cell) & (kNumBuckets - 1);
             uint d = 0;
             
-            int cellXY = (cell.x << 16) | (cell.y & 0xFFFFFFFF);
+            int cellXY = (cell.x << 16) | (cell.y & 0xFFFF);
             //int cellXY = cell.x;
             if (cellXY == 0)
-                cellXY = 0xFFFFFFFFFFFFFFFF;    //avoid zero cell index
+                cellXY = 0xFFFFFFFF;    //avoid zero cell index
             //Compair exchange für 1 hash und dann xy coord. 
             //caustic photon
             if (wasReflectedSpecular)
