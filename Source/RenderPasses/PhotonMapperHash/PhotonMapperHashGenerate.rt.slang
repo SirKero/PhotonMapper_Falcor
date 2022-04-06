@@ -378,7 +378,7 @@ void rayGen()
             //caustic photon
             if (wasReflectedSpecular)
             {
-                
+                InterlockedAdd(gPhotonCounter[0].caustic, 1u, photonIndex);
                 for (uint i = 0; i <= gQuadProbeIt; i++)
                 {
                     int origValue;
@@ -388,7 +388,7 @@ void rayGen()
                         InterlockedAdd(gCausticHashBucket[bucketIdx].size, 1u, photonBucketIndex);
                         if (photonBucketIndex < NUM_PHOTONS_PER_BUCKET)
                         {
-                            InterlockedAdd(gPhotonCounter[0].caustic, 1u, photonIndex);
+                            //InterlockedAdd(gPhotonCounter[0].caustic, 1u, photonIndex);
                             photonIndex = min(photonIndex, kMaxPhotonIndexCAU);
                             gCausticHashBucket[bucketIdx].photonIdx[photonBucketIndex] = photonIndex;
                             if (bucketIdx == 0)

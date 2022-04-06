@@ -212,6 +212,7 @@ void PhotonMapperHash::execute(RenderContext* pRenderContext, const RenderData& 
 
     if (mResetCS) {
         mpCSCollect.reset();
+        prepareHashBuffer();
         mResetCS = false;
     }
 
@@ -377,6 +378,7 @@ void PhotonMapperHash::collectPhotons(RenderContext* pRenderContext, const Rende
         var[nameBuf]["gEmissiveScale"] = mIntensityScalar;
         var[nameBuf]["gCollectGlobalPhotons"] = !mDisableGlobalCollection;
         var[nameBuf]["gCollectCausticPhotons"] = !mDisableCausticCollection;
+        var[nameBuf]["gQuadProbeIt"] = mQuadraticProbeIterations;
     }
 
 
@@ -485,7 +487,12 @@ void PhotonMapperHash::renderUI(Gui::Widgets& widget)
     if (auto group = widget.group("Hash Options")) {
         dirty |= widget.var("Quadradic Probe Iterations", mQuadraticProbeIterations, 0u, 100u, 1u);
         widget.tooltip("Max iterations that are used for quadratic probe");
+        mResetCS |= widget.slider("Num Photons per bucket", mNumPhotonsPerBucket, 2u, 32u);
+        widget.tooltip("Max number of photons that can be saved in a hash grid");
+        mResetCS |= widget.slider("Bucket size (bits)", mNumBucketBits, 2u, 32u);
+        widget.tooltip("Bucket size in 2^x. One bucket takes 16Byte + Num photons per bucket * 4 Byte");
 
+        dirty |= mResetCS;
     }
 
 

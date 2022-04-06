@@ -1,5 +1,3 @@
-
-
 uint hash(int3 cell)
 {
     //convert to uint64
