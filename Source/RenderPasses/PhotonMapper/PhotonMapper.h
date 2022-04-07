@@ -183,6 +183,7 @@ private:
     uint                        mFrameCount = 0;            ///< Frame count since last Reset
     std::vector<uint>           mPhotonCount = { 0,0 };
     bool                        mOptionsChanged = false;
+    bool                        mResetConstantBuffers = true;
     bool                        mResizePhotonBuffers = true;    ///< If true resize the Photon Buffers
     bool                        mPhotonInfoFormatChanged = false;         
     bool                        mRebuildAS = false;

@@ -127,6 +127,7 @@ void PhotonMapper::execute(RenderContext* pRenderContext, const RenderData& rend
         auto flags = dict.getValue(kRenderPassRefreshFlags, RenderPassRefreshFlags::None);
         dict[Falcor::kRenderPassRefreshFlags] = flags | Falcor::RenderPassRefreshFlags::RenderOptionsChanged;
         mResetIterations = true;
+        mResetConstantBuffers = true;
         mOptionsChanged = false;
     }
 
@@ -237,6 +238,8 @@ void PhotonMapper::execute(RenderContext* pRenderContext, const RenderData& rend
         mGlobalRadius = std::max(mGlobalRadius, kMinPhotonRadius);
         mCausticRadius = std::max(mCausticRadius, kMinPhotonRadius);
     }
+
+    if (mResetConstantBuffers) mResetConstantBuffers = false;
 }
 
 void PhotonMapper::generatePhotons(RenderContext* pRenderContext, const RenderData& renderData)
@@ -260,20 +263,12 @@ void PhotonMapper::generatePhotons(RenderContext* pRenderContext, const RenderDa
 
     // Specialize the Generate program.
     // These defines should not modify the program vars. Do not trigger program vars re-creation.
-    mTracerGenerate.pProgram->addDefine("MAX_RECURSION", std::to_string(mMaxBounces));
     mTracerGenerate.pProgram->addDefine("USE_ANALYTIC_LIGHTS", mpScene->useAnalyticLights() ? "1" : "0");
     mTracerGenerate.pProgram->addDefine("USE_EMISSIVE_LIGHTS", mpScene->useEmissiveLights() ? "1" : "0");
     mTracerGenerate.pProgram->addDefine("USE_ENV_LIGHT", mpScene->useEnvLight() ? "1" : "0");
     mTracerGenerate.pProgram->addDefine("USE_ENV_BACKGROUND", mpScene->useEnvBackground() ? "1" : "0");
     mTracerGenerate.pProgram->addDefine("MAX_PHOTON_INDEX_GLOBAL", std::to_string(mGlobalBuffers.maxSize));
     mTracerGenerate.pProgram->addDefine("MAX_PHOTON_INDEX_CAUSTIC", std::to_string(mCausticBuffers.maxSize));
-    mTracerGenerate.pProgram->addDefine("RUSSIAN_ROULETTE", std::to_string(mRussianRoulette));
-    mTracerGenerate.pProgram->addDefine("EMISSIVE_SCALE", std::to_string(mIntensityScalar));
-    mTracerGenerate.pProgram->addDefine("SPECULAR_ROUGNESS_CUTOFF", std::to_string(mSpecRoughCutoff));
-    mTracerGenerate.pProgram->addDefine("USE_ALPHA_TEST", mUseAlphaTest ? "1" : "0");
-    mTracerGenerate.pProgram->addDefine("ADJUST_SHADING_NORMALS", mAdjustShadingNormals ? "1" : "0");
-    mTracerGenerate.pProgram->addDefine("ANALYTIC_INV_PDF", std::to_string(mAnalyticInvPdf));
-    mTracerGenerate.pProgram->addDefine("EMISSIVE_INV_PDF", std::to_string(mEmissiveInvPdf));
     mTracerGenerate.pProgram->addDefine("INFO_TEXTURE_HEIGHT", std::to_string(kInfoTexHeight));
 
     // Prepare program vars. This may trigger shader compilation.
@@ -286,11 +281,25 @@ void PhotonMapper::generatePhotons(RenderContext* pRenderContext, const RenderDa
 
     // Set constants.
     auto var = mTracerGenerate.pVars->getRootVar();
-    var["CB"]["gFrameCount"] = mFrameCount;
-    var["CB"]["gCausticRadius"] = mCausticRadius;
-    var["CB"]["gGlobalRadius"] = mGlobalRadius;
-    var["CB"]["gPRNGDimension"] = dict.keyExists(kRenderPassPRNGDimension) ? dict[kRenderPassPRNGDimension] : 0u;
-        
+    //PerFrame Constant Buffer
+    std::string nameBuf = "PerFrame";
+    var[nameBuf]["gFrameCount"] = mFrameCount;
+    var[nameBuf]["gCausticRadius"] = mCausticRadius;
+    var[nameBuf]["gGlobalRadius"] = mGlobalRadius;
+    
+
+    //Upload constant buffer only if options changed
+    if (mResetConstantBuffers) {
+        nameBuf = "CB";
+        var[nameBuf]["gMaxRecursion"] = mMaxBounces;
+        var[nameBuf]["gPRNGDimension"] = dict.keyExists(kRenderPassPRNGDimension) ? dict[kRenderPassPRNGDimension] : 0u;
+        var[nameBuf]["gGlobalRejection"] = mRussianRoulette;
+        var[nameBuf]["gEmissiveScale"] = mIntensityScalar;
+        var[nameBuf]["gSpecRoughCutoff"] = mSpecRoughCutoff;
+        var[nameBuf]["gAnalyticInvPdf"] = mAnalyticInvPdf;
+        var[nameBuf]["gAdjustShadingNormals"] = mAdjustShadingNormals;
+        var[nameBuf]["gUseAlphaTest"] = mUseAlphaTest;
+    }
 
     //set the buffers
     // [] operator of var is strangely overloaded, so it needs a uint variable value
@@ -326,8 +335,6 @@ void PhotonMapper::collectPhotons(RenderContext* pRenderContext, const RenderDat
     mTracerCollect.pProgram->addDefines(getValidResourceDefines(kInputChannels, renderData));
     mTracerCollect.pProgram->addDefines(getValidResourceDefines(kOutputChannels, renderData));
 
-    mTracerCollect.pProgram->addDefine("COLLECT_GLOBAL_PHOTONS", !mDisableGlobalCollection ? "1" : "0");
-    mTracerCollect.pProgram->addDefine("COLLECT_CAUSTIC_PHOTONS", !mDisableCausticCollection ? "1" : "0");
     mTracerCollect.pProgram->addDefine("RAY_TMIN", std::to_string(kCollectTMin));
     mTracerCollect.pProgram->addDefine("RAY_TMAX", std::to_string(kCollectTMax));
     mTracerCollect.pProgram->addDefine("INFO_TEXTURE_HEIGHT", std::to_string(kInfoTexHeight));
@@ -347,11 +354,18 @@ void PhotonMapper::collectPhotons(RenderContext* pRenderContext, const RenderDat
 
     // Set constants.
     auto var = mTracerCollect.pVars->getRootVar();
-    var["CB"]["gFrameCount"] = mFrameCount;
-    var["CB"]["gCausticRadius"] = mCausticRadius;
-    var["CB"]["gGlobalRadius"] = mGlobalRadius;
-    var["CB"]["gNoColorOutput"] = false;            //TODO: save as variable
-    var["CB"]["gEmissiveScale"] = mIntensityScalar;
+    std::string nameBuf = "PerFrame";
+    var[nameBuf]["gFrameCount"] = mFrameCount;
+    var[nameBuf]["gCausticRadius"] = mCausticRadius;
+    var[nameBuf]["gGlobalRadius"] = mGlobalRadius;
+    
+
+    if (mResetConstantBuffers) {
+        nameBuf = "CB";
+        var[nameBuf]["gEmissiveScale"] = mIntensityScalar;
+        var[nameBuf]["gCollectGlobalPhotons"] = !mDisableGlobalCollection;
+        var[nameBuf]["gCollectCausticPhotons"] = !mDisableCausticCollection;
+    }
 
     //set the buffers
 
@@ -884,7 +898,7 @@ void PhotonMapper::createAccelerationStructure(RenderContext* pContext, const st
 
 }
 void PhotonMapper::createTopLevelAS(RenderContext* pContext, bool rebuild) {
-    //TODO:: Update instead of bilding new
+    //TODO:: Update instead of building new
 
     //fill the instance description if empty
     if (mPhotonInstanceDesc.empty() || rebuild) {

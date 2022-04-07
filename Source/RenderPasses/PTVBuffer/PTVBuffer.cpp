@@ -154,6 +154,7 @@ void PTVBuffer::execute(RenderContext* pRenderContext, const RenderData& renderD
         auto flags = dict.getValue(kRenderPassRefreshFlags, RenderPassRefreshFlags::None);
         dict[Falcor::kRenderPassRefreshFlags] = flags | Falcor::RenderPassRefreshFlags::RenderOptionsChanged;
         mOptionsChanged = false;
+        mResetConstantBuffers = true;
     }
 
     //Get VBuffer
@@ -192,11 +193,7 @@ void PTVBuffer::execute(RenderContext* pRenderContext, const RenderData& renderD
     // Specialize the program
     // These defines should not modify the program vars. Do not trigger program vars re-creation.
     mTracer.pProgram->addDefines(getValidResourceDefines(kExtraOutputChannels, renderData));    //Valid defines for extra channels
-    mTracer.pProgram->addDefine("MAX_RECURSION", std::to_string(mRecursionDepth));
-    mTracer.pProgram->addDefine("USE_ENV_BACKGROUND", mpScene->useEnvBackground() ? "1" : "0");
-    mTracer.pProgram->addDefine("ADJUST_SHADING_NORMALS", mAdjustShadingNormals ? "1" : "0");
     mTracer.pProgram->addDefine("COMPUTE_DEPTH_OF_FIELD", mComputeDOF ? "1" : "0");
-    mTracer.pProgram->addDefine("USE_ALPHA_TEST", mUseAlphaTest ? "1" : "0");
     // Prepare program vars. This may trigger shader compilation.
     // The program should have all necessary defines set at this point.
 
@@ -205,9 +202,18 @@ void PTVBuffer::execute(RenderContext* pRenderContext, const RenderData& renderD
 
     // Set constants.
     auto var = mTracer.pVars->getRootVar();
-    var["CB"]["gFrameCount"] = mFrameCount;
-    var["CB"]["gSpecularRougnessCutoff"] = mSpecRoughCutoff;
-    var["CB"]["gEmissiveCutoff"] = mEmissiveCutoff;
+    std::string bufName = "PerFrame";
+    var[bufName]["gFrameCount"] = mFrameCount;
+
+    if (mResetConstantBuffers) {
+        bufName = "CB";
+        var[bufName]["gMaxRecursion"] = mRecursionDepth;
+        var[bufName]["gSpecularRougnessCutoff"] = mSpecRoughCutoff;
+        var[bufName]["gEmissiveCutoff"] = mEmissiveCutoff;
+        var[bufName]["gAdjustShadingNormals"] = mAdjustShadingNormals;
+        var[bufName]["gUseAlphaTest"] = mUseAlphaTest;
+    }
+   
 
     // Bind Output Textures. These needs to be done per-frame as the buffers may change anytime.
     auto bindAsTex = [&](const ChannelDesc& desc)
@@ -229,6 +235,7 @@ void PTVBuffer::execute(RenderContext* pRenderContext, const RenderData& renderD
     mpScene->raytrace(pRenderContext, mTracer.pProgram.get(), mTracer.pVars, uint3(mFrameDim, 1));
 
     mFrameCount++;
+    if (mResetConstantBuffers) mResetConstantBuffers = false;
 }
 
 void PTVBuffer::setScene(RenderContext* pRenderContext, const Scene::SharedPtr& pScene)

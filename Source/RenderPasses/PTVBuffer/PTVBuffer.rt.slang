@@ -10,12 +10,20 @@ import Rendering.Lights.LightHelpers;
 import Utils.Geometry.GeometryHelpers;
 
 
-cbuffer CB
+cbuffer PerFrame
 {
     uint gFrameCount; // Frame count since scene was loaded.
-    float gSpecularRougnessCutoff;  //cutoff for when a hit counts as diffuse
-    float gEmissiveCutoff;          //if a emissive material is over this value hit is counted as diffuse emissive
 }
+
+cbuffer CB
+{
+    uint gMaxRecursion;     //Maximum length a path can travel
+    float gSpecularRougnessCutoff; //cutoff for when a hit counts as diffuse
+    float gEmissiveCutoff; //if a emissive material is over this value hit is counted as diffuse emissive
+    bool gAdjustShadingNormals; //Adjusts the shading normals if activated
+
+    bool gUseAlphaTest;     //uses alpha test if activated
+};
 
 // Outputs
 RWTexture2D<PackedHitInfo> gVBuffer;
@@ -29,10 +37,6 @@ RWTexture2D<float4> gMotionVector;
 
 #define is_valid(name) (is_valid_##name != 0)
 
-static const uint kMaxRecursion = MAX_RECURSION;
-static const bool kUseEnvBackground = USE_ENV_BACKGROUND;
-static const bool kAdjustShadingNormals = ADJUST_SHADING_NORMALS;
-static const bool kUseAlphaTest = USE_ALPHA_TEST;
 static const bool kComputeDepthOfField = COMPUTE_DEPTH_OF_FIELD;
 
 /** Payload for scatter ray (64B).
@@ -94,7 +98,7 @@ void miss(inout ScatterRayData rayData : SV_RayPayload)
 [shader("anyhit")]
 void anyHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleIntersectionAttributes attribs : SV_IntersectionAttributes)
 {
-    if (kUseAlphaTest)
+    if (gUseAlphaTest)
     {
         // Alpha test for non-opaque geometry.
         GeometryInstanceID instanceID = getGeometryInstanceID();
@@ -116,7 +120,7 @@ void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleInt
     let lod = ExplicitLodTextureSampler(0.f);
     ShadingData sd = gScene.materials.prepareShadingData(v, materialID, -WorldRayDirection(), lod);
 
-    if (kAdjustShadingNormals)
+    if (gAdjustShadingNormals)
     {
         adjustShadingNormal(sd, v);
     }
@@ -173,7 +177,7 @@ void rayGen()
     uint rayFlags = 0;
     
     //Trace recursive
-    for (uint i = 0; i < kMaxRecursion; i++)
+    for (uint i = 0; i < gMaxRecursion; i++)
     {
         TraceRay(gScene.rtAccel, rayFlags, 0xff /* instanceInclusionMask */, 0 /* hitIdx */, rayTypeCount, 0 /* missIdx */, ray.toRayDesc(), rayData);
 

@@ -10,13 +10,26 @@ import Rendering.Lights.LightHelpers;
 import Utils.Color.ColorHelpers;
 
 
-cbuffer CB
+cbuffer PerFrame
 {
     uint        gFrameCount;        // Frame count since scene was loaded.
     float       gCausticRadius;     // Radius for the caustic photons
     float       gGlobalRadius;      // Radius for the global photons
-    uint        gPRNGDimension;     // First available PRNG dimension.
+   
 }
+
+cbuffer CB
+{
+    uint gMaxRecursion; //Max photon path length
+    uint gPRNGDimension; // First available PRNG dimension.
+    float gGlobalRejection; //Probability that a global photon is saved
+    float gEmissiveScale;   //A scale for emissive lights
+    
+    float gSpecRoughCutoff; //Cutoff for specular materials (are interpreted as diffuse if rougness is above this value)
+    float gAnalyticInvPdf;  //Pdf for analytic lights
+    bool gAdjustShadingNormals; //Adjusts shading normals
+    bool gUseAlphaTest; //Enables alpha test
+};
 
 // Inputs
 Texture2D<int> gLightSample;
@@ -42,7 +55,6 @@ RWStructuredBuffer<uint> gPhotonCounter; //idx 0 = caustic ; idx 1 = global
 
 // Static configuration based on defines set from the host.
 #define is_valid(name) (is_valid_##name != 0)
-static const uint kMaxRecursion = MAX_RECURSION;
 static const bool kUseAnalyticLights = USE_ANALYTIC_LIGHTS;
 static const bool kUseEmissiveLights = USE_EMISSIVE_LIGHTS;
 static const bool kUseEnvLight = USE_ENV_LIGHT;
@@ -51,19 +63,10 @@ static const float3 kDefaultBackgroundColor = float3(0, 0, 0);
 static const float kRayTMax = FLT_MAX;
 static const uint kMaxPhotonIndexGLB = MAX_PHOTON_INDEX_GLOBAL;
 static const uint kMaxPhotonIndexCAU = MAX_PHOTON_INDEX_CAUSTIC;
-static const float kRussianRoulette = RUSSIAN_ROULETTE;             // Probabilty that an global photon is saved
-static const float kEmissiveScale = EMISSIVE_SCALE;                 //scalar for the light intenity
-static const float kSpecRoughCutoff = SPECULAR_ROUGNESS_CUTOFF;     //If roughness value is over this, interpret the material as Diffuse
-static const bool kUseAlphaTest = USE_ALPHA_TEST;                   //Activate for alpha test
-static const bool kAdjustShadingNormals = ADJUST_SHADING_NORMALS;   //Adjust the shading normals
-static const float kAnalyticInvPdf = ANALYTIC_INV_PDF;              //Inverse analytic pdf 
-static const float kEmissiveInvPdf = EMISSIVE_INV_PDF;              //Inverse emissive pdf
 static const uint kInfoTexHeight = INFO_TEXTURE_HEIGHT;
 
 static const float k_2Pi = 6.28318530717958647692;
 static const float k_4Pi = 12.5663706143591729538;
-static const float Inv2Pi = 0.15915494309189533577;
-static const float Inv4Pi = 0.07957747154594766788;
 
 
 /** Payload for scatter ray (64B).
@@ -169,7 +172,7 @@ void closestHit(inout RayData rayData : SV_RayPayload, BuiltInTriangleIntersecti
     ShadingData sd = gScene.materials.prepareShadingData(v, materialID, -WorldRayDirection(), lod);
 
     //Adjust shading normals if desired
-    if (kAdjustShadingNormals)
+    if (gAdjustShadingNormals)
     {
         adjustShadingNormal(sd, v);
     }
@@ -187,7 +190,7 @@ void closestHit(inout RayData rayData : SV_RayPayload, BuiltInTriangleIntersecti
     rayData.origin = rayOrigin;
     rayData.thp *= valid ? bsdfSample.weight : float3(0);
     rayData.direction = bsdfSample.wo;
-    rayData.diffuseHit = bsdfSample.isLobe(LobeType::Diffuse) || (bsdfSample.isLobe(LobeType::Reflection) && (bsdfProperties.roughness > kSpecRoughCutoff));
+    rayData.diffuseHit = bsdfSample.isLobe(LobeType::Diffuse) || (bsdfSample.isLobe(LobeType::Reflection) && (bsdfProperties.roughness > gSpecRoughCutoff));
     //rayData.cosTheta = abs(dot(sd.N, rayData.direction));
     
     //if throughput is 0, return
@@ -199,7 +202,7 @@ void closestHit(inout RayData rayData : SV_RayPayload, BuiltInTriangleIntersecti
 [shader("anyhit")]
 void anyHit(inout RayData rayData : SV_RayPayload, BuiltInTriangleIntersectionAttributes attribs : SV_IntersectionAttributes)
 {
-    if (kUseAlphaTest)
+    if (gUseAlphaTest)
     {
         // Alpha test for non-opaque geometry.
         GeometryInstanceID instanceID = getGeometryInstanceID();
@@ -241,7 +244,7 @@ void rayGen()
         lightIndex *= -1;           //Swap sign if analytic    
     lightIndex -= 1;                //Change index from 1->N to 0->(N-1)
 
-    float invPdf = kAnalyticInvPdf; //Set to analytic pdf by default. If Emissive it is set later
+    float invPdf = gAnalyticInvPdf; //Set to analytic pdf by default. If Emissive it is set later
     float3 lightPos = float3(0);
     float3 lightDir = float3(0, 1, 0);
     float3 lightIntensity = float3(0);
@@ -284,7 +287,7 @@ void rayGen()
         //Evaluate Emitted radiance
         float2 uv = emiTri.getTexCoord(barycentrics);
         lightIntensity = gScene.materials.evalEmissive(emiTri.materialID, uv);
-        lightIntensity *= kEmissiveScale;
+        lightIntensity *= gEmissiveScale;
         type = 1;
     }
     
@@ -316,7 +319,7 @@ void rayGen()
     bool reflectedDiffuse = false;
         
     //recursion where the photons are shot
-    for (uint i = 0; i < kMaxRecursion && !rayData.terminated; i++)
+    for (uint i = 0; i < gMaxRecursion && !rayData.terminated; i++)
     {
         photon.flux = lightFlux * rayData.thp;
         TraceRay(gScene.rtAccel, rayFlags, 0xff /* instanceInclusionMask */, 0 /* hitIdx */, rayTypeCount, 0 /* missIdx */, ray, rayData);
@@ -331,7 +334,7 @@ void rayGen()
 
         //rejection
         float rndRoulette = sampleNext1D(rayData.sg);
-        bool roulette = rndRoulette <= kRussianRoulette;
+        bool roulette = rndRoulette <= gGlobalRejection;
         
         //save photon        
         if (reflectedDiffuse)
@@ -339,7 +342,7 @@ void rayGen()
             uint photonIndex = 0;
             float radius = wasReflectedSpecular ? gCausticRadius : gGlobalRadius;
             uint insertIndex = wasReflectedSpecular ? 0 : 1;    // 0 is caustic, 1 is global
-            photon.flux = wasReflectedSpecular ? photon.flux : photon.flux/kRussianRoulette; //divide by rejection value if global map
+            photon.flux = wasReflectedSpecular ? photon.flux : photon.flux / gGlobalRejection; //divide by rejection value if global map
             AABB photonAABB = calcPhotonAABB(photonPos, radius);
             if (roulette || wasReflectedSpecular)
             {

@@ -10,14 +10,19 @@ import Rendering.Materials.StandardMaterial;
 import Rendering.Lights.LightHelpers;
 
 
-cbuffer CB
+cbuffer PerFrame
 {
     uint gFrameCount;       // Frame count since scene was loaded.
     float gCausticRadius;   // Radius for the caustic photons
     float gGlobalRadius;    // Radius for the global photons
-    bool gNoColorOutput;    // Skips light calculation if activated and outputs 1 on all channels
-    float gEmissiveScale;   // Scale for the emissive part
 }
+
+cbuffer CB
+{
+    float gEmissiveScale; // Scale for the emissive part
+    bool gCollectGlobalPhotons;
+    bool gCollectCausticPhotons;
+};
 
 // Inputs
 Texture2D<PackedHitInfo> gVBuffer;
@@ -54,8 +59,6 @@ StructuredBuffer<AABB> gGlobalAABB;
 // Static configuration based on defines set from the host.
 static const float3 kDefaultBackgroundColor = float3(0, 0, 0);
 
-static const bool kCollectGlobalPhotons = COLLECT_GLOBAL_PHOTONS;
-static const bool kCollectCausticPhotons = COLLECT_CAUSTIC_PHOTONS;
 static const uint kInfoTexHeight = INFO_TEXTURE_HEIGHT;
 
 static const float kRayTMin = RAY_TMIN;
@@ -119,14 +122,7 @@ void closestHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : S
 
 [shader("anyhit")]
 void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_IntersectionAttributes)
-{
-    //debug white output
-    if (gNoColorOutput)
-    {
-        rayData.radiance = float3(1);
-        return;
-    }
-    
+{    
     const uint primIndex = PrimitiveIndex();
     const uint2 primIndex2D = uint2(primIndex / kInfoTexHeight, primIndex % kInfoTexHeight);
     //get caustic or global photon
@@ -229,7 +225,7 @@ void rayGen()
     float3 radiance = float3(0);
     
     //It is faster to trace two times in the different instance mask becaus of divergence
-    if (kCollectCausticPhotons && valid)
+    if (gCollectCausticPhotons && valid)
     {
         TraceRay(gPhotonAS, rayFlags, 1 /* instanceInclusionMask */, 0 /* hitIdx */, 0 /* rayType count */, 0 /* missIdx */, ray, rayData);
         float w = 1 / (M_PI * gCausticRadius * gCausticRadius); //make this a constant
@@ -237,7 +233,7 @@ void rayGen()
         rayData.radiance = 0.0;
     }
         
-    if (kCollectGlobalPhotons && valid)
+    if (gCollectGlobalPhotons && valid)
     {
         TraceRay(gPhotonAS, rayFlags, 2 /* instanceInclusionMask */, 0 /* hitIdx */, 0 /* rayType count */, 0 /* missIdx */, ray, rayData);
         float w = 1 / (M_PI * gGlobalRadius * gGlobalRadius); //make this a constant

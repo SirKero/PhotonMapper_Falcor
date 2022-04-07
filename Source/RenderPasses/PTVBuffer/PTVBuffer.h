@@ -106,6 +106,7 @@ private:
      // Runtime data
     uint                        mFrameCount = 0;            ///< Frame count since last Reset
     bool                        mOptionsChanged = false;
+    bool                        mResetConstantBuffers = true;
     bool                        mJitterGenChanged = false;
     uint2                       mFrameDim = { 0,0 };
 
