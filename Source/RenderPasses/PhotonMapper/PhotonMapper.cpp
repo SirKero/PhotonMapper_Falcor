@@ -293,13 +293,14 @@ void PhotonMapper::generatePhotons(RenderContext* pRenderContext, const RenderDa
         
 
     //set the buffers
-
-    var["gCausticAABB"] = mCausticBuffers.aabb;
-    var["gCausticFlux"] = mCausticBuffers.infoFlux;
-    var["gCausticDir"] = mCausticBuffers.infoDir;
-    var["gGlobalAABB"] = mGlobalBuffers.aabb;
-    var["gGlobalFlux"] = mGlobalBuffers.infoFlux;
-    var["gGlobalDir"] = mGlobalBuffers.infoDir;
+    // [] operator of var is strangely overloaded, so it needs a uint variable value
+    for (uint32_t i = 0; i <= 1; i++)
+    {
+        var["gPhotonAABB"][i] = i == 0 ? mCausticBuffers.aabb : mGlobalBuffers.aabb;
+        var["gPhotonFlux"][i] = i == 0 ? mCausticBuffers.infoFlux : mGlobalBuffers.infoFlux;
+        var["gPhotonDir"][i] = i == 0 ? mCausticBuffers.infoDir : mGlobalBuffers.infoDir;
+    }
+    
     var["gRndSeedBuffer"] = mRandNumSeedBuffer;
 
     var["gPhotonCounter"] = mPhotonCounterBuffer.counter;

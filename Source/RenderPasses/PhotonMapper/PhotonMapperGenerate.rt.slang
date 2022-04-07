@@ -32,21 +32,13 @@ struct PhotonInfo {
 
  //Internal Buffer Structs
 
-RWTexture2D<float4> gCausticFlux;
-RWTexture2D<float4> gCausticDir;
-RWTexture2D<float4> gGlobalFlux;
-RWTexture2D<float4> gGlobalDir;
-RWStructuredBuffer<AABB> gCausticAABB;
-RWStructuredBuffer<AABB> gGlobalAABB;
+RWTexture2D<float4> gPhotonFlux[2];
+RWTexture2D<float4> gPhotonDir[2];
+RWStructuredBuffer<AABB> gPhotonAABB[2];
 
 Texture2D<uint> gRndSeedBuffer;
 
-struct PhotonCounter
-{
-    uint caustic;
-    uint global;
-};
-RWStructuredBuffer<PhotonCounter> gPhotonCounter;
+RWStructuredBuffer<uint> gPhotonCounter; //idx 0 = caustic ; idx 1 = global
 
 // Static configuration based on defines set from the host.
 #define is_valid(name) (is_valid_##name != 0)
@@ -346,27 +338,17 @@ void rayGen()
         {
             uint photonIndex = 0;
             float radius = wasReflectedSpecular ? gCausticRadius : gGlobalRadius;
+            uint insertIndex = wasReflectedSpecular ? 0 : 1;    // 0 is caustic, 1 is global
+            photon.flux = wasReflectedSpecular ? photon.flux : photon.flux/kRussianRoulette; //divide by rejection value if global map
             AABB photonAABB = calcPhotonAABB(photonPos, radius);
-            //caustic photon
-            if (wasReflectedSpecular)
+            if (roulette || wasReflectedSpecular)
             {
-                InterlockedAdd(gPhotonCounter[0].caustic, 1u, photonIndex);
-                photonIndex = min(photonIndex, kMaxPhotonIndexCAU);
+                InterlockedAdd(gPhotonCounter[insertIndex], 1u, photonIndex);
+                photonIndex = min(photonIndex, wasReflectedSpecular ? kMaxPhotonIndexCAU : kMaxPhotonIndexGLB);
                 uint2 photonIndex2D = uint2(photonIndex / kInfoTexHeight, photonIndex % kInfoTexHeight);
-                gCausticFlux[photonIndex2D] = float4(photon.flux, 1);
-                gCausticDir[photonIndex2D] = float4(photon.dir, 1);
-                gCausticAABB[photonIndex] = photonAABB;
-            }
-            //Global photon
-            else if(roulette)
-            {
-                photon.flux /= kRussianRoulette;
-                InterlockedAdd(gPhotonCounter[0].global, 1u, photonIndex);
-                photonIndex = min(photonIndex, kMaxPhotonIndexGLB);
-                uint2 photonIndex2D = uint2(photonIndex / kInfoTexHeight, photonIndex % kInfoTexHeight);
-                gGlobalFlux[photonIndex2D] = float4(photon.flux, 1);
-                gGlobalDir[photonIndex2D] = float4(photon.dir, 1);
-                gGlobalAABB[photonIndex] = photonAABB;
+                gPhotonFlux[insertIndex][photonIndex2D] = float4(photon.flux, 1);
+                gPhotonDir[insertIndex][photonIndex2D] = float4(photon.dir, 1);
+                gPhotonAABB[insertIndex][photonIndex] = photonAABB;
             }
         }
    
