@@ -72,10 +72,6 @@ private:
     */
     bool preparePhotonBuffers();
 
-    /** Creates the photon counter for caustic and global photon buffers
-    */
-    void preparePhotonCounters();
-
     /** Resets buffer and runtime vars. Used for scene change or number of photons change
     */
     void resetPhotonMapper();
@@ -83,10 +79,6 @@ private:
     /** Applies the changes to the number of photons
     */
     void changeNumPhotons();
-
-    /** Copies the photon counter to a cpu buffer
-    */
-    void copyPhotonCounter(RenderContext* pRenderContext);
 
     /** Creates the Generate Photon pass, where the photons are shot through the scene and saved in an AABB and information buffer
     */
@@ -147,8 +139,6 @@ private:
     bool                        mAdjustShadingNormals = true;           ///<Adjusts the shading normals (Generate)
 
     uint                        mNumBucketBits = 18;                    ///< 2^NumBucketBits is the total amount of possible buckets
-    uint                        mNumPhotonsPerBucket = 12;              ///< Max Photons per hash grid.
-    uint                        mQuadraticProbeIterations = 10;         ///< Number of quadartic probe iteratons per hash. 
 
     // Generate only
     uint                        mMaxBounces = 5;                        ///< Depth of recursion (0 = none).
@@ -171,15 +161,13 @@ private:
     //*******************************************************
     
     uint                        mFrameCount = 0;            ///< Frame count since last Reset
-    std::vector<uint>           mPhotonCount = { 0,0 };
     bool                        mOptionsChanged = false;
     bool                        mResetCS = true;
     bool                        mSetConstantBuffers = true;
     bool                        mResizePhotonBuffers = true;    ///< If true resize the Photon Buffers
-    bool                        mPhotonInfoFormatChanged = false;         
-    bool                        mRebuildAS = false;
     uint                        mInfoTexFormat = 1;
     uint                        mNumBuckets = 0;
+    bool                        mPhotonBuffersReady = false;
 
 
     //Light
@@ -209,31 +197,14 @@ private:
         }
     };
 
+    //Programs
+
     ComputePass::SharedPtr mpCSCollect;             ///<Collect pass collects the photons that where shot  
     RayTraceProgramHelper mTracerGenerate;          ///<Description for the Generate Photon pass 
 
     //
     //Photon Buffers
     //
-
-    //Struct for the buffers that are needed for global and caustic photons
-    bool mPhotonBuffersReady = false;
-
-    bool mTestInit = false;
-
-    struct {
-        Buffer::SharedPtr counter;
-        Buffer::SharedPtr reset;
-        Buffer::SharedPtr cpuCopy;
-    }mPhotonCounterBuffer;
-
-    struct PhotonBuffers {
-        uint maxSize = 0;
-        Texture::SharedPtr position;
-        Texture::SharedPtr infoFlux;
-        Texture::SharedPtr infoDir;
-    };
-
     Buffer::SharedPtr mpGlobalBuckets;
     Buffer::SharedPtr mpCausticBuckets;
     Buffer::SharedPtr mpGlobalHashPhotonCounter;

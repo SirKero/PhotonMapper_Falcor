@@ -30,7 +30,6 @@ cbuffer CB
     uint gMaxRecursion;         //Max Iterations per path
     bool gUseAlphaTest;         //Enable Alpha Test
     bool gAdjustShadingNormals; //Adjust shading Normals
-    uint gQuadProbeIt;          //Max number of quadratic probe iterations
 };
 
 // Inputs
@@ -42,7 +41,6 @@ RWStructuredBuffer<PhotonBucket> gHashBucket[2];
 RWStructuredBuffer<uint> gHashCounter[2];
 
 Texture2D<uint> gRndSeedBuffer;
-
 
 // Static configuration based on defines set from the host
 static const bool kUseAnalyticLights = USE_ANALYTIC_LIGHTS;
@@ -59,7 +57,6 @@ static const float k_2Pi = 6.28318530717958647692;
 static const float k_4Pi = 12.5663706143591729538;
 static const float Inv2Pi = 0.15915494309189533577;
 static const float Inv4Pi = 0.07957747154594766788;
-
 
 /** Payload for scatter ray (64B).
 */
@@ -294,8 +291,7 @@ void rayGen()
     photon.dir = float4(0);
     photon.flux = float4(0);
     photon.pos = float4(0);
-    
-    
+        
     //light flux
     float3 lightFlux = lightIntensity * invPdf;
     if (!analytic) lightFlux *= abs(dot(lightDir, ray.Direction)) * lightArea * M_PI_2;   //Convert L to flux

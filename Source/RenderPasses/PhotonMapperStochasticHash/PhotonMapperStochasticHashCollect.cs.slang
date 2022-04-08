@@ -23,7 +23,6 @@ cbuffer CB
     float gEmissiveScale; // Scale for the emissive part
     bool gCollectGlobalPhotons;
     bool gCollectCausticPhotons;
-    uint gQuadProbeIt;  //Max num of quadratic probe iterations
 };
 
 // Inputs

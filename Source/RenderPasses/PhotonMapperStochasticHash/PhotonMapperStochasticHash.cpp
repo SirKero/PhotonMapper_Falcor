@@ -137,15 +137,11 @@ void PhotonMapperStochasticHash::execute(RenderContext* pRenderContext, const Re
         return;
     }
 
-    //Copy Photon Counter for UI
-    copyPhotonCounter(pRenderContext);
-
     if (mNumPhotonsChanged) {
         changeNumPhotons();
         mNumPhotonsChanged = false;
     }
         
-
     //Reset Frame Count if conditions are met
     if (mResetIterations || mAlwaysResetIterations || is_set(mpScene->getUpdates(), Scene::UpdateFlags::CameraMoved)) {
         mFrameCount = 0;
@@ -215,11 +211,6 @@ void PhotonMapperStochasticHash::execute(RenderContext* pRenderContext, const Re
 
 void PhotonMapperStochasticHash::generatePhotons(RenderContext* pRenderContext, const RenderData& renderData)
 {
-
-    //Reset counter Buffers
-    pRenderContext->copyBufferRegion(mPhotonCounterBuffer.counter.get(), 0, mPhotonCounterBuffer.reset.get(), 0, sizeof(uint64_t));
-    pRenderContext->resourceBarrier(mPhotonCounterBuffer.counter.get(), Resource::State::ShaderResource);
-
     //Clear the photon Buffers
     pRenderContext->clearUAV(mpGlobalBuckets->getUAV().get(), uint4(0, 0, 0, 0));
     pRenderContext->clearUAV(mpCausticBuckets->getUAV().get(), uint4(0, 0, 0, 0));
@@ -238,7 +229,6 @@ void PhotonMapperStochasticHash::generatePhotons(RenderContext* pRenderContext, 
     mTracerGenerate.pProgram->addDefine("USE_ENV_BACKGROUND", mpScene->useEnvBackground() ? "1" : "0");
     mTracerGenerate.pProgram->addDefine("ANALYTIC_INV_PDF", std::to_string(mAnalyticInvPdf));
     mTracerGenerate.pProgram->addDefine("INFO_TEXTURE_HEIGHT", std::to_string(kInfoTexHeight));
-    mTracerGenerate.pProgram->addDefine("NUM_PHOTONS_PER_BUCKET", std::to_string(mNumPhotonsPerBucket));
     mTracerGenerate.pProgram->addDefine("NUM_BUCKETS", std::to_string(mNumBuckets));
     
     // Prepare program vars. This may trigger shader compilation.
@@ -274,7 +264,6 @@ void PhotonMapperStochasticHash::generatePhotons(RenderContext* pRenderContext, 
         var[nameBuf]["gMaxRecursion"] = mMaxBounces;
         var[nameBuf]["gSpecRoughCutoff"] = mUseAlphaTest;
         var[nameBuf]["gSpecRoughCutoff"] = mAdjustShadingNormals;
-        var[nameBuf]["gQuadProbeIt"] = mQuadraticProbeIterations;
     }
     
     //set the buffers
@@ -313,7 +302,6 @@ void PhotonMapperStochasticHash::collectPhotons(RenderContext* pRenderContext, c
         defines.add(mpScene->getSceneDefines());
 
         defines.add("INFO_TEXTURE_HEIGHT", std::to_string(kInfoTexHeight));
-        defines.add("NUM_PHOTONS_PER_BUCKET", std::to_string(mNumPhotonsPerBucket));
         defines.add("NUM_BUCKETS", std::to_string(mNumBuckets));
 
         mpCSCollect = ComputePass::create(desc, defines, true);
@@ -339,7 +327,6 @@ void PhotonMapperStochasticHash::collectPhotons(RenderContext* pRenderContext, c
         var[nameBuf]["gEmissiveScale"] = mIntensityScalar;
         var[nameBuf]["gCollectGlobalPhotons"] = !mDisableGlobalCollection;
         var[nameBuf]["gCollectCausticPhotons"] = !mDisableCausticCollection;
-        var[nameBuf]["gQuadProbeIt"] = mQuadraticProbeIterations;
     }
 
     for (uint32_t i = 0; i <= 1; i++)
@@ -433,21 +420,11 @@ void PhotonMapperStochasticHash::renderUI(Gui::Widgets& widget)
     }
     //Hash Settings
     if (auto group = widget.group("Hash Options")) {
-        dirty |= widget.var("Quadradic Probe Iterations", mQuadraticProbeIterations, 0u, 100u, 1u);
-        widget.tooltip("Max iterations that are used for quadratic probe");
-        mResetCS |= widget.slider("Num Photons per bucket", mNumPhotonsPerBucket, 2u, 32u);
-        widget.tooltip("Max number of photons that can be saved in a hash grid");
         mResetCS |= widget.slider("Bucket size (bits)", mNumBucketBits, 2u, 32u);
-        widget.tooltip("Bucket size in 2^x. One bucket takes 16Byte + Num photons per bucket * 4 Byte");
+        widget.tooltip("Bucket size in 2^x. One bucket takes 48Byte. Total Size = 2^x * 48B. There are two buckets total");
 
         dirty |= mResetCS;
     }
-
-
-    mPhotonInfoFormatChanged |= widget.dropdown("Photon Info size", kInfoTexDropdownList, mInfoTexFormat);
-    widget.tooltip("Determines the resolution of each element of the photon info struct.");
-
-    dirty |= mPhotonInfoFormatChanged;  //Reset iterations if format is changed
 
     //Disable Photon Collecion
     if (auto group = widget.group("Collect Options")) {
@@ -476,7 +453,7 @@ void PhotonMapperStochasticHash::setScene(RenderContext* pRenderContext, const S
 
     // After changing scene, the raytracing program should to be recreated.
     mTracerGenerate = RayTraceProgramHelper::create();
-    mpCSCollect.reset();
+    mResetCS = true;
     mSetConstantBuffers = true;
     
     // Set new scene.
@@ -511,9 +488,6 @@ void PhotonMapperStochasticHash::setScene(RenderContext* pRenderContext, const S
             mTracerGenerate.pProgram = RtProgram::create(desc, mpScene->getSceneDefines());
         }
     }
-
-    //init the photon counters
-    preparePhotonCounters();
 }
 
 void PhotonMapperStochasticHash::getActiveEmissiveTriangles(RenderContext* pRenderContext)
@@ -698,7 +672,6 @@ void PhotonMapperStochasticHash::resetPhotonMapper()
 
     //For Photon Buffers and resize
     mResizePhotonBuffers = true; mPhotonBuffersReady = false;
-    mPhotonCount[0] = 0; mPhotonCount[1] = 0;
 
     //reset light sample tex
     mLightSampleTex = nullptr;
@@ -714,16 +687,6 @@ void PhotonMapperStochasticHash::changeNumPhotons()
         mFrameCount = 0;
     }
 
-}
-
-void PhotonMapperStochasticHash::copyPhotonCounter(RenderContext* pRenderContext)
-{
-    //Copy the photonConter to a CPU Buffer
-    pRenderContext->copyBufferRegion(mPhotonCounterBuffer.cpuCopy.get(), 0, mPhotonCounterBuffer.counter.get(), 0, sizeof(uint32_t) * 2);
-
-    void* data = mPhotonCounterBuffer.cpuCopy->map(Buffer::MapType::Read);
-    std::memcpy(mPhotonCount.data(), data, sizeof(uint) * 2);
-    mPhotonCounterBuffer.cpuCopy->unmap();
 }
 
 void PhotonMapperStochasticHash::prepareVars()
@@ -763,19 +726,6 @@ bool PhotonMapperStochasticHash::preparePhotonBuffers()
     mpCausticHashPhotonCounter->setName("PhotonMapperStochasticHash::CounterHashCaustic");
     
     return true;
-}
-
-void PhotonMapperStochasticHash::preparePhotonCounters()
-{
-    //photon counter
-    mPhotonCounterBuffer.counter = Buffer::createStructured(sizeof(uint), 2);
-    mPhotonCounterBuffer.counter->setName("PhotonMapperStochasticHash::PhotonCounter");
-    uint64_t zeroInit = 0;
-    mPhotonCounterBuffer.reset = Buffer::create(sizeof(uint64_t), ResourceBindFlags::None, Buffer::CpuAccess::None, &zeroInit);
-    mPhotonCounterBuffer.reset->setName("PhotonMapperStochasticHash::PhotonCounterReset");
-    uint32_t oneInit[2] = { 1,1 };
-    mPhotonCounterBuffer.cpuCopy = Buffer::create(sizeof(uint64_t), ResourceBindFlags::None, Buffer::CpuAccess::Read, oneInit);
-    mPhotonCounterBuffer.cpuCopy->setName("PhotonMapperStochasticHash::PhotonCounterCPU");
 }
 
 void PhotonMapperStochasticHash::prepareRandomSeedBuffer(const uint2 screenDimensions)
