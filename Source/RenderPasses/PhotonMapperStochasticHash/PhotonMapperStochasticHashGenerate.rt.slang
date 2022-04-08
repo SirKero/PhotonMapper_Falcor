@@ -9,7 +9,7 @@ import Scene.Material.ShadingUtils;
 import Rendering.Lights.LightHelpers;
 import Utils.Color.ColorHelpers;
 
-import PhotonMapperHashFunctions;
+import PhotonMapperStochasticHashFunctions;
 
 cbuffer PerFrame
 {
@@ -36,42 +36,13 @@ cbuffer CB
 // Inputs
 Texture2D<int> gLightSample;
 StructuredBuffer<uint> gNumPhotonsPerEmissive;
-//Internal Buffer Structs
-
-struct PhotonBucket
-{
-    uint size;
-    int cell;
-    uint2 pad;
-    uint photonIdx[NUM_PHOTONS_PER_BUCKET];
-};
-
-struct PhotonInfo {
-        float3 dir;
-        float faceNTheta;
-        float3 flux;
-        float faceNPhi;
-};
 
  //Internal Buffer Structs
-RWStructuredBuffer<PhotonBucket> gGlobalHashBucket;
-RWStructuredBuffer<PhotonBucket> gCausticHashBucket;
-
-RWTexture2D<float4> gCausticPos;
-RWTexture2D<float4> gCausticFlux;
-RWTexture2D<float4> gCausticDir;
-RWTexture2D<float4> gGlobalPos;
-RWTexture2D<float4> gGlobalFlux;
-RWTexture2D<float4> gGlobalDir;
+RWStructuredBuffer<PhotonBucket> gHashBucket[2];
+RWStructuredBuffer<uint> gHashCounter[2];
 
 Texture2D<uint> gRndSeedBuffer;
 
-struct PhotonCounter
-{
-    uint caustic;
-    uint global;
-};
-RWStructuredBuffer<PhotonCounter> gPhotonCounter;
 
 // Static configuration based on defines set from the host
 static const bool kUseAnalyticLights = USE_ANALYTIC_LIGHTS;
@@ -79,9 +50,7 @@ static const bool kUseEmissiveLights = USE_EMISSIVE_LIGHTS;
 static const bool kUseEnvLight = USE_ENV_LIGHT;
 static const bool kUseEnvBackground = USE_ENV_BACKGROUND;
 static const float3 kDefaultBackgroundColor = float3(0, 0, 0);
-static const float kRayTMax = FLT_MAX;
-static const uint kMaxPhotonIndexGLB = MAX_PHOTON_INDEX_GLOBAL;
-static const uint kMaxPhotonIndexCAU = MAX_PHOTON_INDEX_CAUSTIC;    
+static const float kRayTMax = FLT_MAX;  
 static const float kAnalyticInvPdf = ANALYTIC_INV_PDF;              //Inverse analytic pdf 
 static const uint kInfoTexHeight = INFO_TEXTURE_HEIGHT;
 static const uint kNumBuckets = NUM_BUCKETS;                        //Total number of buckets in 2^x
@@ -321,12 +290,11 @@ void rayGen()
     calcLightDirection(lightDir, lightRnd.xy, ray.Direction, lightDirPDF, type, cos(spotAngle));
 
     //create photon
-    float3 photonPos = float3(0, 0, 0);
-    PhotonInfo photon;
-    photon.dir = float3(0, 0, 0);
-    photon.faceNTheta = 0.f;
-    photon.flux = float3(0, 0, 0);
-    photon.faceNPhi = 0.f;
+    PhotonBucket photon;
+    photon.dir = float4(0);
+    photon.flux = float4(0);
+    photon.pos = float4(0);
+    
     
     //light flux
     float3 lightFlux = lightIntensity * invPdf;
@@ -344,15 +312,15 @@ void rayGen()
     //recursion where the photons are shot
     for (uint i = 0; i < gMaxRecursion && !rayData.terminated; i++)
     {
-        photon.flux = lightFlux * rayData.thp;
+        photon.flux = float4(lightFlux * rayData.thp, 0);
         TraceRay(gScene.rtAccel, rayFlags, 0xff /* instanceInclusionMask */, 0 /* hitIdx */, rayTypeCount, 0 /* missIdx */, ray, rayData);
 
         if(rayData.terminated)
             break;
 
         
-        photonPos = rayData.origin;
-        photon.dir = ray.Direction;
+        photon.pos = float4(rayData.origin, 0);
+        photon.dir = float4(ray.Direction, 0);
         reflectedDiffuse = rayData.diffuseHit;
 
         //save photon        
@@ -366,74 +334,23 @@ void rayGen()
             
             //hash scale
             float cellScale = wasReflectedSpecular ? gCausticHashScaleFactor : gGlobalHashScaleFactor;
-            int3 cell = int3(floor(photonPos * cellScale));
+            int3 cell = int3(floor(photon.pos.xyz * cellScale));
             uint bucketIdx = hash(cell) & (kNumBuckets - 1);
-            uint d = 0;
+            uint mapIdx = wasReflectedSpecular ? 0 : 1;
+            photon.flux = wasReflectedSpecular ? photon.flux : photon.flux / gGlobalRejection;
             
-            int cellXY = (cell.x << 16) | (cell.y & 0xFFFF);
-            //int cellXY = cell.x;
-            if (cellXY == 0)
-                cellXY = 0xFFFFFFFF;    //avoid zero cell index
-            //Compair exchange für 1 hash und dann xy coord. 
-            //caustic photon
-            if (wasReflectedSpecular)
+            //insert photon
+            if (roulette || wasReflectedSpecular)
             {
-                InterlockedAdd(gPhotonCounter[0].caustic, 1u, photonIndex);
-                for (uint i = 0; i <= gQuadProbeIt; i++)
+                InterlockedAdd(gHashCounter[mapIdx][bucketIdx], 1u, photonIndex);
+                //Insert photon
+                float rnd = sampleNext1D(rayData.sg);
+                float probability = 1.f / (photonIndex + 1);
+                if (rnd <= probability)
                 {
-                    int origValue;
-                    InterlockedCompareExchange(gCausticHashBucket[bucketIdx].cell, 0, cellXY, origValue);
-                    if (origValue == 0 || origValue == cellXY)
-                    {
-                        InterlockedAdd(gCausticHashBucket[bucketIdx].size, 1u, photonBucketIndex);
-                        if (photonBucketIndex < NUM_PHOTONS_PER_BUCKET)
-                        {
-                            //InterlockedAdd(gPhotonCounter[0].caustic, 1u, photonIndex);
-                            photonIndex = min(photonIndex, kMaxPhotonIndexCAU);
-                            gCausticHashBucket[bucketIdx].photonIdx[photonBucketIndex] = photonIndex;
-                            if (bucketIdx == 0)
-                                gCausticHashBucket[bucketIdx].pad.x = photonIndex;
-                            uint2 photonIndex2D = uint2(photonIndex / kInfoTexHeight, photonIndex % kInfoTexHeight);
-                            gCausticPos[photonIndex2D] = float4(photonPos, cellXY);
-                            gCausticFlux[photonIndex2D] = float4(photon.flux, bucketIdx);
-                            gCausticDir[photonIndex2D] = float4(photon.dir, gCausticHashScaleFactor);
-                        }
-                        break;
-                    }
-                    ++d;
-                    bucketIdx = (bucketIdx + ((d + d * d) >> 1)) & (kNumBuckets - 1);   //quadradic probe
+                    gHashBucket[mapIdx][bucketIdx] = photon;
                 }
-            }
-            //Global photon
-            else if(roulette)
-            {
-                for (uint i = 0; i <= gQuadProbeIt; i++)
-                {
-                    int origValue = 1;
-                    InterlockedCompareExchange(gGlobalHashBucket[bucketIdx].cell, 0, cellXY, origValue);
-                    if (origValue == 0 || origValue == cellXY)
-                    {
-                        InterlockedAdd(gGlobalHashBucket[bucketIdx].size, 1u, photonBucketIndex);
-                        if (photonBucketIndex < NUM_PHOTONS_PER_BUCKET)
-                        {
-                            photon.flux /= gGlobalRejection;
-                            InterlockedAdd(gPhotonCounter[0].global, 1u, photonIndex);
-                            photonIndex = min(photonIndex, kMaxPhotonIndexGLB);
-                            gGlobalHashBucket[bucketIdx].photonIdx[photonBucketIndex] = photonIndex;
-                            if (bucketIdx == 0)
-                                gGlobalHashBucket[bucketIdx].pad.x = photonIndex;
-                            uint2 photonIndex2D = uint2(photonIndex / kInfoTexHeight, photonIndex % kInfoTexHeight);
-                            gGlobalPos[photonIndex2D] = float4(photonPos, cellXY);
-                            gGlobalFlux[photonIndex2D] = float4(photon.flux, bucketIdx);
-                            gGlobalDir[photonIndex2D] = float4(photon.dir, gGlobalHashScaleFactor);
-                        }
-                        break;
-                    }
-                    ++d;
-                    bucketIdx = (bucketIdx + ((d + d * d) >> 1)) & (kNumBuckets - 1); //quadradic probe
-                }
-            }
-              
+            }              
         }
         
         //Russian Roulette

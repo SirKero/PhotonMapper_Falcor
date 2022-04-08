@@ -1,3 +1,15 @@
+#pragma once
+#include "Utils/HostDeviceShared.slangh"
+
+BEGIN_NAMESPACE_FALCOR
+
+struct PhotonBucket
+{
+    float4 pos;
+    float4 flux;
+    float4 dir;
+};
+
 uint hash(int3 cell)
 {
     //convert to uint64
@@ -20,3 +32,6 @@ uint hash(int3 cell)
     uint res = uint(key) ^ uint(key >> 22);
     return res;
 }
+
+
+END_NAMESPACE_FALCOR

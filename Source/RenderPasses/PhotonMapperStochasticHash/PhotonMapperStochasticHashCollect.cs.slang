@@ -7,7 +7,7 @@ import Utils.Math.MathHelpers;
 import Rendering.Materials.StandardMaterial;
 import Rendering.Lights.LightHelpers;
 
-import PhotonMapperHashFunctions;
+import PhotonMapperStochasticHashFunctions;
 
 cbuffer PerFrame
 {
@@ -39,33 +39,10 @@ RWTexture2D<float4> gPhotonImage;
 //Acceleration Structure
 RaytracingAccelerationStructure gPhotonAS;
 
-//Internal Buffer Structs
-struct PhotonBucket
-{
-    uint size;
-    int cell;
-    uint2 pad;
-    uint photonIdx[NUM_PHOTONS_PER_BUCKET];
-};
-
-struct PhotonInfo
-{
-    float3 dir;
-    float faceNTheta;
-    float3 flux;
-    float faceNPhi;
-};
 
  //Internal Buffer Structs
-StructuredBuffer<PhotonBucket> gGlobalHashBucket;
-StructuredBuffer<PhotonBucket> gCausticHashBucket;
-
-RWTexture2D<float4> gCausticPos;
-RWTexture2D<float4> gCausticFlux;
-RWTexture2D<float4> gCausticDir;
-RWTexture2D<float4> gGlobalPos;
-RWTexture2D<float4> gGlobalFlux;
-RWTexture2D<float4> gGlobalDir;
+StructuredBuffer<PhotonBucket> gHashBucket[2];
+StructuredBuffer<uint> gHashCounter[2];
 
 
 // Static configuration based on defines set from the host.
@@ -95,39 +72,26 @@ ShadingData loadShadingData(const HitInfo hit, const float3 rayDir, const ITextu
     return gScene.materials.prepareShadingData(v, materialID, -rayDir, lod);
 }
 
-float3 photonContribution(in ShadingData sd, uint photonIndex , bool isCaustic)
+float3 photonContribution(in ShadingData sd, uint hash , bool isCaustic)
 {
-    const uint2 photonIndex2D = uint2(photonIndex / kInfoTexHeight, photonIndex % kInfoTexHeight);
     //get caustic or global photon
     float radius = isCaustic ? gCausticRadius : gGlobalRadius;
-    PhotonInfo photon;
-    float3 photonPos;
-     //Instance 0 is always the caustic buffer
-    if (isCaustic)
-    {
-        photonPos = gCausticPos[photonIndex2D].xyz;
-        photon.flux = gCausticFlux[photonIndex2D].xyz;
-        photon.dir = gCausticDir[photonIndex2D].xyz;
-    }
-    else
-    {
-        photonPos = gGlobalPos[photonIndex2D].xyz;
-        photon.flux = gGlobalFlux[photonIndex2D].xyz;
-        photon.dir = gGlobalDir[photonIndex2D].xyz;
-    }
+    uint mapIdx = isCaustic ? 0 : 1;
+    PhotonBucket photon = gHashBucket[mapIdx][hash];
+    uint photonCount = gHashCounter[mapIdx][hash];
 
     //Radius test
     
-    if (!hitSphere(photonPos, radius, sd.posW))
+    if (!hitSphere(photon.pos.xyz, radius, sd.posW) || photonCount == 0)
         return float3(0);
     
     
     let lod = ExplicitLodTextureSampler(0.f);
     let bsdf = gScene.materials.getBSDF(sd, lod);
             
-    float3 f_r = bsdf.eval(sd, -photon.dir);
+    float3 f_r = bsdf.eval(sd, -photon.dir.xyz);
      
-    return f_r * photon.flux;
+    return f_r * (photon.flux.xyz * photonCount);
 }
 
 float3 collectPhotons(in HitInfo hitInfo, in float3 dirVec,bool isCaustic)
@@ -145,43 +109,8 @@ float3 collectPhotons(in HitInfo hitInfo, in float3 dirVec,bool isCaustic)
         for (int y = gridCenter.y - gridRadius; y <= gridCenter.y + gridRadius; y++){
             for (int x = gridCenter.x - gridRadius; x <= gridCenter.x + gridRadius; x++)
             {
-                
                 uint b = hash(int3(x, y, z)) & (kNumBuckets - 1);
-                uint d = 0;
-                
-                //Quadratic Probe with an maximum
-                for (uint i = 0; i < gQuadProbeIt; i++)
-                {
-                    int bucketSize = isCaustic ? gCausticHashBucket[b].size : gGlobalHashBucket[b].size;
-                    int bucketCell = isCaustic ? gCausticHashBucket[b].cell : gGlobalHashBucket[b].cell;
-                    int cellXY = (x << 16) | (y & 0xFFFF);
-                    if (cellXY == 0)
-                        cellXY = 0xFFFFFFFF; //avoid zero cell index
-                    //int cellXY = x;
-                    //Stop on empty bucket
-                    if (bucketSize == 0)
-                        break;
-                    //If cell is the same collect all photons and stop loop for this cell at the end
-                    
-                    if (bucketCell == cellXY)
-                    {
-                        
-                        uint photonCellIt = min(bucketSize, NUM_PHOTONS_PER_BUCKET);
-                        float3 cellRadiance = float3(0);
-                        for (int j = 0; j < photonCellIt; j++)
-                        {
-                            int photonIdx = isCaustic ? gCausticHashBucket[b].photonIdx[j] : gGlobalHashBucket[b].photonIdx[j];
-                            cellRadiance += photonContribution(sd, photonIdx, isCaustic);
-                        }
-                        radiance += cellRadiance;
-                        
-                        break;  //Stop for this cell
-                    }
-                    
-                    //quadratic probe next bucket
-                    ++d;
-                    b = (b + ((d + d * d) >> 1)) & (kNumBuckets - 1);
-                }                
+                radiance += photonContribution(sd, b, isCaustic);        
             }
         }
     }

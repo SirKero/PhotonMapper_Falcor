@@ -25,7 +25,7 @@
  # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
-#include "PhotonMapperHash.h"
+#include "PhotonMapperStochasticHash.h"
 #include <RenderGraph/RenderPassHelpers.h>
 
 //for random seed generation
@@ -35,7 +35,7 @@
 
 constexpr float kUint32tMaxF = float((uint32_t)-1);
 
-const RenderPass::Info PhotonMapperHash::kInfo{"PhotonMapperHash", "A Photon Mapper with full RTX support" };
+const RenderPass::Info PhotonMapperStochasticHash::kInfo{"PhotonMapperStochasticHash", "A Photon Mapper with full RTX support" };
 
 // Don't remove this. it's required for hot-reload to function properly
 extern "C" FALCOR_API_EXPORT const char* getProjDir()
@@ -45,13 +45,13 @@ extern "C" FALCOR_API_EXPORT const char* getProjDir()
 
 extern "C" FALCOR_API_EXPORT void getPasses(Falcor::RenderPassLibrary & lib)
 {
-    lib.registerPass(PhotonMapperHash::kInfo, PhotonMapperHash::create);
+    lib.registerPass(PhotonMapperStochasticHash::kInfo, PhotonMapperStochasticHash::create);
 }
 
 namespace
 {
-    const char kShaderGeneratePhoton[] = "RenderPasses/PhotonMapperHash/PhotonMapperHashGenerate.rt.slang";
-    const char kShaderCollectPhoton[] = "RenderPasses/PhotonMapperHash/PhotonMapperHashCollect.cs.slang";
+    const char kShaderGeneratePhoton[] = "RenderPasses/PhotonMapperStochasticHash/PhotonMapperStochasticHashGenerate.rt.slang";
+    const char kShaderCollectPhoton[] = "RenderPasses/PhotonMapperStochasticHash/PhotonMapperStochasticHashCollect.cs.slang";
 
     // Ray tracing settings that affect the traversal stack size.
    // These should be set as small as possible.
@@ -75,32 +75,32 @@ namespace
     };
 
     const Gui::DropdownList kInfoTexDropdownList{
-        //{(uint)PhotonMapperHash::TextureFormat::_8Bit , "8Bits"},
-        {(uint)PhotonMapperHash::TextureFormat::_16Bit , "16Bits"},
-        {(uint)PhotonMapperHash::TextureFormat::_32Bit , "32Bits"}
+        //{(uint)PhotonMapperStochasticHash::TextureFormat::_8Bit , "8Bits"},
+        {(uint)PhotonMapperStochasticHash::TextureFormat::_16Bit , "16Bits"},
+        {(uint)PhotonMapperStochasticHash::TextureFormat::_32Bit , "32Bits"}
     };
     
 }
 
-PhotonMapperHash::SharedPtr PhotonMapperHash::create(RenderContext* pRenderContext, const Dictionary& dict)
+PhotonMapperStochasticHash::SharedPtr PhotonMapperStochasticHash::create(RenderContext* pRenderContext, const Dictionary& dict)
 {
-    SharedPtr pPass = SharedPtr(new PhotonMapperHash);
+    SharedPtr pPass = SharedPtr(new PhotonMapperStochasticHash);
     return pPass;
 }
 
-PhotonMapperHash::PhotonMapperHash():
+PhotonMapperStochasticHash::PhotonMapperStochasticHash():
     RenderPass(kInfo)
 {
     mpSampleGenerator = SampleGenerator::create(SAMPLE_GENERATOR_UNIFORM);
     FALCOR_ASSERT(mpSampleGenerator);
 }
 
-Dictionary PhotonMapperHash::getScriptingDictionary()
+Dictionary PhotonMapperStochasticHash::getScriptingDictionary()
 {
     return Dictionary();
 }
 
-RenderPassReflection PhotonMapperHash::reflect(const CompileData& compileData)
+RenderPassReflection PhotonMapperStochasticHash::reflect(const CompileData& compileData)
 {
     // Define the required resources here
     RenderPassReflection reflector;
@@ -113,13 +113,13 @@ RenderPassReflection PhotonMapperHash::reflect(const CompileData& compileData)
     return reflector;
 }
 
-void PhotonMapperHash::compile(RenderContext* pContext, const CompileData& compileData)
+void PhotonMapperStochasticHash::compile(RenderContext* pContext, const CompileData& compileData)
 {
     // put reflector outputs here and create again if needed
     
 }
 
-void PhotonMapperHash::execute(RenderContext* pRenderContext, const RenderData& renderData)
+void PhotonMapperStochasticHash::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
     /// Update refresh flag if options that affect the output have changed.
     auto& dict = renderData.getDictionary();
@@ -169,34 +169,6 @@ void PhotonMapperHash::execute(RenderContext* pRenderContext, const RenderData& 
         mpScene->getLightCollection(pRenderContext);
     }
 
-    if (mResizePhotonBuffers) {
-        if (mFitBuffersToPhotonShot) {
-            //if size of conter is 0 wait till next iteration
-            if (mPhotonCount[0] > 0 && mPhotonCount[1] > 0) {
-                mCausticBufferSizeUI = static_cast<uint>(mPhotonCount[0] * 1.1);
-                mGlobalBufferSizeUI = static_cast<uint>(mPhotonCount[1] * 1.1);
-            }
-            mFitBuffersToPhotonShot = false;
-        }
-        //put in new size with info tex2D height in mind
-        uint causticWidth = static_cast<uint>(std::ceil(mCausticBufferSizeUI / static_cast<float>(kInfoTexHeight)));
-        mCausticBuffers.maxSize = causticWidth * kInfoTexHeight;
-        uint globalWidth = static_cast<uint>(std::ceil(mGlobalBufferSizeUI / static_cast<float>(kInfoTexHeight)));
-        mGlobalBuffers.maxSize = globalWidth * kInfoTexHeight;
-
-        //refresh UI to new variable
-        mCausticBufferSizeUI = mCausticBuffers.maxSize; mGlobalBufferSizeUI = mGlobalBuffers.maxSize;
-        mResizePhotonBuffers = false;
-        mPhotonBuffersReady = false;
-        mRebuildAS = true;
-    }
-
-    //Only change format if we dont rebuild the buffers
-    if (mPhotonBuffersReady && mPhotonInfoFormatChanged) {
-        preparePhotonInfoTexture();
-        mPhotonInfoFormatChanged = false;
-    }
-
     if (!mPhotonBuffersReady) {
         mPhotonBuffersReady = preparePhotonBuffers();
     }
@@ -212,7 +184,7 @@ void PhotonMapperHash::execute(RenderContext* pRenderContext, const RenderData& 
 
     if (mResetCS) {
         mpCSCollect.reset();
-        prepareHashBuffer();
+        preparePhotonBuffers();
         mResetCS = false;
     }
 
@@ -241,7 +213,7 @@ void PhotonMapperHash::execute(RenderContext* pRenderContext, const RenderData& 
         mSetConstantBuffers = false;
 }
 
-void PhotonMapperHash::generatePhotons(RenderContext* pRenderContext, const RenderData& renderData)
+void PhotonMapperStochasticHash::generatePhotons(RenderContext* pRenderContext, const RenderData& renderData)
 {
 
     //Reset counter Buffers
@@ -249,14 +221,10 @@ void PhotonMapperHash::generatePhotons(RenderContext* pRenderContext, const Rend
     pRenderContext->resourceBarrier(mPhotonCounterBuffer.counter.get(), Resource::State::ShaderResource);
 
     //Clear the photon Buffers
-    pRenderContext->clearTexture(mGlobalBuffers.position.get(), float4(0, 0, 0, 0));
-    pRenderContext->clearTexture(mGlobalBuffers.infoFlux.get(), float4(0, 0, 0, 0));
-    pRenderContext->clearTexture(mGlobalBuffers.infoDir.get(), float4(0, 0, 0, 0));
-    pRenderContext->clearTexture(mCausticBuffers.position.get(), float4(0, 0, 0, 0));
-    pRenderContext->clearTexture(mCausticBuffers.infoFlux.get(), float4(0, 0, 0, 0));
-    pRenderContext->clearTexture(mCausticBuffers.infoDir.get(), float4(0, 0, 0, 0));
     pRenderContext->clearUAV(mpGlobalBuckets->getUAV().get(), uint4(0, 0, 0, 0));
     pRenderContext->clearUAV(mpCausticBuckets->getUAV().get(), uint4(0, 0, 0, 0));
+    pRenderContext->clearUAV(mpGlobalHashPhotonCounter->getUAV().get(), uint4(0, 0, 0, 0));
+    pRenderContext->clearUAV(mpCausticHashPhotonCounter->getUAV().get(), uint4(0, 0, 0, 0));
     
 
     auto lights = mpScene->getLights();
@@ -268,8 +236,6 @@ void PhotonMapperHash::generatePhotons(RenderContext* pRenderContext, const Rend
     mTracerGenerate.pProgram->addDefine("USE_EMISSIVE_LIGHTS", mpScene->useEmissiveLights() ? "1" : "0");
     mTracerGenerate.pProgram->addDefine("USE_ENV_LIGHT", mpScene->useEnvLight() ? "1" : "0");
     mTracerGenerate.pProgram->addDefine("USE_ENV_BACKGROUND", mpScene->useEnvBackground() ? "1" : "0");
-    mTracerGenerate.pProgram->addDefine("MAX_PHOTON_INDEX_GLOBAL", std::to_string(mGlobalBuffers.maxSize));
-    mTracerGenerate.pProgram->addDefine("MAX_PHOTON_INDEX_CAUSTIC", std::to_string(mCausticBuffers.maxSize));
     mTracerGenerate.pProgram->addDefine("ANALYTIC_INV_PDF", std::to_string(mAnalyticInvPdf));
     mTracerGenerate.pProgram->addDefine("INFO_TEXTURE_HEIGHT", std::to_string(kInfoTexHeight));
     mTracerGenerate.pProgram->addDefine("NUM_PHOTONS_PER_BUCKET", std::to_string(mNumPhotonsPerBucket));
@@ -312,18 +278,13 @@ void PhotonMapperHash::generatePhotons(RenderContext* pRenderContext, const Rend
     }
     
     //set the buffers
-    var["gCausticPos"] = mCausticBuffers.position;
-    var["gCausticFlux"] = mCausticBuffers.infoFlux;
-    var["gCausticDir"] = mCausticBuffers.infoDir;
-    var["gGlobalPos"] = mGlobalBuffers.position;
-    var["gGlobalFlux"] = mGlobalBuffers.infoFlux;
-    var["gGlobalDir"] = mGlobalBuffers.infoDir;
     var["gRndSeedBuffer"] = mRandNumSeedBuffer;
 
-    var["gGlobalHashBucket"] = mpGlobalBuckets;
-    var["gCausticHashBucket"] = mpCausticBuckets;
-
-    var["gPhotonCounter"] = mPhotonCounterBuffer.counter;
+    for (uint32_t i = 0; i <= 1; i++)
+    {
+        var["gHashBucket"][i] = i == 0 ? mpCausticBuckets : mpGlobalBuckets;
+        var["gHashCounter"][i] = i == 0 ? mpCausticHashPhotonCounter : mpGlobalHashPhotonCounter;
+    }
 
     //Bind light sample tex
     var["gLightSample"] = mLightSampleTex;
@@ -337,7 +298,7 @@ void PhotonMapperHash::generatePhotons(RenderContext* pRenderContext, const Rend
     mpScene->raytrace(pRenderContext, mTracerGenerate.pProgram.get(), mTracerGenerate.pVars, uint3(targetDim, 1));
 }
 
-void PhotonMapperHash::collectPhotons(RenderContext* pRenderContext, const RenderData& renderData)
+void PhotonMapperStochasticHash::collectPhotons(RenderContext* pRenderContext, const RenderData& renderData)
 {
     // Trace the photons
     FALCOR_PROFILE("collect photons");
@@ -381,17 +342,11 @@ void PhotonMapperHash::collectPhotons(RenderContext* pRenderContext, const Rende
         var[nameBuf]["gQuadProbeIt"] = mQuadraticProbeIterations;
     }
 
-
-    var["gGlobalHashBucket"] = mpGlobalBuckets;
-    var["gCausticHashBucket"] = mpCausticBuckets;
-
-    //set the buffers
-    var["gCausticPos"] = mCausticBuffers.position;
-    var["gCausticFlux"] = mCausticBuffers.infoFlux;
-    var["gCausticDir"] = mCausticBuffers.infoDir;
-    var["gGlobalPos"] = mGlobalBuffers.position;
-    var["gGlobalFlux"] = mGlobalBuffers.infoFlux;
-    var["gGlobalDir"] = mGlobalBuffers.infoDir;
+    for (uint32_t i = 0; i <= 1; i++)
+    {
+        var["gHashBucket"][i] = i== 0 ? mpCausticBuckets :  mpGlobalBuckets;
+        var["gHashCounter"][i] = i == 0 ? mpCausticHashPhotonCounter : mpGlobalHashPhotonCounter;
+    }
 
     // Lamda for binding textures. These needs to be done per-frame as the buffers may change anytime.
     auto bindAsTex = [&](const ChannelDesc& desc)
@@ -417,17 +372,10 @@ void PhotonMapperHash::collectPhotons(RenderContext* pRenderContext, const Rende
     mpCSCollect->execute(pRenderContext, uint3(targetDim, 1));
 }
 
-void PhotonMapperHash::renderUI(Gui::Widgets& widget)
+void PhotonMapperStochasticHash::renderUI(Gui::Widgets& widget)
 {
     float2 dummySpacing = float2(0, 10);
     bool dirty = false;
-
-    //Info
-    widget.text("Iterations: " + std::to_string(mFrameCount));
-    widget.text("Caustic Photons: " + std::to_string(mPhotonCount[0]) + " / " + std::to_string(mCausticBuffers.maxSize));
-    widget.tooltip("Photons for current Iteration / Buffer Size");
-    widget.text("Global Photons: " + std::to_string(mPhotonCount[1]) + " / " + std::to_string(mGlobalBuffers.maxSize));
-    widget.tooltip("Photons for current Iteration / Buffer Size");
 
     widget.text("Current Global Radius: " + std::to_string(mGlobalRadius));
     widget.text("Current Caustic Radius: " + std::to_string(mCausticRadius));
@@ -521,7 +469,7 @@ void PhotonMapperHash::renderUI(Gui::Widgets& widget)
         mOptionsChanged = true;
 }
 
-void PhotonMapperHash::setScene(RenderContext* pRenderContext, const Scene::SharedPtr& pScene)
+void PhotonMapperStochasticHash::setScene(RenderContext* pRenderContext, const Scene::SharedPtr& pScene)
 {
     // Clear data for previous scene.
     resetPhotonMapper();
@@ -568,7 +516,7 @@ void PhotonMapperHash::setScene(RenderContext* pRenderContext, const Scene::Shar
     preparePhotonCounters();
 }
 
-void PhotonMapperHash::getActiveEmissiveTriangles(RenderContext* pRenderContext)
+void PhotonMapperStochasticHash::getActiveEmissiveTriangles(RenderContext* pRenderContext)
 {
     auto lightCollection = mpScene->getLightCollection(pRenderContext);
 
@@ -586,7 +534,7 @@ void PhotonMapperHash::getActiveEmissiveTriangles(RenderContext* pRenderContext)
     }
 }
 
-void PhotonMapperHash::createLightSampleTexture(RenderContext* pRenderContext)
+void PhotonMapperStochasticHash::createLightSampleTexture(RenderContext* pRenderContext)
 {
     if (mPhotonsPerTriangle) mPhotonsPerTriangle.reset();
     if (mLightSampleTex) mLightSampleTex.reset();
@@ -727,14 +675,14 @@ void PhotonMapperHash::createLightSampleTexture(RenderContext* pRenderContext)
 
     //Create texture and Pdf buffer
     mLightSampleTex = Texture::create2D(xPhotons, mMaxDispatchY, ResourceFormat::R32Int, 1, 1, lightIdxTex.data());
-    mLightSampleTex->setName("PhotonMapperHash::LightSampleTex");
+    mLightSampleTex->setName("PhotonMapperStochasticHash::LightSampleTex");
 
     //Create a buffer for num photons per triangle
     if (numPhotonsPerTriangle.size() == 0) {
         numPhotonsPerTriangle.push_back(0);
     }
     mPhotonsPerTriangle = Buffer::createStructured(sizeof(uint), static_cast<uint32_t>(numPhotonsPerTriangle.size()), ResourceBindFlags::ShaderResource, Buffer::CpuAccess::None, numPhotonsPerTriangle.data());
-    mPhotonsPerTriangle->setName("PhotonMapperHash::mPhotonsPerTriangleEmissive");
+    mPhotonsPerTriangle->setName("PhotonMapperStochasticHash::mPhotonsPerTriangleEmissive");
 
 
     //Set numPhoton variable
@@ -744,20 +692,19 @@ void PhotonMapperHash::createLightSampleTexture(RenderContext* pRenderContext)
     mNumPhotonsUI = mNumPhotons;
 }
 
-void PhotonMapperHash::resetPhotonMapper()
+void PhotonMapperStochasticHash::resetPhotonMapper()
 {
     mFrameCount = 0;
 
     //For Photon Buffers and resize
     mResizePhotonBuffers = true; mPhotonBuffersReady = false;
-    mCausticBuffers.maxSize = 0; mGlobalBuffers.maxSize = 0;
     mPhotonCount[0] = 0; mPhotonCount[1] = 0;
 
     //reset light sample tex
     mLightSampleTex = nullptr;
 }
 
-void PhotonMapperHash::changeNumPhotons()
+void PhotonMapperStochasticHash::changeNumPhotons()
 {
     //If photon number differ reset the light sample texture
     if (mNumPhotonsUI != mNumPhotons) {
@@ -767,16 +714,9 @@ void PhotonMapperHash::changeNumPhotons()
         mFrameCount = 0;
     }
 
-    
-
-    if (mGlobalBuffers.maxSize != mGlobalBufferSizeUI || mCausticBuffers.maxSize != mCausticBufferSizeUI || mFitBuffersToPhotonShot) {
-        mResizePhotonBuffers = true; mPhotonBuffersReady = false;
-        mCausticBuffers.maxSize = 0; mGlobalBuffers.maxSize = 0;
-    }
-
 }
 
-void PhotonMapperHash::copyPhotonCounter(RenderContext* pRenderContext)
+void PhotonMapperStochasticHash::copyPhotonCounter(RenderContext* pRenderContext)
 {
     //Copy the photonConter to a CPU Buffer
     pRenderContext->copyBufferRegion(mPhotonCounterBuffer.cpuCopy.get(), 0, mPhotonCounterBuffer.counter.get(), 0, sizeof(uint32_t) * 2);
@@ -786,7 +726,7 @@ void PhotonMapperHash::copyPhotonCounter(RenderContext* pRenderContext)
     mPhotonCounterBuffer.cpuCopy->unmap();
 }
 
-void PhotonMapperHash::prepareVars()
+void PhotonMapperStochasticHash::prepareVars()
 {
     FALCOR_ASSERT(mTracerGenerate.pProgram);
 
@@ -802,52 +742,7 @@ void PhotonMapperHash::prepareVars()
     mpSampleGenerator->setShaderData(var);
 }
 
-ResourceFormat inline getFormatRGBA(uint format, bool flux = true)
-{
-    switch (format) {
-    case static_cast<uint>(PhotonMapperHash::TextureFormat::_8Bit):
-        if (flux) 
-            return ResourceFormat::RGBA8Unorm;
-        else
-            return ResourceFormat::RGBA8Snorm;
-    case static_cast<uint>(PhotonMapperHash::TextureFormat::_16Bit):
-        return ResourceFormat::RGBA16Float;
-    case static_cast<uint>(PhotonMapperHash::TextureFormat::_32Bit):
-        return ResourceFormat::RGBA32Float;
-    }
-
-    //If invalid format return highest possible format
-    return ResourceFormat::RGBA32Float;
-}
-
-void PhotonMapperHash::preparePhotonInfoTexture()
-{
-    FALCOR_ASSERT(mCausticBuffers.maxSize > 0 || mGlobalBuffers.maxSize > 0);
-    //clean tex
-    mCausticBuffers.infoFlux.reset(); mCausticBuffers.infoDir.reset();  mCausticBuffers.position.reset();
-    mGlobalBuffers.infoFlux.reset(); mGlobalBuffers.infoDir.reset(); mGlobalBuffers.position.reset();
-   
-    //Caustic
-    mCausticBuffers.infoFlux = Texture::create2D(mCausticBuffers.maxSize / kInfoTexHeight, kInfoTexHeight, getFormatRGBA(mInfoTexFormat, true), 1, 1, nullptr, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
-    mCausticBuffers.infoFlux->setName("PhotonMapperHash::mCausticBuffers.fluxInfo");
-    mCausticBuffers.infoDir = Texture::create2D(mCausticBuffers.maxSize / kInfoTexHeight, kInfoTexHeight, getFormatRGBA(mInfoTexFormat, false), 1, 1, nullptr, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
-    mCausticBuffers.infoDir->setName("PhotonMapperHash::mCausticBuffers.dirInfo");
-    mCausticBuffers.position = Texture::create2D(mCausticBuffers.maxSize / kInfoTexHeight, kInfoTexHeight, ResourceFormat::RGBA32Float, 1, 1, nullptr, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
-    mCausticBuffers.position->setName("PhotonMapperHash::mCausticBuffers.position");
-
-    FALCOR_ASSERT(mCausticBuffers.infoFlux); FALCOR_ASSERT(mCausticBuffers.infoDir); FALCOR_ASSERT(mCausticBuffers.position);
-
-    mGlobalBuffers.infoFlux = Texture::create2D(mGlobalBuffers.maxSize / kInfoTexHeight, kInfoTexHeight, getFormatRGBA(mInfoTexFormat, true), 1, 1, nullptr, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
-    mGlobalBuffers.infoFlux->setName("PhotonMapperHash::mGlobalBuffers.fluxInfo");
-    mGlobalBuffers.infoDir = Texture::create2D(mGlobalBuffers.maxSize / kInfoTexHeight, kInfoTexHeight, getFormatRGBA(mInfoTexFormat, false), 1, 1, nullptr, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
-    mGlobalBuffers.infoDir->setName("PhotonMapperHash::mGlobalBuffers.dirInfo");
-    mGlobalBuffers.position = Texture::create2D(mGlobalBuffers.maxSize / kInfoTexHeight, kInfoTexHeight, ResourceFormat::RGBA32Float, 1, 1, nullptr, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
-    mGlobalBuffers.position->setName("PhotonMapperHash::mGlobalBuffers.position");
-
-    FALCOR_ASSERT(mGlobalBuffers.infoFlux); FALCOR_ASSERT(mGlobalBuffers.infoDir); FALCOR_ASSERT(mGlobalBuffers.position);
-}
-
-void PhotonMapperHash::prepareHashBuffer()
+bool PhotonMapperStochasticHash::preparePhotonBuffers()
 {
     //reset buffers if already set
     if (mpGlobalBuckets) {
@@ -857,40 +752,33 @@ void PhotonMapperHash::prepareHashBuffer()
 
     //Build buffers
     mNumBuckets = 1 << mNumBucketBits;
-    mpGlobalBuckets = Buffer::createStructured(sizeof(uint32_t) * (mNumPhotonsPerBucket + 4), mNumBuckets);
-    mpGlobalBuckets->setName("PhotonMapperHash::BucketGlobal");
-    mpCausticBuckets = Buffer::createStructured(sizeof(uint32_t) * (mNumPhotonsPerBucket + 4), mNumBuckets);
-    mpCausticBuckets->setName("PhotonMapperHash::BucketCaustic");
+    mpGlobalBuckets = Buffer::createStructured(sizeof(PhotonBucket), mNumBuckets);
+    mpGlobalBuckets->setName("PhotonMapperStochasticHash::BucketGlobal");
+    mpCausticBuckets = Buffer::createStructured(sizeof(PhotonBucket), mNumBuckets);
+    mpCausticBuckets->setName("PhotonMapperStochasticHash::BucketCaustic");
 
-}
-
-bool PhotonMapperHash::preparePhotonBuffers()
-{
-    FALCOR_ASSERT(mCausticBuffers.maxSize > 0 || mGlobalBuffers.maxSize > 0);
-
-    //Create the hash buffers
-    prepareHashBuffer();
-
-    //Create/recreate the textures
-    preparePhotonInfoTexture();
+    mpGlobalHashPhotonCounter = Buffer::createStructured(sizeof(uint32_t), mNumBuckets);
+    mpGlobalHashPhotonCounter->setName("PhotonMapperStochasticHash::CounterHashGlobal");
+    mpCausticHashPhotonCounter = Buffer::createStructured(sizeof(uint32_t), mNumBuckets);
+    mpCausticHashPhotonCounter->setName("PhotonMapperStochasticHash::CounterHashCaustic");
     
     return true;
 }
 
-void PhotonMapperHash::preparePhotonCounters()
+void PhotonMapperStochasticHash::preparePhotonCounters()
 {
     //photon counter
     mPhotonCounterBuffer.counter = Buffer::createStructured(sizeof(uint), 2);
-    mPhotonCounterBuffer.counter->setName("PhotonMapperHash::PhotonCounter");
+    mPhotonCounterBuffer.counter->setName("PhotonMapperStochasticHash::PhotonCounter");
     uint64_t zeroInit = 0;
     mPhotonCounterBuffer.reset = Buffer::create(sizeof(uint64_t), ResourceBindFlags::None, Buffer::CpuAccess::None, &zeroInit);
-    mPhotonCounterBuffer.reset->setName("PhotonMapperHash::PhotonCounterReset");
+    mPhotonCounterBuffer.reset->setName("PhotonMapperStochasticHash::PhotonCounterReset");
     uint32_t oneInit[2] = { 1,1 };
     mPhotonCounterBuffer.cpuCopy = Buffer::create(sizeof(uint64_t), ResourceBindFlags::None, Buffer::CpuAccess::Read, oneInit);
-    mPhotonCounterBuffer.cpuCopy->setName("PhotonMapperHash::PhotonCounterCPU");
+    mPhotonCounterBuffer.cpuCopy->setName("PhotonMapperStochasticHash::PhotonCounterCPU");
 }
 
-void PhotonMapperHash::prepareRandomSeedBuffer(const uint2 screenDimensions)
+void PhotonMapperStochasticHash::prepareRandomSeedBuffer(const uint2 screenDimensions)
 {
     FALCOR_ASSERT(screenDimensions.x > 0 && screenDimensions.y > 0);
 
@@ -901,7 +789,7 @@ void PhotonMapperHash::prepareRandomSeedBuffer(const uint2 screenDimensions)
 
     //create the gpu buffer
     mRandNumSeedBuffer = Texture::create2D(screenDimensions.x, screenDimensions.y, ResourceFormat::R32Uint, 1, 1, cpuSeeds.data());
-    mRandNumSeedBuffer->setName("PhotonMapperHash::RandomSeedBuffer");
+    mRandNumSeedBuffer->setName("PhotonMapperStochasticHash::RandomSeedBuffer");
 
     FALCOR_ASSERT(mRandNumSeedBuffer);
 }

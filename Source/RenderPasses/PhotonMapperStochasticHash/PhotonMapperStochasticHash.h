@@ -28,13 +28,14 @@
 #pragma once
 #include "Falcor.h"
 #include "Utils/Sampling/SampleGenerator.h"
+#include "PhotonMapperStochasticHashFunctions.slang"
 
 using namespace Falcor;
 
-class PhotonMapperHash : public RenderPass
+class PhotonMapperStochasticHash : public RenderPass
 {
 public:
-    using SharedPtr = std::shared_ptr<PhotonMapperHash>;
+    using SharedPtr = std::shared_ptr<PhotonMapperStochasticHash>;
 
     static const Info kInfo;
 
@@ -61,23 +62,15 @@ public:
     };
 
 private:
-    PhotonMapperHash();
+    PhotonMapperStochasticHash();
 
     /** Prepares Program Variables and binds the sample generator
     */
     void prepareVars();
 
-    /** Prepares the hash buffers
-    */
-    void prepareHashBuffer();
-
     /** Prepares all buffers neede for the generate photon pass
     */
     bool preparePhotonBuffers();
-
-    /** Prepares the info textures. Is called inside of preparePhotonBuffers. Can be called seperate for format changes
-    */
-    void preparePhotonInfoTexture();
 
     /** Creates the photon counter for caustic and global photon buffers
     */
@@ -243,9 +236,9 @@ private:
 
     Buffer::SharedPtr mpGlobalBuckets;
     Buffer::SharedPtr mpCausticBuckets;
+    Buffer::SharedPtr mpGlobalHashPhotonCounter;
+    Buffer::SharedPtr mpCausticHashPhotonCounter;
 
-    PhotonBuffers mCausticBuffers;              ///< Buffers for the caustic photons
-    PhotonBuffers mGlobalBuffers;               ///< Buffers for the global photons
 
     Texture::SharedPtr mRandNumSeedBuffer;       ///< Buffer for the random seeds
 
