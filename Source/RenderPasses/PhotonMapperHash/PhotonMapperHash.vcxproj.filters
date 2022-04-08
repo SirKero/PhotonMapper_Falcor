@@ -7,7 +7,6 @@
     <ClInclude Include="PhotonMapperHash.h" />
   </ItemGroup>
   <ItemGroup>
-    <ShaderSource Include="PhotonMapperHashCollect.rt.slang" />
     <ShaderSource Include="PhotonMapperHashGenerate.rt.slang" />
     <ShaderSource Include="PhotonMapperHashCollect.cs.slang" />
   </ItemGroup>

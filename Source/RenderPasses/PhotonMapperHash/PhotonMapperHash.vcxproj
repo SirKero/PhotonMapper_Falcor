@@ -37,7 +37,6 @@
   </ItemGroup>
   <ItemGroup>
     <ShaderSource Include="PhotonMapperHashCollect.cs.slang" />
-    <ShaderSource Include="PhotonMapperHashCollect.rt.slang" />
     <ShaderSource Include="PhotonMapperHashGenerate.rt.slang" />
   </ItemGroup>
   <ItemGroup>
