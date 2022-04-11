@@ -243,7 +243,7 @@ void PTVBuffer::setScene(RenderContext* pRenderContext, const Scene::SharedPtr& 
     //Clear data from previous scenne
     //Rt program should be recreated
     mTracer = RayTraceProgramHelper::create();
-
+    mResetConstantBuffers = true;
     mpScene = pScene;
 
     if (mpScene) {

@@ -506,7 +506,7 @@ void PhotonMapper::setScene(RenderContext* pRenderContext, const Scene::SharedPt
     // After changing scene, the raytracing program should to be recreated.
     mTracerGenerate = RayTraceProgramHelper::create();
     mTracerCollect = RayTraceProgramHelper::create();
-    
+    mResetConstantBuffers = true;
     // Set new scene.
     mpScene = pScene;
 

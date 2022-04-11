@@ -453,7 +453,7 @@ void PhotonMapperStochasticHash::setScene(RenderContext* pRenderContext, const S
 
     // After changing scene, the raytracing program should to be recreated.
     mTracerGenerate = RayTraceProgramHelper::create();
-    mResetCS = true;
+    mpCSCollect.reset();
     mSetConstantBuffers = true;
     
     // Set new scene.
