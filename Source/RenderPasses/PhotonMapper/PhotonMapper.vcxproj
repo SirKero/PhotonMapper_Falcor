@@ -36,6 +36,7 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
+    <ShaderSource Include="PhotonCulling.cs.slang" />
     <ShaderSource Include="PhotonMapperCollect.rt.slang" />
     <ShaderSource Include="PhotonMapperGenerate.rt.slang" />
   </ItemGroup>

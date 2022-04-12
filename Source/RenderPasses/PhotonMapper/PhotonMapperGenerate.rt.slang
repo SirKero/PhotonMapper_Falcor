@@ -15,7 +15,7 @@ cbuffer PerFrame
     uint        gFrameCount;        // Frame count since scene was loaded.
     float       gCausticRadius;     // Radius for the caustic photons
     float       gGlobalRadius;      // Radius for the global photons
-   
+    float       gCosFov;            //fov used for culling
 }
 
 cbuffer CB
@@ -29,6 +29,9 @@ cbuffer CB
     float gAnalyticInvPdf;  //Pdf for analytic lights
     bool gAdjustShadingNormals; //Adjusts shading normals
     bool gUseAlphaTest; //Enables alpha test
+
+    bool gEnablePhotonCulling;
+    uint gPhotonCullingMaxPhotons;
 };
 
 // Inputs
@@ -53,6 +56,10 @@ Texture2D<uint> gRndSeedBuffer;
 
 RWStructuredBuffer<uint> gPhotonCounter; //idx 0 = caustic ; idx 1 = global
 
+//Culling (optional)
+StructuredBuffer<uint> gCullingAabbCounter;
+RaytracingAccelerationStructure gCullingTlas;
+
 // Static configuration based on defines set from the host.
 #define is_valid(name) (is_valid_##name != 0)
 static const bool kUseAnalyticLights = USE_ANALYTIC_LIGHTS;
@@ -60,10 +67,13 @@ static const bool kUseEmissiveLights = USE_EMISSIVE_LIGHTS;
 static const bool kUseEnvLight = USE_ENV_LIGHT;
 static const bool kUseEnvBackground = USE_ENV_BACKGROUND;
 static const float3 kDefaultBackgroundColor = float3(0, 0, 0);
-static const float kRayTMax = FLT_MAX;
+static const float kRayTMax = RAY_TMAX;
 static const uint kMaxPhotonIndexGLB = MAX_PHOTON_INDEX_GLOBAL;
 static const uint kMaxPhotonIndexCAU = MAX_PHOTON_INDEX_CAUSTIC;
 static const uint kInfoTexHeight = INFO_TEXTURE_HEIGHT;
+
+static const float kRayTMinCulling = RAY_TMIN_CULLING;
+static const float kRayTMaxCulling = RAY_TMAX_CULLING;
 
 static const float k_2Pi = 6.28318530717958647692;
 static const float k_4Pi = 12.5663706143591729538;
@@ -94,6 +104,16 @@ struct RayData
         d.direction = float3(0, 0, 0);
         return d;
     }
+};
+
+struct CullingRayPayload
+{
+    bool hit;
+};
+
+struct CullingAttribs
+{
+    uint pad;
 };
 
 //get the area of a triangle from the vectors a and b. 
@@ -152,6 +172,51 @@ AABB calcPhotonAABB(in float3 center, in float radius)
     AABB aabb = AABB(center - radius, center + radius);
     return aabb;
 }
+
+bool cullingTest(float3 origin)
+{
+    //Check if position is inside camera frustum
+    float3 camPos = gScene.camera.getPosition();
+    float3 camTarget = gScene.camera.data.target;
+
+    float3 toTarget = normalize(camTarget - camPos);
+    float3 toPos = normalize(origin - camPos);
+
+    //if photon is inside camera frustum don't cull
+    if (dot(toTarget, toPos) >= gCosFov)
+        return false;
+
+    //Check if photon is visible through a reflection with a short ray
+    RayDesc ray;
+    ray.Direction = float3(0, 1, 0);
+    ray.Origin = origin;
+    ray.TMin = kRayTMinCulling;
+    ray.TMax = kRayTMaxCulling;
+
+    CullingRayPayload rayPayload;
+    rayPayload.hit = true;
+
+    TraceRay(gCullingTlas, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xff /* instanceInclusionMask */, 1 /* hitIdx */, rayTypeCount, 1 /* missIdx */, ray, rayPayload);
+    
+    return !rayPayload.hit; //If hit photon is not culled
+}
+
+//Culling
+[shader("miss")]
+void missCulling(inout CullingRayPayload rayPayload : SV_RayPayload)
+{
+    rayPayload.hit = false;
+}
+
+[shader("intersection")]
+void intersectionCulling()
+{
+    //Create a pad struct, as a struct is needed for report hit
+    CullingAttribs attribs;
+    attribs.pad = 0;
+    ReportHit(kRayTMinCulling, 0, attribs);
+}
+
 
 [shader("miss")]
 void miss(inout RayData rayData : SV_RayPayload)
@@ -312,7 +377,7 @@ void rayGen()
     //ray tracing vars
     ray.Origin = lightPos + 0.01 * ray.Direction;
     ray.TMin = 0.01f;
-    ray.TMax = 1000.f;
+    ray.TMax = kRayTMax;
     uint rayFlags = 0;
 
     bool wasReflectedSpecular = false;
@@ -335,17 +400,27 @@ void rayGen()
         //rejection
         float rndRoulette = sampleNext1D(rayData.sg);
         bool roulette = rndRoulette <= gGlobalRejection;
-        
+        bool photonCulled = gEnablePhotonCulling;
+
+              
         //save photon        
-        if (reflectedDiffuse)
+        if (reflectedDiffuse && (roulette || wasReflectedSpecular))
         {
-            uint photonIndex = 0;
-            float radius = wasReflectedSpecular ? gCausticRadius : gGlobalRadius;
-            uint insertIndex = wasReflectedSpecular ? 0 : 1;    // 0 is caustic, 1 is global
-            photon.flux = wasReflectedSpecular ? photon.flux : photon.flux / gGlobalRejection; //divide by rejection value if global map
-            AABB photonAABB = calcPhotonAABB(photonPos, radius);
-            if (roulette || wasReflectedSpecular)
+            //Photon culling
+            if (gEnablePhotonCulling)
             {
+                photonCulled = cullingTest(photonPos);
+            }
+
+            //Inset photon if not culled
+            if (!photonCulled)
+            {
+                uint photonIndex = 0;
+                float radius = wasReflectedSpecular ? gCausticRadius : gGlobalRadius;
+                uint insertIndex = wasReflectedSpecular ? 0 : 1; // 0 is caustic, 1 is global
+                photon.flux = wasReflectedSpecular ? photon.flux : photon.flux / gGlobalRejection; //divide by rejection value if global map
+                AABB photonAABB = calcPhotonAABB(photonPos, radius);
+            
                 InterlockedAdd(gPhotonCounter[insertIndex], 1u, photonIndex);
                 photonIndex = min(photonIndex, wasReflectedSpecular ? kMaxPhotonIndexCAU : kMaxPhotonIndexGLB);
                 uint2 photonIndex2D = uint2(photonIndex / kInfoTexHeight, photonIndex % kInfoTexHeight);

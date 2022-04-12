@@ -9,5 +9,6 @@
   <ItemGroup>
     <ShaderSource Include="PhotonMapperCollect.rt.slang" />
     <ShaderSource Include="PhotonMapperGenerate.rt.slang" />
+    <ShaderSource Include="PhotonCulling.cs.slang" />
   </ItemGroup>
 </Project>

@@ -106,11 +106,19 @@ private:
 
     /** Creates the TLAS for the Photon AABBs
     */
-    void createTopLevelAS(RenderContext* pContext, bool rebuild = false);
+    void createTopLevelAS(RenderContext* pContext);
 
     /** Creates the BLAS for the Photon AABBs
    */
-    void createBottomLevelAS(RenderContext* pContext, const std::vector<uint>& aabbCount, bool rebuild = false);
+    void createBottomLevelAS(RenderContext* pContext, const std::vector<uint>& aabbCount);
+
+    /** Builds the Bottom Level Acceleration structure
+    */
+    void buildBottomLevelAS(RenderContext* pContext);
+
+    /**Builds the Top Level Acceleration structure
+    */
+    void buildTopLevelAS(RenderContext* pContext);
 
     /** Prepares the buffer that holds the seeds for the SampleGenerator
     */
@@ -125,6 +133,18 @@ private:
     *  As this is done once it has no impact on performance and only a minimal impact on CPU-Memory
     */
     void getActiveEmissiveTriangles(RenderContext* pRenderContext);
+
+    /**
+    */
+    void initPhotonCulling(RenderContext* pRenderContext, uint2 windowDim);
+
+    /**
+    */
+    void resetCullingVars(RenderContext* pRenderContext);
+
+    /**
+    */
+    void photonCullingPass(RenderContext* pRenderContext, const RenderData& renderData);
 
     // Internal state
     Scene::SharedPtr            mpScene;                    ///< Current scene.
@@ -175,6 +195,9 @@ private:
     bool                        mDisableGlobalCollection = false;       ///<Disabled the collection of global photons
     bool                        mDisableCausticCollection = false;       ///<Disabled the collection of caustic photons
 
+    //Photon Culling
+    bool                        mEnablePhotonCulling = true;            //<Photon Culling with AS
+    uint                        mCullingMaxBoxesUI = 10000;
 
     //*******************************************************
     // Runtime data
@@ -188,6 +211,7 @@ private:
     bool                        mPhotonInfoFormatChanged = false;         
     bool                        mRebuildAS = false;
     uint                        mInfoTexFormat = 1;
+    bool                        mPhotonBuffersReady = false;
 
 
     //Light
@@ -218,37 +242,6 @@ private:
         }
     };
 
-    RayTraceProgramHelper mTracerGenerate;          ///<Description for the Generate Photon pass 
-    RayTraceProgramHelper mTracerCollect;           ///<Collect pass collects the photons that where shot
-
-    //
-    //Photon Buffers
-    //
-
-    //Struct for the buffers that are needed for global and caustic photons
-    bool mPhotonBuffersReady = false;
-
-    bool mTestInit = false;
-
-    struct {
-        Buffer::SharedPtr counter;
-        Buffer::SharedPtr reset;
-        Buffer::SharedPtr cpuCopy;
-    }mPhotonCounterBuffer;
-
-    struct PhotonBuffers {
-        uint maxSize = 0;
-        Texture::SharedPtr infoFlux;
-        Texture::SharedPtr infoDir;
-        Buffer::SharedPtr aabb;
-        Buffer::SharedPtr blas;
-    };
-
-    PhotonBuffers mCausticBuffers;              ///< Buffers for the caustic photons
-    PhotonBuffers mGlobalBuffers;               ///< Buffers for the global photons
-
-    Texture::SharedPtr mRandNumSeedBuffer;       ///< Buffer for the random seeds
-
     struct BlasData
     {
         D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO prebuildInfo;
@@ -266,6 +259,46 @@ private:
         Buffer::SharedPtr pInstanceDescs;               ///< Buffer holding instance descs for the TLAS.
     };
 
+    struct PhotonBuffers {
+        uint maxSize = 0;
+        Texture::SharedPtr infoFlux;
+        Texture::SharedPtr infoDir;
+        Buffer::SharedPtr aabb;
+        Buffer::SharedPtr blas;
+    };
+
+    struct {
+        Buffer::SharedPtr counter;
+        Buffer::SharedPtr reset;
+        Buffer::SharedPtr cpuCopy;
+    }mPhotonCounterBuffer;
+
+    RayTraceProgramHelper mTracerGenerate;          ///<Description for the Generate Photon pass 
+    RayTraceProgramHelper mTracerCollect;           ///<Collect pass collects the photons that where shot
+    ComputePass::SharedPtr mPhotonCullingPass;      ///< Pass to create AABB's used for photon culling
+
+    //
+    //Photon Culling vars
+    //
+    uint                            mCullingMaxBoxes;
+    Buffer::SharedPtr               mCullingCounter; 
+    Buffer::SharedPtr               mCullingBufferAABB;
+    BlasData                        mCullingBlasData;
+    Buffer::SharedPtr               mCullingBlas;
+    TlasData                        mCullingTlas;
+    D3D12_RAYTRACING_INSTANCE_DESC  mCullingInstanceDesc;
+    D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO   mCullingTlasPrebuildInfo;
+
+    //
+    //Photon Buffers
+    //
+    PhotonBuffers mCausticBuffers;              ///< Buffers for the caustic photons
+    PhotonBuffers mGlobalBuffers;               ///< Buffers for the global photons
+
+    Texture::SharedPtr mRandNumSeedBuffer;       ///< Buffer for the random seeds
+
+    size_t                    mBlasScratchMaxSize = 0;
+    size_t                    mTlasScratchMaxSize = 0;
     std::vector<BlasData> mBlasData;
     Buffer::SharedPtr mBlasScratch;
     std::vector<D3D12_RAYTRACING_INSTANCE_DESC> mPhotonInstanceDesc;
