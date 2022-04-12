@@ -213,10 +213,6 @@ void main(uint2 DTid : SV_DispatchThreadID, uint2 Gid : SV_GroupID, uint2 GTid :
         radiance += w * causticRadiance;
     }
     
-        
-    
-    
-    
     radiance *= thpMatID.xyz;   //Add throughput for path
 
     //Add emission
