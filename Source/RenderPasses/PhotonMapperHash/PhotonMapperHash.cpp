@@ -523,6 +523,8 @@ void PhotonMapperHash::renderUI(Gui::Widgets& widget)
 
 void PhotonMapperHash::setScene(RenderContext* pRenderContext, const Scene::SharedPtr& pScene)
 {
+
+
     // Clear data for previous scene.
     resetPhotonMapper();
 
@@ -752,6 +754,9 @@ void PhotonMapperHash::resetPhotonMapper()
     mResizePhotonBuffers = true; mPhotonBuffersReady = false;
     mCausticBuffers.maxSize = 0; mGlobalBuffers.maxSize = 0;
     mPhotonCount[0] = 0; mPhotonCount[1] = 0;
+
+    mResetCS = true;
+    mSetConstantBuffers = true;
 
     //reset light sample tex
     mLightSampleTex = nullptr;

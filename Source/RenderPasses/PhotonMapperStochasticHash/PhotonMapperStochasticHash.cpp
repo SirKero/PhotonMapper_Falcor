@@ -673,6 +673,9 @@ void PhotonMapperStochasticHash::resetPhotonMapper()
     //For Photon Buffers and resize
     mResizePhotonBuffers = true; mPhotonBuffersReady = false;
 
+    mResetCS = true;
+    mSetConstantBuffers = true;
+
     //reset light sample tex
     mLightSampleTex = nullptr;
 }
