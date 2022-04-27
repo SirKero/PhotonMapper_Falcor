@@ -148,40 +148,47 @@ float3 collectPhotons(in HitInfo hitInfo, in float3 dirVec,bool isCaustic)
                 
                 uint b = hash(int3(x, y, z)) & (kNumBuckets - 1);
                 uint d = 0;
-                
+                int bucketSize = 0;
+                bool validBucket = false;
                 //Quadratic Probe with an maximum
                 for (uint i = 0; i < gQuadProbeIt; i++)
                 {
-                    int bucketSize = isCaustic ? gCausticHashBucket[b].size : gGlobalHashBucket[b].size;
+                    bucketSize = isCaustic ? gCausticHashBucket[b].size : gGlobalHashBucket[b].size;
                     int bucketCell = isCaustic ? gCausticHashBucket[b].cell : gGlobalHashBucket[b].cell;
                     int cellXY = (x << 16) | (y & 0xFFFF);
                     if (cellXY == 0)
                         cellXY = 0xFFFFFFFF; //avoid zero cell index
-                    //int cellXY = x;
                     //Stop on empty bucket
                     if (bucketSize == 0)
                         break;
                     //If cell is the same collect all photons and stop loop for this cell at the end
-                    
                     if (bucketCell == cellXY)
                     {
-                        
-                        uint photonCellIt = min(bucketSize, NUM_PHOTONS_PER_BUCKET);
-                        float3 cellRadiance = float3(0);
-                        for (int j = 0; j < photonCellIt; j++)
-                        {
-                            int photonIdx = isCaustic ? gCausticHashBucket[b].photonIdx[j] : gGlobalHashBucket[b].photonIdx[j];
-                            cellRadiance += photonContribution(sd, photonIdx, isCaustic);
-                        }
-                        radiance += cellRadiance;
-                        
+                        validBucket = true;
                         break;  //Stop for this cell
                     }
                     
                     //quadratic probe next bucket
                     ++d;
                     b = (b + ((d + d * d) >> 1)) & (kNumBuckets - 1);
-                }                
+                }
+
+                //If cell is the same collect all photons and stop loop for this cell at the end
+                if (validBucket)
+                {
+                        
+                    uint photonCellIt = min(bucketSize, NUM_PHOTONS_PER_BUCKET);
+                    float3 cellRadiance = float3(0);
+                    for (int j = 0; j < photonCellIt; j++)
+                    {
+                        int photonIdx = isCaustic ? gCausticHashBucket[b].photonIdx[j] : gGlobalHashBucket[b].photonIdx[j];
+                        cellRadiance += photonContribution(sd, photonIdx, isCaustic);
+                    }
+                    radiance += cellRadiance;
+                        
+                    break; //Stop for this cell
+                }
+                
             }
         }
     }

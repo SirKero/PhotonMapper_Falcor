@@ -192,7 +192,7 @@ void intersection()
     
     if (tHit)
     {
-        ReportHit(RAY_TMIN, 0, attribs);
+        ReportHit(RayTCurrent(), 0, attribs);
     }
 }
 
