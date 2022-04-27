@@ -350,6 +350,7 @@ void PhotonMapperHash::collectPhotons(RenderContext* pRenderContext, const Rende
 
         Program::DefineList defines;
         defines.add(mpScene->getSceneDefines());
+        defines.add(mpSampleGenerator->getDefines());
 
         defines.add("INFO_TEXTURE_HEIGHT", std::to_string(kInfoTexHeight));
         defines.add("NUM_PHOTONS_PER_BUCKET", std::to_string(mNumPhotonsPerBucket));
@@ -364,6 +365,7 @@ void PhotonMapperHash::collectPhotons(RenderContext* pRenderContext, const Rende
     auto var = mpCSCollect->getRootVar();
     //Set Scene data. Is needed for shading
     mpScene->setRaytracingShaderData(pRenderContext, var, 1);
+    mpSampleGenerator->setShaderData(var);
 
     std::string nameBuf = "PerFrame";
     var[nameBuf]["gFrameCount"] = mFrameCount;
@@ -379,6 +381,8 @@ void PhotonMapperHash::collectPhotons(RenderContext* pRenderContext, const Rende
         var[nameBuf]["gCollectGlobalPhotons"] = !mDisableGlobalCollection;
         var[nameBuf]["gCollectCausticPhotons"] = !mDisableCausticCollection;
         var[nameBuf]["gQuadProbeIt"] = mQuadraticProbeIterations;
+        var[nameBuf]["gEnableStochasicGathering"] = mEnableStochasticCollection;
+        var[nameBuf]["gCollectProbability"] = mStochasticCollectProbability;
     }
 
 
@@ -507,6 +511,12 @@ void PhotonMapperHash::renderUI(Gui::Widgets& widget)
         widget.tooltip("Disables the collection of Global Photons. However they will still be generated");
         dirty |= widget.checkbox("Disable Caustic Photons", mDisableCausticCollection);
         widget.tooltip("Disables the collection of Caustic Photons. However they will still be generated");
+        dirty |= widget.checkbox("Stochastic Collection", mEnableStochasticCollection);
+        widget.tooltip("Enables stochastic collection. A geometrically distributed random step is used for that");
+        if (mEnableStochasticCollection) {
+            dirty |= widget.slider("Stochastic Collection Probability", mStochasticCollectProbability, 0.0001f, 1.0f);
+            widget.tooltip("Probability for the geometrically distributed random step");
+        }
     }
     widget.dummy("", dummySpacing);
     //Reset Iterations

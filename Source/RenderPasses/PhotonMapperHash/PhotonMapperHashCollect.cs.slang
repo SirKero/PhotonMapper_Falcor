@@ -4,6 +4,7 @@
 import Scene.Raytracing;
 import Scene.Intersection;
 import Utils.Math.MathHelpers;
+import Utils.Sampling.SampleGenerator;
 import Rendering.Materials.StandardMaterial;
 import Rendering.Lights.LightHelpers;
 
@@ -24,6 +25,8 @@ cbuffer CB
     bool gCollectGlobalPhotons;
     bool gCollectCausticPhotons;
     uint gQuadProbeIt;  //Max num of quadratic probe iterations
+    bool gEnableStochasicGathering; //Enable stochastic collection
+    float gCollectProbability; //collection probability
 };
 
 // Inputs
@@ -95,7 +98,7 @@ ShadingData loadShadingData(const HitInfo hit, const float3 rayDir, const ITextu
     return gScene.materials.prepareShadingData(v, materialID, -rayDir, lod);
 }
 
-float3 photonContribution(in ShadingData sd, uint photonIndex , bool isCaustic)
+float3 photonContribution(in ShadingData sd,in const IBSDF bsdf, uint photonIndex, bool isCaustic)
 {
     const uint2 photonIndex2D = uint2(photonIndex / kInfoTexHeight, photonIndex % kInfoTexHeight);
     //get caustic or global photon
@@ -120,21 +123,27 @@ float3 photonContribution(in ShadingData sd, uint photonIndex , bool isCaustic)
     
     if (!hitSphere(photonPos, radius, sd.posW))
         return float3(0);
-    
-    
-    let lod = ExplicitLodTextureSampler(0.f);
-    let bsdf = gScene.materials.getBSDF(sd, lod);
-            
+                
     float3 f_r = bsdf.eval(sd, -photon.dir);
      
     return f_r * photon.flux;
 }
 
-float3 collectPhotons(in HitInfo hitInfo, in float3 dirVec,bool isCaustic)
+//returns geometrically distributed random number generator
+//param[in] p: probability
+//param[in] u: uniform distributed random number
+uint step(float p, float u)
+{
+    return uint(floor(log(u) / log(1.f - p)));
+}
+
+float3 collectPhotons(in HitInfo hitInfo, in float3 dirVec, uint2 launchIndex,bool isCaustic)
 {
     float3 radiance = float3(0);
     let lod = ExplicitLodTextureSampler(0.f);
     ShadingData sd = loadShadingData(hitInfo, dirVec, lod);
+    const IBSDF bsdf = gScene.materials.getBSDF(sd, lod);
+    SampleGenerator sg = SampleGenerator(launchIndex, gFrameCount);
     float radius = isCaustic ? gCausticRadius : gGlobalRadius;
     float scale = isCaustic ? gCausticHashScaleFactor : gGlobalHashScaleFactor;
     int3 gridCenter = int3(floor(sd.posW * scale));
@@ -148,7 +157,7 @@ float3 collectPhotons(in HitInfo hitInfo, in float3 dirVec,bool isCaustic)
                 
                 uint b = hash(int3(x, y, z)) & (kNumBuckets - 1);
                 uint d = 0;
-                int bucketSize = 0;
+                uint bucketSize = 0;
                 bool validBucket = false;
                 //Quadratic Probe with an maximum
                 for (uint i = 0; i < gQuadProbeIt; i++)
@@ -176,17 +185,25 @@ float3 collectPhotons(in HitInfo hitInfo, in float3 dirVec,bool isCaustic)
                 //If cell is the same collect all photons and stop loop for this cell at the end
                 if (validBucket)
                 {
-                        
                     uint photonCellIt = min(bucketSize, NUM_PHOTONS_PER_BUCKET);
                     float3 cellRadiance = float3(0);
-                    for (int j = 0; j < photonCellIt; j++)
+                    float u = gEnableStochasicGathering ? sampleNext1D(sg) :0.0;
+                    //Guarantee that at least 1 photon is collected per cell 
+                    uint startIdx = gEnableStochasicGathering ? min(step(gCollectProbability, u), photonCellIt-1) : 0;
+                    uint collectedPhotons = 0;
+                    for (uint idx = startIdx; idx < photonCellIt; idx++)
                     {
-                        int photonIdx = isCaustic ? gCausticHashBucket[b].photonIdx[j] : gGlobalHashBucket[b].photonIdx[j];
-                        cellRadiance += photonContribution(sd, photonIdx, isCaustic);
+                        uint photonIdx = isCaustic ? gCausticHashBucket[b].photonIdx[idx] : gGlobalHashBucket[b].photonIdx[idx];
+                        cellRadiance += photonContribution(sd, bsdf, photonIdx, isCaustic);
+                        //add a stochasic step on top i if enabled
+                        if (gEnableStochasicGathering)
+                        {
+                            u = sampleNext1D(sg);
+                            idx += step(gCollectProbability, u);
+                        }
+                        collectedPhotons++;
                     }
-                    radiance += cellRadiance;
-                        
-                    break; //Stop for this cell
+                    radiance += collectedPhotons > 0 ? cellRadiance * (bucketSize / collectedPhotons) : 0.0;
                 }
                 
             }
@@ -208,14 +225,14 @@ void main(uint2 DTid : SV_DispatchThreadID, uint2 Gid : SV_GroupID, uint2 GTid :
 
     if (gCollectGlobalPhotons && valid)
     {
-        float3 globalRadiance = collectPhotons(hit, viewVec, false);
+        float3 globalRadiance = collectPhotons(hit, viewVec, DTid, false);
         float w = 1 / (M_PI * gGlobalRadius * gGlobalRadius); //make this a constant
         radiance += w * globalRadiance;
     }
     
     if (gCollectCausticPhotons && valid)
     {
-        float3 causticRadiance = collectPhotons(hit, viewVec, true);
+        float3 causticRadiance = collectPhotons(hit, viewVec, DTid, true);
         float w = 1 / (M_PI * gCausticRadius * gCausticRadius); //make this a constant
         radiance += w * causticRadiance;
     }

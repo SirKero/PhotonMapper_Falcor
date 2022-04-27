@@ -172,6 +172,9 @@ private:
     bool                        mDisableGlobalCollection = false;       ///<Disabled the collection of global photons
     bool                        mDisableCausticCollection = false;       ///<Disabled the collection of caustic photons
 
+    bool                        mEnableStochasticCollection = true;     ///<Enables/Disables Stochasic collection
+    float                       mStochasticCollectProbability = 0.33f;  ///< Probability for collection
+
 
     //*******************************************************
     // Runtime data
