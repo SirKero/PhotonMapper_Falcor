@@ -256,7 +256,6 @@ void closestHit(inout RayData rayData : SV_RayPayload, BuiltInTriangleIntersecti
     rayData.thp *= valid ? bsdfSample.weight : float3(0);
     rayData.direction = bsdfSample.wo;
     rayData.diffuseHit = bsdfSample.isLobe(LobeType::Diffuse) || (bsdfSample.isLobe(LobeType::Reflection) && (bsdfProperties.roughness > gSpecRoughCutoff));
-    //rayData.cosTheta = abs(dot(sd.N, rayData.direction));
     
     //if throughput is 0, return
     if (!valid || any(rayData.thp < 0))

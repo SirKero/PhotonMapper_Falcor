@@ -214,7 +214,6 @@ void closestHit(inout RayData rayData : SV_RayPayload, BuiltInTriangleIntersecti
     rayData.thp *= valid ? bsdfSample.weight : float3(0);
     rayData.direction = bsdfSample.wo;
     rayData.diffuseHit = bsdfSample.isLobe(LobeType::Diffuse) || (bsdfSample.isLobe(LobeType::Reflection) && (bsdfProperties.roughness > gSpecRoughCutoff));
-    //rayData.cosTheta = abs(dot(sd.N, rayData.direction));
     
     //if throughput is 0, return
     if (!valid || any(rayData.thp < 0))
@@ -371,7 +370,6 @@ void rayGen()
             uint d = 0;
             
             int cellXY = (cell.x << 16) | (cell.y & 0xFFFF);
-            //int cellXY = cell.x;
             if (cellXY == 0)
                 cellXY = 0xFFFFFFFF;    //avoid zero cell index
             //caustic photon
