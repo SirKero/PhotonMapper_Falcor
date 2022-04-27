@@ -374,63 +374,86 @@ void rayGen()
             //int cellXY = cell.x;
             if (cellXY == 0)
                 cellXY = 0xFFFFFFFF;    //avoid zero cell index
-            //Compair exchange für 1 hash und dann xy coord. 
             //caustic photon
             if (wasReflectedSpecular)
             {
-                InterlockedAdd(gPhotonCounter[0].caustic, 1u, photonIndex);
+                //probe for free bucket
+                bool probeSuccess = false;
                 for (uint i = 0; i <= gQuadProbeIt; i++)
                 {
                     int origValue;
                     InterlockedCompareExchange(gCausticHashBucket[bucketIdx].cell, 0, cellXY, origValue);
                     if (origValue == 0 || origValue == cellXY)
                     {
-                        InterlockedAdd(gCausticHashBucket[bucketIdx].size, 1u, photonBucketIndex);
-                        if (photonBucketIndex < NUM_PHOTONS_PER_BUCKET)
-                        {
-                            //InterlockedAdd(gPhotonCounter[0].caustic, 1u, photonIndex);
-                            photonIndex = min(photonIndex, kMaxPhotonIndexCAU);
-                            gCausticHashBucket[bucketIdx].photonIdx[photonBucketIndex] = photonIndex;
-                            if (bucketIdx == 0)
-                                gCausticHashBucket[bucketIdx].pad.x = photonIndex;
-                            uint2 photonIndex2D = uint2(photonIndex / kInfoTexHeight, photonIndex % kInfoTexHeight);
-                            gCausticPos[photonIndex2D] = float4(photonPos, cellXY);
-                            gCausticFlux[photonIndex2D] = float4(photon.flux, bucketIdx);
-                            gCausticDir[photonIndex2D] = float4(photon.dir, gCausticHashScaleFactor);
-                        }
+                        probeSuccess = true;
                         break;
                     }
                     ++d;
                     bucketIdx = (bucketIdx + ((d + d * d) >> 1)) & (kNumBuckets - 1);   //quadradic probe
                 }
+                //insert caustic photon
+                if (probeSuccess)
+                {
+                    InterlockedAdd(gCausticHashBucket[bucketIdx].size, 1u, photonBucketIndex);
+                    //if bucket is full of photons replace a photon stochastically
+                    if (photonBucketIndex >= NUM_PHOTONS_PER_BUCKET)
+                    {
+                        photonBucketIndex = min(sampleNext1D(rayData.sg) * photonBucketIndex + 1, photonBucketIndex);
+                    }
+                    if (photonBucketIndex < NUM_PHOTONS_PER_BUCKET)
+                    {
+                        InterlockedAdd(gPhotonCounter[0].caustic, 1u, photonIndex);
+                        photonIndex = min(photonIndex, kMaxPhotonIndexCAU);
+                        gCausticHashBucket[bucketIdx].photonIdx[photonBucketIndex] = photonIndex;
+                        if (bucketIdx == 0)
+                            gCausticHashBucket[bucketIdx].pad.x = photonIndex;
+                        uint2 photonIndex2D = uint2(photonIndex / kInfoTexHeight, photonIndex % kInfoTexHeight);
+                        gCausticPos[photonIndex2D] = float4(photonPos, cellXY);
+                        gCausticFlux[photonIndex2D] = float4(photon.flux, bucketIdx);
+                        gCausticDir[photonIndex2D] = float4(photon.dir, gCausticHashScaleFactor);
+                    }
+                }
+                
             }
             //Global photon
             else if(roulette)
             {
+                //probe for free bucket
+                bool probeSuccess = false;
                 for (uint i = 0; i <= gQuadProbeIt; i++)
                 {
                     int origValue = 1;
                     InterlockedCompareExchange(gGlobalHashBucket[bucketIdx].cell, 0, cellXY, origValue);
                     if (origValue == 0 || origValue == cellXY)
                     {
-                        InterlockedAdd(gGlobalHashBucket[bucketIdx].size, 1u, photonBucketIndex);
-                        if (photonBucketIndex < NUM_PHOTONS_PER_BUCKET)
-                        {
-                            photon.flux /= gGlobalRejection;
-                            InterlockedAdd(gPhotonCounter[0].global, 1u, photonIndex);
-                            photonIndex = min(photonIndex, kMaxPhotonIndexGLB);
-                            gGlobalHashBucket[bucketIdx].photonIdx[photonBucketIndex] = photonIndex;
-                            if (bucketIdx == 0)
-                                gGlobalHashBucket[bucketIdx].pad.x = photonIndex;
-                            uint2 photonIndex2D = uint2(photonIndex / kInfoTexHeight, photonIndex % kInfoTexHeight);
-                            gGlobalPos[photonIndex2D] = float4(photonPos, cellXY);
-                            gGlobalFlux[photonIndex2D] = float4(photon.flux, bucketIdx);
-                            gGlobalDir[photonIndex2D] = float4(photon.dir, gGlobalHashScaleFactor);
-                        }
+                        probeSuccess = true;
                         break;
                     }
                     ++d;
                     bucketIdx = (bucketIdx + ((d + d * d) >> 1)) & (kNumBuckets - 1); //quadradic probe
+                }
+                //insert global photon
+                if (probeSuccess)
+                {
+                    InterlockedAdd(gGlobalHashBucket[bucketIdx].size, 1u, photonBucketIndex);
+                    //if bucket is full of photons replace a photon stochastically
+                    if (photonBucketIndex >= NUM_PHOTONS_PER_BUCKET)
+                    {
+                        photonBucketIndex = min(sampleNext1D(rayData.sg) * photonBucketIndex + 1, photonBucketIndex);
+                    }
+                    if (photonBucketIndex < NUM_PHOTONS_PER_BUCKET)
+                    {
+                        photon.flux /= gGlobalRejection;
+                        InterlockedAdd(gPhotonCounter[0].global, 1u, photonIndex);
+                        photonIndex = min(photonIndex, kMaxPhotonIndexGLB);
+                        gGlobalHashBucket[bucketIdx].photonIdx[photonBucketIndex] = photonIndex;
+                        if (bucketIdx == 0)
+                            gGlobalHashBucket[bucketIdx].pad.x = photonIndex;
+                        uint2 photonIndex2D = uint2(photonIndex / kInfoTexHeight, photonIndex % kInfoTexHeight);
+                        gGlobalPos[photonIndex2D] = float4(photonPos, cellXY);
+                        gGlobalFlux[photonIndex2D] = float4(photon.flux, bucketIdx);
+                        gGlobalDir[photonIndex2D] = float4(photon.dir, gGlobalHashScaleFactor);
+                    }
                 }
             }
               
