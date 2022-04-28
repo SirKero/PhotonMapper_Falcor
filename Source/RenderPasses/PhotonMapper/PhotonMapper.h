@@ -185,8 +185,8 @@ private:
     bool                        mAdjustShadingNormals = true;           ///<Adjusts the shading normals (Generate)
 
     // Generate only
-    uint                        mMaxBounces = 5;                        ///< Depth of recursion (0 = none).
-    float                       mRussianRoulette = 0.3f;                ///< Probabilty that a Global photon is saved
+    uint                        mMaxBounces = 10;                        ///< Depth of recursion (0 = none).
+    float                       mRejectionProbability = 0.3f;                ///< Probabilty that a Global photon is saved
 
     uint                        mNumPhotons = 2000000;                   ///< Number of Photons shot
     uint                        mNumPhotonsUI = mNumPhotons;            ///< For UI. It is decopled from the runtime var because changes have to be confirmed

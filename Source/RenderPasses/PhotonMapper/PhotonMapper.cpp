@@ -312,7 +312,7 @@ void PhotonMapper::generatePhotons(RenderContext* pRenderContext, const RenderDa
         nameBuf = "CB";
         var[nameBuf]["gMaxRecursion"] = mMaxBounces;
         var[nameBuf]["gPRNGDimension"] = dict.keyExists(kRenderPassPRNGDimension) ? dict[kRenderPassPRNGDimension] : 0u;
-        var[nameBuf]["gGlobalRejection"] = mRussianRoulette;
+        var[nameBuf]["gGlobalRejection"] = mRejectionProbability;
         var[nameBuf]["gEmissiveScale"] = mIntensityScalar;
 
         var[nameBuf]["gSpecRoughCutoff"] = mSpecRoughCutoff;
@@ -487,7 +487,7 @@ void PhotonMapper::renderUI(Gui::Widgets& widget)
         widget.tooltip("The start value for the radius of caustic Photons");
         dirty |= widget.var("Global Radius Start", mGlobalRadiusStart, kMinPhotonRadius, FLT_MAX, 0.001f);
         widget.tooltip("The start value for the radius of global Photons");
-        dirty |= widget.var("Russian Roulette", mRussianRoulette, 0.001f, 1.f, 0.001f);
+        dirty |= widget.var("Rejection Probability", mRejectionProbability, 0.001f, 1.f, 0.001f);
         widget.tooltip("Probabilty that a Global Photon is saved");
     }
     //Material Settings

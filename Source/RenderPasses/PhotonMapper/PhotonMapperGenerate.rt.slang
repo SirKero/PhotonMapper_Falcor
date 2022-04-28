@@ -20,17 +20,22 @@ cbuffer PerFrame
 
 cbuffer CB
 {
-    uint gMaxRecursion; //Max photon path length
+    //Max photon recursion depths
+    uint gMaxRecursion; 
+    uint gMaxRecursionDiffuse;
+    uint gMaxRecursionSpecular;
+    uint gMaxRecusionTransmission;
+
     uint gPRNGDimension; // First available PRNG dimension.
     float gGlobalRejection; //Probability that a global photon is saved
     float gEmissiveScale;   //A scale for emissive lights
-    
     float gSpecRoughCutoff; //Cutoff for specular materials (are interpreted as diffuse if rougness is above this value)
+
     float gAnalyticInvPdf;  //Pdf for analytic lights
     bool gAdjustShadingNormals; //Adjusts shading normals
     bool gUseAlphaTest; //Enables alpha test
-
     bool gEnablePhotonCulling;
+    
     uint gPhotonCullingMaxPhotons;
 };
 
@@ -84,7 +89,7 @@ static const float k_4Pi = 12.5663706143591729538;
 struct RayData
 {
     float3  thp;            ///< Current path throughput. This is updated at each path vertex.
-    float    cosTheta;     ///< Cos Theta
+    uint   pathLength;     ///< Cos Theta
     float3  origin;         ///< Next path segment origin.
     bool terminated; ///< Set to true when path is terminated.
     float3  direction;      ///< Next path segment direction.
@@ -98,7 +103,7 @@ struct RayData
     {
         RayData d;
         d.terminated = false;
-        d.cosTheta = 1.f;
+        d.pathLength = 1.f;
         d.thp = float3(1, 1, 1);
         d.origin = float3(0, 0, 0);
         d.direction = float3(0, 0, 0);
