@@ -52,6 +52,7 @@ namespace
 {
     const char kShaderGeneratePhoton[] = "RenderPasses/PhotonMapper/PhotonMapperGenerate.rt.slang";
     const char kShaderCollectPhoton[] = "RenderPasses/PhotonMapper/PhotonMapperCollect.rt.slang";
+    const char kShaderCollectStochasticPhoton[] = "RenderPasses/PhotonMapper/PhotonMapperStochasticCollect.rt.slang";
     const char kShaderPhotonCulling[] = "RenderPasses/PhotonMapper/PhotonCulling.cs.slang";
 
     // Ray tracing settings that affect the traversal stack size.
@@ -533,6 +534,30 @@ void PhotonMapper::renderUI(Gui::Widgets& widget)
         mOptionsChanged = true;
 }
 
+void PhotonMapper::createCollectionProgram()
+{
+    mTracerCollect = RayTraceProgramHelper::create();
+    mResetConstantBuffers = true;
+
+    uint maxPayloadSize = mEnableStochasticCollect ? (mMaxNumberPhotons + 1) * sizeof(uint) : kMaxPayloadSizeBytesCollect;
+
+    RtProgram::Desc desc;
+    desc.addShaderLibrary(mEnableStochasticCollect ? kShaderCollectStochasticPhoton : kShaderCollectPhoton);
+    desc.setMaxPayloadSize(maxPayloadSize);
+    desc.setMaxAttributeSize(kMaxAttributeSizeBytes);
+    desc.setMaxTraceRecursionDepth(kMaxRecursionDepth);
+
+    mTracerCollect.pBindingTable = RtBindingTable::create(1, 1, mpScene->getGeometryCount());   //TODO: Check if that can be removed
+    auto& sbt = mTracerCollect.pBindingTable;
+    sbt->setRayGen(desc.addRayGen("rayGen"));
+    sbt->setMiss(0, desc.addMiss("miss"));
+    auto hitShader = desc.addHitGroup("closestHit", "anyHit", "intersection");
+    sbt->setHitGroup(0, 0, hitShader);
+
+
+    mTracerCollect.pProgram = RtProgram::create(desc, mpScene->getSceneDefines());
+}
+
 void PhotonMapper::setScene(RenderContext* pRenderContext, const Scene::SharedPtr& pScene)
 {
     // Clear data for previous scene.
@@ -540,7 +565,6 @@ void PhotonMapper::setScene(RenderContext* pRenderContext, const Scene::SharedPt
 
     // After changing scene, the raytracing program should to be recreated.
     mTracerGenerate = RayTraceProgramHelper::create();
-    mTracerCollect = RayTraceProgramHelper::create();
     mResetConstantBuffers = true;
     // Set new scene.
     mpScene = pScene;
@@ -579,24 +603,7 @@ void PhotonMapper::setScene(RenderContext* pRenderContext, const Scene::SharedPt
         
 
         //Create the photon collect programm
-        {
-            RtProgram::Desc desc;
-            desc.addShaderLibrary(kShaderCollectPhoton);
-            desc.setMaxPayloadSize(kMaxPayloadSizeBytesCollect);
-            desc.setMaxAttributeSize(kMaxAttributeSizeBytes);
-            desc.setMaxTraceRecursionDepth(kMaxRecursionDepth);
-            //desc.addDefines(mpScene->getSceneDefines());
-
-            mTracerCollect.pBindingTable = RtBindingTable::create(1, 1, mpScene->getGeometryCount());   //TODO: Check if that can be removed
-            auto& sbt = mTracerCollect.pBindingTable;
-            sbt->setRayGen(desc.addRayGen("rayGen"));
-            sbt->setMiss(0, desc.addMiss("miss"));
-            auto hitShader = desc.addHitGroup("closestHit", "anyHit", "intersection");
-            sbt->setHitGroup(0, 0, hitShader);
-            
-
-            mTracerCollect.pProgram = RtProgram::create(desc, mpScene->getSceneDefines());
-        }
+        createCollectionProgram();
     }
 
     //init the photon counters

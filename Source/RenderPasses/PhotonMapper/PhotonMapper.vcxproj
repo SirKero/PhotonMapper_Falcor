@@ -39,6 +39,7 @@
     <ShaderSource Include="PhotonCulling.cs.slang" />
     <ShaderSource Include="PhotonMapperCollect.rt.slang" />
     <ShaderSource Include="PhotonMapperGenerate.rt.slang" />
+    <ShaderSource Include="PhotonMapperStochasticCollect.rt.slang" />
   </ItemGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>

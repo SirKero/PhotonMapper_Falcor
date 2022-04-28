@@ -134,6 +134,10 @@ private:
     */
     void getActiveEmissiveTriangles(RenderContext* pRenderContext);
 
+    /** Creates the Photon Collection Program
+    */
+    void createCollectionProgram();
+
     /**
     */
     void initPhotonCulling(RenderContext* pRenderContext, uint2 windowDim);
@@ -198,6 +202,10 @@ private:
     //Photon Culling
     bool                        mEnablePhotonCulling = true;            //<Photon Culling with AS
     uint                        mCullingMaxBoxesUI = 10000;
+
+    //Stochasic Collect
+    bool                        mEnableStochasticCollect = false;       //< Stochastic collect
+    uint                        mMaxNumberPhotons = 15;                 //< Max number of photons that can get collected. (4 * x) - 1 for best fit 
 
     //*******************************************************
     // Runtime data
