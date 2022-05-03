@@ -150,7 +150,12 @@ void PhotonMapper::execute(RenderContext* pRenderContext, const RenderData& rend
         changeNumPhotons();
         mNumPhotonsChanged = false;
     }
-        
+
+    //Trace mode Acceleration strucutre
+    if (mAccelerationStructureFastBuild != mAccelerationStructureFastBuildUI) {
+        mAccelerationStructureFastBuild = mAccelerationStructureFastBuildUI;
+        mRebuildAS = true;
+    }
 
     //Reset Frame Count if conditions are met
     if (mResetIterations || mAlwaysResetIterations || is_set(mpScene->getUpdates(), Scene::UpdateFlags::CameraMoved)) {
@@ -520,11 +525,11 @@ void PhotonMapper::renderUI(Gui::Widgets& widget)
         dirty |= widget.var("Culling Buffer Size", mCullingMaxBoxesUI, 0u, 100000u, 10u);
         widget.tooltip("Determines the Buffer size. Is only applied on initialization (Disable and Enable again)");
     }
-    
-    mPhotonInfoFormatChanged |= widget.dropdown("Photon Info size", kInfoTexDropdownList, mInfoTexFormat);
-    widget.tooltip("Determines the resolution of each element of the photon info struct.");
 
-    dirty |= mPhotonInfoFormatChanged;  //Reset iterations if format is changed
+    if (auto group = widget.group("Acceleration Structure Settings")) {
+        dirty |= widget.checkbox("Fast Build", mAccelerationStructureFastBuildUI);
+        widget.tooltip("Enables Fast Build for Acceleration Structure. If enabled tracing time is worse");
+    }
 
     //Disable Photon Collection
     if (auto group = widget.group("Collect Options")) {
@@ -540,6 +545,13 @@ void PhotonMapper::renderUI(Gui::Widgets& widget)
             widget.tooltip("Size of the photon buffer in payload");
         }
     }
+
+
+    mPhotonInfoFormatChanged |= widget.dropdown("Photon Info size", kInfoTexDropdownList, mInfoTexFormat);
+    widget.tooltip("Determines the resolution of each element of the photon info struct.");
+
+    dirty |= mPhotonInfoFormatChanged;  //Reset iterations if format is changed
+
     widget.dummy("", dummySpacing);
     //Reset Iterations
     widget.checkbox("Always Reset Iterations", mAlwaysResetIterations);
@@ -1013,12 +1025,13 @@ void PhotonMapper::createTopLevelAS(RenderContext* pContext) {
 
 void PhotonMapper::buildTopLevelAS(RenderContext* pContext)
 {
+    FALCOR_PROFILE("buildPhotonTlas");
     //TODO:: Enable Update option
     D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS inputs = {};
     inputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL;
     inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
     inputs.NumDescs = (uint32_t)mPhotonInstanceDesc.size();
-    inputs.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_BUILD;
+    inputs.Flags = mAccelerationStructureFastBuild ? D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_BUILD : D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE;
 
     D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC asDesc = {};
     asDesc.Inputs = inputs;
@@ -1053,8 +1066,7 @@ void PhotonMapper::createBottomLevelAS(RenderContext* pContext, const std::vecto
         inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
         inputs.NumDescs = 1;
         inputs.pGeometryDescs = &blas.geomDescs;
-        inputs.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_BUILD;
-
+        inputs.Flags = mAccelerationStructureFastBuild ? D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_BUILD : D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE;
         //get prebuild Info
         FALCOR_GET_COM_INTERFACE(gpDevice->getApiHandle(), ID3D12Device5, pDevice5);
         pDevice5->GetRaytracingAccelerationStructurePrebuildInfo(&blas.buildInputs, &blas.prebuildInfo);

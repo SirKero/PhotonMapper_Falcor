@@ -195,12 +195,15 @@ private:
 
     float                       mIntensityScalar = 1.0f;                ///<Scales the intensity of emissive light sources
 
+    bool                        mAccelerationStructureFastBuild = true;    ///< Build mode for acceleration structure
+    bool                        mAccelerationStructureFastBuildUI = mAccelerationStructureFastBuild;
+
     // Collect only
     bool                        mDisableGlobalCollection = false;       ///<Disabled the collection of global photons
     bool                        mDisableCausticCollection = false;       ///<Disabled the collection of caustic photons
 
     //Photon Culling
-    bool                        mEnablePhotonCulling = true;            //<Photon Culling with AS
+    bool                        mEnablePhotonCulling = false;            //<Photon Culling with AS
     uint                        mCullingMaxBoxesUI = 10000;
 
     //Stochasic Collect
