@@ -64,18 +64,14 @@ static const uint kInfoTexHeight = INFO_TEXTURE_HEIGHT;
 static const float kRayTMin = RAY_TMIN;
 static const float kRayTMax = RAY_TMAX;
 
-/** Payload for ray (32B).
+/** Payload for ray (16 * X B).
 */
 struct RayData
 {
-    float3 radiance;                ///< Accumulated outgoing radiance from path.
-    uint pad;                       ///< free space.
-    PackedHitInfo packedHitInfo;    ///< Hit info from vBuffer; Up to 16B
-  
-    __init(){
-        this.radiance = float3(0);
-        this.pad = 0;
-    }
+    uint counter;                   //Counter for photons this pixel
+    uint photonIdx[NUM_PHOTONS];    //Num Photons, variable length
+
+    SampleGenerator sg; ///< Per-ray state for the sample generator (up to 16B).
 };
 
 //Encode Normal + Face Normal
@@ -122,34 +118,18 @@ void closestHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : S
 
 [shader("anyhit")]
 void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_IntersectionAttributes)
-{    
+{
     const uint primIndex = PrimitiveIndex();
-    const uint2 primIndex2D = uint2(primIndex / kInfoTexHeight, primIndex % kInfoTexHeight);
-    //get caustic or global photon
-    PhotonInfo photon;
-     //Instance 0 is always the caustic buffer
-    if (InstanceIndex() == 0)
+    rayData.counter++;
+    uint idx = rayData.counter -1;
+    //If idx is bigger get a random index between 0 and idx
+    if (idx >= NUM_PHOTONS)
     {
-        photon.flux = gCausticFlux[primIndex2D].xyz;
-        photon.dir = gCausticDir[primIndex2D].xyz;
+        idx = uint(sampleNext1D(rayData.sg) * (idx + 1));
     }
-    else
-    {
-        photon.flux = gGlobalFlux[primIndex2D].xyz;
-        photon.dir = gGlobalDir[primIndex2D].xyz;
-    }
-
-    //get hit
-    const HitInfo hit = HitInfo(rayData.packedHitInfo);
-    let lod = ExplicitLodTextureSampler(0.f);
-    //World Direction is set to the viewDir we get from the vBuffer
-    ShadingData sd = loadShadingData(hit, WorldRayDirection(), lod);
-        
-    let bsdf = gScene.materials.getBSDF(sd, lod);
-            
-    float3 f_r = bsdf.eval(sd, -photon.dir);
-       
-    rayData.radiance += f_r * photon.flux;
+    //insert 
+    if (idx < NUM_PHOTONS)
+        rayData.photonIdx[idx] = primIndex;
 }
 
 //Checks if the ray start point is inside the sphere. 0 is returned if it is not in sphere and 1 if it is
@@ -196,6 +176,37 @@ void intersection()
     }
 }
 
+float3 photonContribution(in const ShadingData sd, in const IBSDF bsdf, in const RayData rayData, bool isCaustic)
+{
+    uint maxIdx = min(rayData.counter, NUM_PHOTONS);
+    float3 radiance = float3(0);
+    
+    if (maxIdx == 0)
+        return radiance;
+    
+    for (uint i = 0; i < maxIdx; i++)
+    {
+        uint photonIdx = rayData.photonIdx[i];
+        uint2 photonIdx2D = uint2(photonIdx / kInfoTexHeight, photonIdx % kInfoTexHeight);
+        float3 photonFlux, photonDir;
+        if (isCaustic)
+        {
+            photonFlux = gCausticFlux[photonIdx2D].xyz;
+            photonDir = gCausticDir[photonIdx2D].xyz;
+        }
+        else
+        {
+            photonFlux = gGlobalFlux[photonIdx2D].xyz;
+            photonDir = gGlobalDir[photonIdx2D].xyz;
+        }
+        float3 f_r = bsdf.eval(sd, -photonDir);
+       
+        radiance += f_r * photonFlux;
+    }
+
+    //Weight output radiance with number of photons for this pixel
+    return radiance * (float(rayData.counter) / float(maxIdx));
+}
 
 [shader("raygeneration")]
 void rayGen()
@@ -204,40 +215,49 @@ void rayGen()
     uint2 launchDim = DispatchRaysDimensions().xy;
     
     float4 thpMatID = gThpMatID[launchIndex];
+    float3 viewW = gViewWorld[launchIndex].xyz;
 
     //prepare payload
-    RayData rayData = RayData();
-    rayData.packedHitInfo = gVBuffer[launchIndex];
+    RayData rayData;
+    rayData.counter = 0;
+    rayData.sg = SampleGenerator(launchIndex, gFrameCount);
     
-    const HitInfo hit = HitInfo(rayData.packedHitInfo);
+    const HitInfo hit = HitInfo(gVBuffer[launchIndex]);
     bool valid = hit.isValid(); //Check if the ray is valid (value over 0.1 in w coordinate of position)
 
     const TriangleHit triangleHit = hit.getTriangleHit();
     VertexData v = gScene.getVertexData(triangleHit);
+    uint materialID = gScene.getMaterialID(triangleHit.instanceID);
+
+    let lod = ExplicitLodTextureSampler(0.f);
+    ShadingData sd = gScene.materials.prepareShadingData(v, materialID, -viewW, lod);
+    let bsdf = gScene.materials.getBSDF(sd, lod);
     
     RayDesc ray;
     ray.Origin = v.posW;
     ray.TMin = RAY_TMIN;
     ray.TMax = RAY_TMAX;
-    ray.Direction = gViewWorld[launchIndex].xyz;    //we take the view dir as direction
+    ray.Direction = viewW.xyz; //we take the view dir as direction
     
     uint rayFlags = RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | RAY_FLAG_SKIP_TRIANGLES;
     float3 radiance = float3(0);
     
-    //It is faster to trace two times in the different instance mask becaus of divergence
+    //It is faster to trace two times in the different instance mask because of divergence
     if (gCollectCausticPhotons && valid)
     {
         TraceRay(gPhotonAS, rayFlags, 1 /* instanceInclusionMask */, 0 /* hitIdx */, 0 /* rayType count */, 0 /* missIdx */, ray, rayData);
+        float3 radiancePhotons = photonContribution(sd, bsdf, rayData, true);
         float w = 1 / (M_PI * gCausticRadius * gCausticRadius); //make this a constant
-        radiance += w * rayData.radiance;
-        rayData.radiance = 0.0;
+        radiance += w * radiancePhotons;
+        rayData.counter = 0;
     }
         
     if (gCollectGlobalPhotons && valid)
     {
         TraceRay(gPhotonAS, rayFlags, 2 /* instanceInclusionMask */, 0 /* hitIdx */, 0 /* rayType count */, 0 /* missIdx */, ray, rayData);
+        float3 radiancePhotons = photonContribution(sd, bsdf, rayData, false);
         float w = 1 / (M_PI * gGlobalRadius * gGlobalRadius); //make this a constant
-        radiance += w * rayData.radiance;
+        radiance += w * radiancePhotons;
     }
         
     radiance *= thpMatID.xyz;

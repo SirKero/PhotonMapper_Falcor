@@ -204,8 +204,11 @@ private:
     uint                        mCullingMaxBoxesUI = 10000;
 
     //Stochasic Collect
-    bool                        mEnableStochasticCollect = false;       //< Stochastic collect
-    uint                        mMaxNumberPhotons = 15;                 //< Max number of photons that can get collected. (4 * x) - 1 for best fit 
+    
+    bool                        mEnableStochasticCollect = true;       //< Stochastic collect
+    bool                        mEnableStochasticCollectUI = mEnableStochasticCollect;
+    uint                        mMaxNumberPhotonsSC = 3;                 //< Max number of photons that can get collected. (4 * x) - 1 for best fit
+    uint                        mMaxNumberPhotonsSCUI = mMaxNumberPhotonsSC;
 
     //*******************************************************
     // Runtime data

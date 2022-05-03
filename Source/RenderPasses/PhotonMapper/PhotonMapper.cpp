@@ -81,7 +81,11 @@ namespace
         {(uint)PhotonMapper::TextureFormat::_16Bit , "16Bits"},
         {(uint)PhotonMapper::TextureFormat::_32Bit , "32Bits"}
     };
-    
+
+    const Gui::DropdownList kStochasticCollectList{
+        {3 , "3"},{7 , "7"}, {11 , "11"},{15 , "15"},
+        {19 , "19"},{23 , "23"},{27 , "27"}
+    };
 }
 
 PhotonMapper::SharedPtr PhotonMapper::create(RenderContext* pRenderContext, const Dictionary& dict)
@@ -358,6 +362,14 @@ void PhotonMapper::generatePhotons(RenderContext* pRenderContext, const RenderDa
 
 void PhotonMapper::collectPhotons(RenderContext* pRenderContext, const RenderData& renderData)
 {
+    //Check if stochastic collect variables have changed
+    if (mEnableStochasticCollect != mEnableStochasticCollectUI || mMaxNumberPhotonsSC != mMaxNumberPhotonsSCUI) {
+        //Rebuild program
+        mEnableStochasticCollect = mEnableStochasticCollectUI;
+        mMaxNumberPhotonsSC = mMaxNumberPhotonsSCUI;
+        createCollectionProgram();
+    }
+
     // Trace the photons
     FALCOR_PROFILE("collect photons");
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
@@ -368,6 +380,7 @@ void PhotonMapper::collectPhotons(RenderContext* pRenderContext, const RenderDat
     mTracerCollect.pProgram->addDefine("RAY_TMIN", std::to_string(kCollectTMin));
     mTracerCollect.pProgram->addDefine("RAY_TMAX", std::to_string(kCollectTMax));
     mTracerCollect.pProgram->addDefine("INFO_TEXTURE_HEIGHT", std::to_string(kInfoTexHeight));
+    mTracerCollect.pProgram->addDefine("NUM_PHOTONS", std::to_string(mMaxNumberPhotonsSC));
 
 
     // Prepare program vars. This may trigger shader compilation.
@@ -519,7 +532,13 @@ void PhotonMapper::renderUI(Gui::Widgets& widget)
         widget.tooltip("Disables the collection of Global Photons. However they will still be generated");
         dirty |= widget.checkbox("Disable Caustic Photons", mDisableCausticCollection);
         widget.tooltip("Disables the collection of Caustic Photons. However they will still be generated");
-        
+
+        dirty |= widget.checkbox("Use Stochastic Collection", mEnableStochasticCollectUI);
+        widget.tooltip("Enables Stochastic Collection. Photon indices are saved in payload and collected later");
+        if (mEnableStochasticCollectUI) {
+            dirty |= widget.dropdown("Max Photons", kStochasticCollectList, mMaxNumberPhotonsSCUI);
+            widget.tooltip("Size of the photon buffer in payload");
+        }
     }
     widget.dummy("", dummySpacing);
     //Reset Iterations
@@ -536,10 +555,12 @@ void PhotonMapper::renderUI(Gui::Widgets& widget)
 
 void PhotonMapper::createCollectionProgram()
 {
+    //reset program
     mTracerCollect = RayTraceProgramHelper::create();
     mResetConstantBuffers = true;
 
-    uint maxPayloadSize = mEnableStochasticCollect ? (mMaxNumberPhotons + 1) * sizeof(uint) : kMaxPayloadSizeBytesCollect;
+    //payload size is num photons + a counter + sampleGenerator(16B)
+    uint maxPayloadSize = mEnableStochasticCollect ? (mMaxNumberPhotonsSC + 5) * sizeof(uint) : kMaxPayloadSizeBytesCollect;
 
     RtProgram::Desc desc;
     desc.addShaderLibrary(mEnableStochasticCollect ? kShaderCollectStochasticPhoton : kShaderCollectPhoton);
