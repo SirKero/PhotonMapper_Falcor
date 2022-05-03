@@ -23,6 +23,7 @@ cbuffer CB
     float gEmissiveScale; // Scale for the emissive part
     bool gCollectGlobalPhotons;
     bool gCollectCausticPhotons;
+    uint gBucketYExtent; // Y Extent of bucket for 2D index calc
 };
 
 // Inputs
@@ -40,7 +41,9 @@ RaytracingAccelerationStructure gPhotonAS;
 
 
  //Internal Buffer Structs
-StructuredBuffer<PhotonBucket> gHashBucket[2];
+Texture2D<float4> gHashBucketPos[2];
+Texture2D<float4> gHashBucketDir[2];
+Texture2D<float4> gHashBucketFlux[2];
 StructuredBuffer<uint> gHashCounter[2];
 
 
@@ -76,21 +79,24 @@ float3 photonContribution(in ShadingData sd, uint hash , bool isCaustic)
     //get caustic or global photon
     float radius = isCaustic ? gCausticRadius : gGlobalRadius;
     uint mapIdx = isCaustic ? 0 : 1;
-    PhotonBucket photon = gHashBucket[mapIdx][hash];
+    uint2 texIdx = uint2(hash % gBucketYExtent, hash / gBucketYExtent);
+    float4 photonPos = gHashBucketPos[mapIdx][texIdx];
+    float4 photonDir = gHashBucketDir[mapIdx][texIdx];
+    float4 photonFlux = gHashBucketFlux[mapIdx][texIdx];
     uint photonCount = gHashCounter[mapIdx][hash];
 
     //Radius test
     
-    if (!hitSphere(photon.pos.xyz, radius, sd.posW) || photonCount == 0)
+    if (!hitSphere(photonPos.xyz, radius, sd.posW) || photonCount == 0)
         return float3(0);
     
     
     let lod = ExplicitLodTextureSampler(0.f);
     let bsdf = gScene.materials.getBSDF(sd, lod);
             
-    float3 f_r = bsdf.eval(sd, -photon.dir.xyz);
+    float3 f_r = bsdf.eval(sd, -photonDir.xyz);
      
-    return f_r * (photon.flux.xyz * photonCount);
+    return f_r * (photonFlux.xyz * photonCount);
 }
 
 float3 collectPhotons(in HitInfo hitInfo, in float3 dirVec,bool isCaustic)
@@ -140,10 +146,6 @@ void main(uint2 DTid : SV_DispatchThreadID, uint2 Gid : SV_GroupID, uint2 GTid :
         float w = 1 / (M_PI * gCausticRadius * gCausticRadius); //make this a constant
         radiance += w * causticRadiance;
     }
-    
-        
-    
-    
     
     radiance *= thpMatID.xyz;   //Add throughput for path
 

@@ -148,7 +148,8 @@ private:
     uint                        mNumPhotonsUI = mNumPhotons;            ///< For UI. It is decopled from the runtime var because changes have to be confirmed
     uint                        mGlobalBufferSizeUI = mNumPhotons / 2;    ///< Size of the Global Photon Buffer
     uint                        mCausticBufferSizeUI = mNumPhotons / 4;   ///< Size of the Caustic Photon Buffer
-
+    uint                        mBucketFixedYExtend = 512;
+    
     float                       mIntensityScalar = 1.0f;                ///<Scales the intensity of emissive light sources
 
     // Collect only
@@ -205,8 +206,13 @@ private:
     //
     //Photon Buffers
     //
-    Buffer::SharedPtr mpGlobalBuckets;
-    Buffer::SharedPtr mpCausticBuckets;
+    Texture::SharedPtr mpGlobalPosBucket;
+    Texture::SharedPtr mpGlobalFluxBucket;
+    Texture::SharedPtr mpGlobalDirBucket;
+    Texture::SharedPtr mpCausticPosBucket;
+    Texture::SharedPtr mpCausticFluxBucket;
+    Texture::SharedPtr mpCausticDirBucket;
+
     Buffer::SharedPtr mpGlobalHashPhotonCounter;
     Buffer::SharedPtr mpCausticHashPhotonCounter;
 

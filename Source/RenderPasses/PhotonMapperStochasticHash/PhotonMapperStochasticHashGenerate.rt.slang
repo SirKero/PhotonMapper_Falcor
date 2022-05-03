@@ -30,6 +30,7 @@ cbuffer CB
     uint gMaxRecursion;         //Max Iterations per path
     bool gUseAlphaTest;         //Enable Alpha Test
     bool gAdjustShadingNormals; //Adjust shading Normals
+    uint gBucketYExtent;        // Y Extent of bucket for 2D index calc
 };
 
 // Inputs
@@ -37,7 +38,9 @@ Texture2D<int> gLightSample;
 StructuredBuffer<uint> gNumPhotonsPerEmissive;
 
  //Internal Buffer Structs
-RWStructuredBuffer<PhotonBucket> gHashBucket[2];
+RWTexture2D<float4> gHashBucketPos[2];
+RWTexture2D<float4> gHashBucketDir[2];
+RWTexture2D<float4> gHashBucketFlux[2];
 RWStructuredBuffer<uint> gHashCounter[2];
 
 Texture2D<uint> gRndSeedBuffer;
@@ -83,6 +86,13 @@ struct RayData
         d.direction = float3(0, 0, 0);
         return d;
     }
+};
+
+struct Photon
+{
+    float4 pos;
+    float4 flux;
+    float4 dir;
 };
 
 //get the area of a triangle from the vectors a and b. 
@@ -287,7 +297,7 @@ void rayGen()
     calcLightDirection(lightDir, lightRnd.xy, ray.Direction, lightDirPDF, type, cos(spotAngle));
 
     //create photon
-    PhotonBucket photon;
+    Photon photon;
     photon.dir = float4(0);
     photon.flux = float4(0);
     photon.pos = float4(0);
@@ -344,7 +354,10 @@ void rayGen()
                 float probability = 1.f / (photonIndex + 1);
                 if (rnd <= probability)
                 {
-                    gHashBucket[mapIdx][bucketIdx] = photon;
+                    uint2 texIdx = uint2(bucketIdx % gBucketYExtent, bucketIdx / gBucketYExtent);
+                    gHashBucketPos[mapIdx][texIdx] = photon.pos;
+                    gHashBucketDir[mapIdx][texIdx] = photon.dir;
+                    gHashBucketFlux[mapIdx][texIdx] = photon.flux;
                 }
             }              
         }

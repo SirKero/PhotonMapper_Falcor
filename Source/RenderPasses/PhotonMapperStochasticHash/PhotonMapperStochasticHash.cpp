@@ -212,8 +212,12 @@ void PhotonMapperStochasticHash::execute(RenderContext* pRenderContext, const Re
 void PhotonMapperStochasticHash::generatePhotons(RenderContext* pRenderContext, const RenderData& renderData)
 {
     //Clear the photon Buffers
-    pRenderContext->clearUAV(mpGlobalBuckets->getUAV().get(), uint4(0, 0, 0, 0));
-    pRenderContext->clearUAV(mpCausticBuckets->getUAV().get(), uint4(0, 0, 0, 0));
+    pRenderContext->clearTexture(mpGlobalPosBucket.get());
+    pRenderContext->clearTexture(mpGlobalDirBucket.get());
+    pRenderContext->clearTexture(mpGlobalFluxBucket.get());
+    pRenderContext->clearTexture(mpCausticPosBucket.get());
+    pRenderContext->clearTexture(mpCausticDirBucket.get());
+    pRenderContext->clearTexture(mpCausticFluxBucket.get());
     pRenderContext->clearUAV(mpGlobalHashPhotonCounter->getUAV().get(), uint4(0, 0, 0, 0));
     pRenderContext->clearUAV(mpCausticHashPhotonCounter->getUAV().get(), uint4(0, 0, 0, 0));
     
@@ -264,6 +268,7 @@ void PhotonMapperStochasticHash::generatePhotons(RenderContext* pRenderContext, 
         var[nameBuf]["gMaxRecursion"] = mMaxBounces;
         var[nameBuf]["gSpecRoughCutoff"] = mUseAlphaTest;
         var[nameBuf]["gSpecRoughCutoff"] = mAdjustShadingNormals;
+        var[nameBuf]["gBucketYExtent"] = mBucketFixedYExtend;
     }
     
     //set the buffers
@@ -271,7 +276,9 @@ void PhotonMapperStochasticHash::generatePhotons(RenderContext* pRenderContext, 
 
     for (uint32_t i = 0; i <= 1; i++)
     {
-        var["gHashBucket"][i] = i == 0 ? mpCausticBuckets : mpGlobalBuckets;
+        var["gHashBucketPos"][i] = i == 0 ? mpCausticPosBucket : mpGlobalPosBucket;
+        var["gHashBucketDir"][i] = i == 0 ? mpCausticDirBucket : mpGlobalDirBucket;
+        var["gHashBucketFlux"][i] = i == 0 ? mpCausticFluxBucket : mpGlobalFluxBucket;
         var["gHashCounter"][i] = i == 0 ? mpCausticHashPhotonCounter : mpGlobalHashPhotonCounter;
     }
 
@@ -327,11 +334,14 @@ void PhotonMapperStochasticHash::collectPhotons(RenderContext* pRenderContext, c
         var[nameBuf]["gEmissiveScale"] = mIntensityScalar;
         var[nameBuf]["gCollectGlobalPhotons"] = !mDisableGlobalCollection;
         var[nameBuf]["gCollectCausticPhotons"] = !mDisableCausticCollection;
+        var[nameBuf]["gBucketYExtent"] = mBucketFixedYExtend;
     }
 
     for (uint32_t i = 0; i <= 1; i++)
     {
-        var["gHashBucket"][i] = i== 0 ? mpCausticBuckets :  mpGlobalBuckets;
+        var["gHashBucketPos"][i] = i == 0 ? mpCausticPosBucket : mpGlobalPosBucket;
+        var["gHashBucketDir"][i] = i == 0 ? mpCausticDirBucket : mpGlobalDirBucket;
+        var["gHashBucketFlux"][i] = i == 0 ? mpCausticFluxBucket : mpGlobalFluxBucket;
         var["gHashCounter"][i] = i == 0 ? mpCausticHashPhotonCounter : mpGlobalHashPhotonCounter;
     }
 
@@ -711,17 +721,27 @@ void PhotonMapperStochasticHash::prepareVars()
 bool PhotonMapperStochasticHash::preparePhotonBuffers()
 {
     //reset buffers if already set
-    if (mpGlobalBuckets) {
-        mpGlobalBuckets.reset();
-        mpCausticBuckets.reset();
+    if (mpGlobalPosBucket) {
+        mpGlobalPosBucket.reset(); mpGlobalDirBucket.reset(); mpGlobalFluxBucket.reset();
+        mpCausticPosBucket.reset(); mpCausticDirBucket.reset(); mpCausticFluxBucket.reset();
     }
 
     //Build buffers
     mNumBuckets = 1 << mNumBucketBits;
-    mpGlobalBuckets = Buffer::createStructured(sizeof(PhotonBucket), mNumBuckets);
-    mpGlobalBuckets->setName("PhotonMapperStochasticHash::BucketGlobal");
-    mpCausticBuckets = Buffer::createStructured(sizeof(PhotonBucket), mNumBuckets);
-    mpCausticBuckets->setName("PhotonMapperStochasticHash::BucketCaustic");
+    //Get xy extend
+    uint2 bucketExtend = uint2(mNumBuckets % mBucketFixedYExtend == 0 ? mNumBuckets / mBucketFixedYExtend : (mNumBuckets / mBucketFixedYExtend) + 1, mBucketFixedYExtend);
+    mpGlobalPosBucket = Texture::create2D(bucketExtend.x, bucketExtend.y, ResourceFormat::RGBA32Float,1,1,nullptr,ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource);
+    mpGlobalPosBucket->setName("PhotonMapperStochasticHash::GlobalPosBucket");
+    mpGlobalDirBucket = Texture::create2D(bucketExtend.x, bucketExtend.y, ResourceFormat::RGBA16Float, 1, 1, nullptr, ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource);
+    mpGlobalDirBucket->setName("PhotonMapperStochasticHash::GlobalDirBucket");
+    mpGlobalFluxBucket = Texture::create2D(bucketExtend.x, bucketExtend.y, ResourceFormat::RGBA16Float, 1, 1, nullptr, ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource);
+    mpGlobalFluxBucket->setName("PhotonMapperStochasticHash::GlobalFluxBucket");
+    mpCausticPosBucket = Texture::create2D(bucketExtend.x, bucketExtend.y, ResourceFormat::RGBA32Float, 1, 1, nullptr, ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource);
+    mpCausticPosBucket->setName("PhotonMapperStochasticHash::CausticPosBucket");
+    mpCausticDirBucket = Texture::create2D(bucketExtend.x, bucketExtend.y, ResourceFormat::RGBA16Float, 1, 1, nullptr, ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource);
+    mpCausticDirBucket->setName("PhotonMapperStochasticHash::CausticDirBucket");
+    mpCausticFluxBucket = Texture::create2D(bucketExtend.x, bucketExtend.y, ResourceFormat::RGBA16Float, 1, 1, nullptr, ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource);
+    mpCausticFluxBucket->setName("PhotonMapperStochasticHash::CausticFluxBucket");
 
     mpGlobalHashPhotonCounter = Buffer::createStructured(sizeof(uint32_t), mNumBuckets);
     mpGlobalHashPhotonCounter->setName("PhotonMapperStochasticHash::CounterHashGlobal");
