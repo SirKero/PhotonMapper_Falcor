@@ -6,6 +6,11 @@ import Scene.Intersection;
 import Scene.Material.ShadingUtils;
 import Utils.Math.MathHelpers;
 import Utils.Sampling.SampleGenerator;
+import Scene.Material.BasicMaterialData;
+import Scene.Material.MaterialSystem;
+import Rendering.Materials.InteriorList;
+import Rendering.Materials.InteriorListHelpers;
+//import Rendering.Volumes.HomogeneousVolumeSampler; //Add maybe
 import Rendering.Lights.LightHelpers;
 import Utils.Geometry.GeometryHelpers;
 
@@ -38,18 +43,21 @@ RWTexture2D<float4> gMotionVector;
 #define is_valid(name) (is_valid_##name != 0)
 
 static const bool kComputeDepthOfField = COMPUTE_DEPTH_OF_FIELD;
+static const uint kMaxRejectedHits = 8;
 
-/** Payload for scatter ray (64B).
+/** Payload for scatter ray (72B).
 */
-struct ScatterRayData
+struct RayData
 {
     float3 thp; ///< Current path throughput. This is updated at each path vertex.
     bool terminated; ///< Set to true when path is terminated.
     float3 origin; ///< Next path segment origin.
-    uint lobeType; ///< Mask for the type of reflection
+    uint pathLength; ///<Path length
     float3 direction; ///< Next path segment direction.
-    uint pathLength;       ///free space
+    uint rejectedHits;       ///number of rejected hits (for dielectrics)
 
+    InteriorList interiorList;  ///< interior list (8B)
+    uint2 pad;
     SampleGenerator sg; ///< Per-ray state for the sample generator (up to 16B).
 
     /** Create ray payload with default parameters.
@@ -58,12 +66,45 @@ struct ScatterRayData
         this.thp = float3(1.0);
         this.terminated = false; 
         this.origin = float3(0); 
-        this.lobeType = 0; 
+        this.pathLength = 0; 
         this.direction = float3(0); 
-        this.pathLength = 0;
+        this.rejectedHits = 0;
         this.sg = sg;
     }
 };
+
+//For handling Nested Dielectrics. Taken from Path Tracer pass
+bool handleNestedDielectrics(inout ShadingData sd, inout RayData rayData)
+{
+    uint nestedPriority = sd.mtl.getNestedPriority();
+    
+    if (!rayData.interiorList.isTrueIntersection(nestedPriority))
+    {
+        // If it is a false intersection, we reject the hit and continue the path
+        // on the other side of the interface.
+        // If the offset position is not quite large enough, due to self-intersections
+        // it is possible we repeatedly hit the same surface and try to reject it.
+        // This has happened in a few occasions with large transmissive triangles.
+        // As a workaround, count number of rejected hits and terminate the path if too many.
+        if (rayData.rejectedHits < kMaxRejectedHits)
+        {
+            rayData.rejectedHits++;
+            rayData.interiorList.handleIntersection(sd.materialID, nestedPriority, sd.frontFacing);
+            rayData.origin = sd.computeNewRayOrigin(false);
+        }
+        else
+        {
+            rayData.terminated = true;
+        }
+        return false;
+    }
+    
+    // Compute index of refraction for medium on the outside.
+    //TODO: This does not work 
+    //sd.IoR = computeOutsideIoR(rayData.interiorList, sd.materialID, sd.frontFacing);
+    
+    return true;
+}
 
 void writeHit(uint2 pixel, float3 rayDir, float3 thp, float3 emissive, const HitInfo hit)
 {
@@ -87,7 +128,7 @@ void writeMiss(uint2 pixel)
 
 //TODO: Add other miss colors, as throughput then has to be respected
 [shader("miss")]
-void miss(inout ScatterRayData rayData : SV_RayPayload)
+void miss(inout RayData rayData : SV_RayPayload)
 {
     uint2 launchIndex = DispatchRaysIndex().xy;
     rayData.terminated = true;
@@ -96,7 +137,7 @@ void miss(inout ScatterRayData rayData : SV_RayPayload)
 
 //add anyHit shader for alpha test
 [shader("anyhit")]
-void anyHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleIntersectionAttributes attribs : SV_IntersectionAttributes)
+void anyHit(inout RayData rayData : SV_RayPayload, BuiltInTriangleIntersectionAttributes attribs : SV_IntersectionAttributes)
 {
     if (gUseAlphaTest)
     {
@@ -110,7 +151,7 @@ void anyHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleInterse
 }
 
 [shader("closesthit")]
-void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleIntersectionAttributes attribs : SV_IntersectionAttributes)
+void closestHit(inout RayData rayData : SV_RayPayload, BuiltInTriangleIntersectionAttributes attribs : SV_IntersectionAttributes)
 {
     uint2 launchIndex = DispatchRaysIndex().xy;
    // Evaluate Falcor's material parameters at the hit point.
@@ -124,6 +165,9 @@ void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleInt
     {
         adjustShadingNormal(sd, v);
     }
+
+    // Reject false hits in nested dielectrics.
+    //if (!handleNestedDielectrics(sd, rayData)) return;
     
     BSDFSample bsdfSample;
     let bsdf = gScene.materials.getBSDF(sd, lod);
@@ -135,7 +179,6 @@ void closestHit(inout ScatterRayData rayData : SV_RayPayload, BuiltInTriangleInt
     bool transmission = bsdfSample.isLobe(LobeType::Transmission);
     rayData.origin = sd.computeNewRayOrigin(!transmission); //false is for transmissions
     rayData.thp *= valid ? bsdfSample.weight : float3(0);
-    rayData.lobeType = bsdfSample.lobe;
     rayData.direction = bsdfSample.wo;
 
     //get material properties
@@ -172,7 +215,7 @@ void rayGen()
 
     float3 outColor = float3(0);
     float3 throughput = float3(1);
-    ScatterRayData rayData = ScatterRayData(SampleGenerator(launchIndex, gFrameCount)); //lazy init for now
+    RayData rayData = RayData(SampleGenerator(launchIndex, gFrameCount)); //lazy init for now
     Ray ray = gScene.camera.computeRayThinlens(launchIndex, launchDim, sampleNext2D(rayData.sg)); //get a random jittered ray
     uint rayFlags = 0;
     

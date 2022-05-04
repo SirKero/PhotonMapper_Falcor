@@ -48,7 +48,7 @@ namespace
     const char kDesc[] = "A VBuffer that traces until it reaches a diffuse Surface";
 
     //Ray Tracing Program data
-    const uint32_t kMaxPayloadSizeBytes = 64u;
+    const uint32_t kMaxPayloadSizeBytes = 80u;
     const uint32_t kMaxAttributeSizeBytes = 8u;
     const uint32_t kMaxRecursionDepth = 2u;
 
@@ -156,7 +156,6 @@ void PTVBuffer::execute(RenderContext* pRenderContext, const RenderData& renderD
         mOptionsChanged = false;
         mResetConstantBuffers = true;
     }
-
     //Get VBuffer
     auto pVBuff = renderData[kVBufferName]->asTexture();
     FALCOR_ASSERT(pVBuff);
@@ -258,7 +257,6 @@ void PTVBuffer::setScene(RenderContext* pRenderContext, const Scene::SharedPtr& 
         desc.setMaxPayloadSize(kMaxPayloadSizeBytes);
         desc.setMaxAttributeSize(kMaxAttributeSizeBytes);
         desc.setMaxTraceRecursionDepth(kMaxRecursionDepth);
-        //desc.addDefines(mpScene->getSceneDefines());
 
         mTracer.pBindingTable = RtBindingTable::create(1, 1, mpScene->getGeometryCount());
         auto& sbt = mTracer.pBindingTable;
