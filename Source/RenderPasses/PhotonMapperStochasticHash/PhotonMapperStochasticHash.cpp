@@ -307,6 +307,7 @@ void PhotonMapperStochasticHash::collectPhotons(RenderContext* pRenderContext, c
 
         Program::DefineList defines;
         defines.add(mpScene->getSceneDefines());
+        defines.add(mpSampleGenerator->getDefines());
 
         defines.add("INFO_TEXTURE_HEIGHT", std::to_string(kInfoTexHeight));
         defines.add("NUM_BUCKETS", std::to_string(mNumBuckets));
@@ -320,6 +321,7 @@ void PhotonMapperStochasticHash::collectPhotons(RenderContext* pRenderContext, c
     auto var = mpCSCollect->getRootVar();
     //Set Scene data. Is needed for shading
     mpScene->setRaytracingShaderData(pRenderContext, var, 1);
+    mpSampleGenerator->setShaderData(var);
 
     std::string nameBuf = "PerFrame";
     var[nameBuf]["gFrameCount"] = mFrameCount;

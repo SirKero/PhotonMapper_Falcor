@@ -59,7 +59,7 @@ namespace
    // These should be set as small as possible.
    //TODO: set them later to the right vals
     const uint32_t kMaxPayloadSizeBytes = 64u;
-    const uint32_t kMaxPayloadSizeBytesCollect = 32u;
+    const uint32_t kMaxPayloadSizeBytesCollect = 48u;
     const uint32_t kMaxAttributeSizeBytes = 8u;
     const uint32_t kMaxRecursionDepth = 2u;
 

@@ -64,13 +64,15 @@ static const uint kInfoTexHeight = INFO_TEXTURE_HEIGHT;
 static const float kRayTMin = RAY_TMIN;
 static const float kRayTMax = RAY_TMAX;
 
-/** Payload for ray (32B).
+/** Payload for ray (48B).
 */
 struct RayData
 {
     float3 radiance;                ///< Accumulated outgoing radiance from path.
     uint pad;                       ///< free space.
     PackedHitInfo packedHitInfo;    ///< Hit info from vBuffer; Up to 16B
+
+    SampleGenerator sg;
   
     __init(){
         this.radiance = float3(0);
@@ -147,7 +149,7 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
         
     let bsdf = gScene.materials.getBSDF(sd, lod);
             
-    float3 f_r = bsdf.eval(sd, -photon.dir);
+    float3 f_r = bsdf.eval(sd, -photon.dir, rayData.sg);
        
     rayData.radiance += f_r * photon.flux;
 }
@@ -208,6 +210,7 @@ void rayGen()
     //prepare payload
     RayData rayData = RayData();
     rayData.packedHitInfo = gVBuffer[launchIndex];
+    rayData.sg = SampleGenerator(launchIndex, gFrameCount);
     
     const HitInfo hit = HitInfo(rayData.packedHitInfo);
     bool valid = hit.isValid(); //Check if the ray is valid (value over 0.1 in w coordinate of position)

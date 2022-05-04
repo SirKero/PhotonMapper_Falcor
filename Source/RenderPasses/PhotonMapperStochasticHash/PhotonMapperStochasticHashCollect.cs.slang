@@ -5,6 +5,7 @@ import Scene.Raytracing;
 import Scene.Intersection;
 import Utils.Math.MathHelpers;
 import Rendering.Materials.StandardMaterial;
+import Utils.Sampling.SampleGenerator;
 import Rendering.Lights.LightHelpers;
 
 import PhotonMapperStochasticHashFunctions;
@@ -74,7 +75,7 @@ ShadingData loadShadingData(const HitInfo hit, const float3 rayDir, const ITextu
     return gScene.materials.prepareShadingData(v, materialID, -rayDir, lod);
 }
 
-float3 photonContribution(in ShadingData sd, uint hash , bool isCaustic)
+float3 photonContribution(in ShadingData sd, uint hash , inout SampleGenerator sg ,bool isCaustic)
 {
     //get caustic or global photon
     float radius = isCaustic ? gCausticRadius : gGlobalRadius;
@@ -94,16 +95,18 @@ float3 photonContribution(in ShadingData sd, uint hash , bool isCaustic)
     let lod = ExplicitLodTextureSampler(0.f);
     let bsdf = gScene.materials.getBSDF(sd, lod);
             
-    float3 f_r = bsdf.eval(sd, -photonDir.xyz);
+    float3 f_r = bsdf.eval(sd, -photonDir.xyz,sg);
      
     return f_r * (photonFlux.xyz * photonCount);
 }
 
-float3 collectPhotons(in HitInfo hitInfo, in float3 dirVec,bool isCaustic)
+float3 collectPhotons(in HitInfo hitInfo, in float3 dirVec, uint2 launchIndex, bool isCaustic)
 {
     float3 radiance = float3(0);
     let lod = ExplicitLodTextureSampler(0.f);
     ShadingData sd = loadShadingData(hitInfo, dirVec, lod);
+    SampleGenerator sg = SampleGenerator(launchIndex, gFrameCount);
+    
     float radius = isCaustic ? gCausticRadius : gGlobalRadius;
     float scale = isCaustic ? gCausticHashScaleFactor : gGlobalHashScaleFactor;
     int3 gridCenter = int3(floor(sd.posW * scale));
@@ -115,7 +118,7 @@ float3 collectPhotons(in HitInfo hitInfo, in float3 dirVec,bool isCaustic)
             for (int x = gridCenter.x - gridRadius; x <= gridCenter.x + gridRadius; x++)
             {
                 uint b = hash(int3(x, y, z)) & (kNumBuckets - 1);
-                radiance += photonContribution(sd, b, isCaustic);        
+                radiance += photonContribution(sd, b, sg ,isCaustic);        
             }
         }
     }
@@ -135,14 +138,14 @@ void main(uint2 DTid : SV_DispatchThreadID, uint2 Gid : SV_GroupID, uint2 GTid :
 
     if (gCollectGlobalPhotons && valid)
     {
-        float3 globalRadiance = collectPhotons(hit, viewVec, false);
+        float3 globalRadiance = collectPhotons(hit, viewVec,DTid , false);
         float w = 1 / (M_PI * gGlobalRadius * gGlobalRadius); //make this a constant
         radiance += w * globalRadiance;
     }
     
     if (gCollectCausticPhotons && valid)
     {
-        float3 causticRadiance = collectPhotons(hit, viewVec, true);
+        float3 causticRadiance = collectPhotons(hit, viewVec, DTid, true);
         float w = 1 / (M_PI * gCausticRadius * gCausticRadius); //make this a constant
         radiance += w * causticRadiance;
     }

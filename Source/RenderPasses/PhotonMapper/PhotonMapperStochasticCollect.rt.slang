@@ -176,7 +176,7 @@ void intersection()
     }
 }
 
-float3 photonContribution(in const ShadingData sd, in const IBSDF bsdf, in const RayData rayData, bool isCaustic)
+float3 photonContribution(in const ShadingData sd, in IBSDF bsdf, inout RayData rayData, bool isCaustic)
 {
     uint maxIdx = min(rayData.counter, NUM_PHOTONS);
     float3 radiance = float3(0);
@@ -199,7 +199,8 @@ float3 photonContribution(in const ShadingData sd, in const IBSDF bsdf, in const
             photonFlux = gGlobalFlux[photonIdx2D].xyz;
             photonDir = gGlobalDir[photonIdx2D].xyz;
         }
-        float3 f_r = bsdf.eval(sd, -photonDir);
+        const float3 wo = -photonDir;
+        float3 f_r = bsdf.eval(sd, wo, rayData.sg);
        
         radiance += f_r * photonFlux;
     }
