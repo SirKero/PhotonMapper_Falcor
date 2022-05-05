@@ -14,13 +14,8 @@ cbuffer PerFrame
     float gHashScaleFactor;    //Scale factor calculated from photon radius
     uint gHashSize;            //Size of the hash
     uint gYExtend;  
-    bool gUseDebugCamera;
 }
 
-cbuffer DebugCamera
-{
-    float4x4 gDebugCamera;
-};
 
 Texture2D<PackedHitInfo> gVBuffer;
 
@@ -38,9 +33,8 @@ void main(uint2 DTid : SV_DispatchThreadID, uint2 Gid : SV_GroupID, uint2 GTid :
         return;
     
     const float4 pos = float4(gScene.getVertexData(hit.getTriangleHit()).posW, 1);
-
-    const float4x4 viewProjMatrix = gUseDebugCamera ? gDebugCamera : gScene.camera.getViewProj();
-    float4 projPos = mul(pos, viewProjMatrix);
+    
+    float4 projPos = mul(pos, gScene.camera.getViewProj());
     projPos /= projPos.w;
     
     //insert box if it is outside of perspective camera

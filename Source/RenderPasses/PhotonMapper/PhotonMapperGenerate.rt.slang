@@ -36,13 +36,8 @@ cbuffer CB
     bool gEnablePhotonCulling;
     uint gCullingHashSize;
     uint gCullingYExtent;
-    bool gUseDebugCamera;
 };
 
-cbuffer DebugCamera
-{
-    float4x4 gDebugCamera;
-};
 
 
 // Inputs
@@ -177,9 +172,8 @@ bool cullingTest(float3 origin)
 {
     //Check if position is inside camera frustum
     const float4 pos = float4(origin, 1);
-
-    const float4x4 viewProjMatrix = gUseDebugCamera ? gDebugCamera : gScene.camera.getViewProj();
-    float4 projPos = mul(pos, viewProjMatrix);
+    
+    float4 projPos = mul(pos, gScene.camera.getViewProj());
     projPos /= projPos.w;
 
     //if photon is inside camera frustum don't cull

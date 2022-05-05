@@ -205,8 +205,6 @@ private:
     //Photon Culling
     bool                        mEnablePhotonCulling = true;            //<Photon Culling with AS
     uint                        mCullingHashBufferSizeBytes = 18;
-    bool                        mCullingUseDebugCamera = false;
-    bool                        mCullingUseDebugCameraUI = mCullingUseDebugCamera;
 
     //Stochasic Collect
     
@@ -230,8 +228,6 @@ private:
     bool                        mPhotonBuffersReady = false;
 
     uint                        mCullingYExtent = 512;
-    float4x4                    mDebugCamera = float4x4();
-    bool                        mCullingUploadDebugCamera = false;
 
     //Light
     std::vector<uint> mActiveEmissiveTriangles;
