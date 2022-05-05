@@ -333,7 +333,14 @@ void PhotonMapper::generatePhotons(RenderContext* pRenderContext, const RenderDa
         var[nameBuf]["gEnablePhotonCulling"] = mEnablePhotonCulling;
         var[nameBuf]["gCullingHashSize"] = 1 << mCullingHashBufferSizeBytes;
         var[nameBuf]["gCullingYExtent"] = mCullingYExtent;
+        var[nameBuf]["gUseDebugCamera"] = mCullingUseDebugCamera;
     }
+
+    if (mCullingUploadDebugCamera) {
+        var["DebugCamera"]["gDebugCamera"] = mDebugCamera;
+    }
+    mCullingUploadDebugCamera = false;
+    
 
     //set the buffers
     // [] operator of var is strangely overloaded, so it needs a uint variable value
@@ -524,6 +531,8 @@ void PhotonMapper::renderUI(Gui::Widgets& widget)
         widget.tooltip("Enables photon culling. For reflected pixels outside of the camera frustrum ray tracing is used.");
         dirty |= widget.slider("Culling Buffer Size", mCullingHashBufferSizeBytes, 10u, 32u);
         widget.tooltip("Size of the hash buffer. 2^x");
+        dirty |= widget.checkbox("Fix Camera (Debug)", mCullingUseDebugCameraUI);
+        widget.tooltip("Enable to fixate the camera. This is for debug purposes");
     }
 
     if (auto group = widget.group("Acceleration Structure Settings")) {
@@ -1161,6 +1170,14 @@ void PhotonMapper::photonCullingPass(RenderContext* pRenderContext, const Render
     //Reset Counter and AABB
     pRenderContext->clearUAV(mCullingBuffer->getUAV().get(), float4(0));
 
+    if (mCullingUseDebugCameraUI != mCullingUseDebugCamera) {
+        mCullingUseDebugCamera = mCullingUseDebugCameraUI;
+        if (mCullingUseDebugCamera) {
+            mDebugCamera = mpScene->getCamera()->getViewProjMatrix();
+            mCullingUploadDebugCamera = true;
+        }
+    }
+
     //Build shader
     if (!mPhotonCullingPass) {
         Program::Desc desc;
@@ -1185,7 +1202,11 @@ void PhotonMapper::photonCullingPass(RenderContext* pRenderContext, const Render
     var["PerFrame"]["gHashScaleFactor"] = 1.0f/mGlobalRadius;
     var["PerFrame"]["gHashSize"] = 1 << mCullingHashBufferSizeBytes;
     var["PerFrame"]["gYExtend"] = mCullingYExtent;
-    var["PerFrame"]["gCurrentFrame"] = mFrameCount;
+    var["PerFrame"]["gUseDebugCamera"] = mCullingUseDebugCamera;
+
+    if (mCullingUploadDebugCamera) {
+        var["DebugCamera"]["gDebugCamera"] = mDebugCamera;
+    }
 
     var[kInputChannels[0].texname] = renderData[kInputChannels[0].name]->asTexture();    //VBuffer
     var["gHashBuffer"] = mCullingBuffer;
