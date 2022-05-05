@@ -40,7 +40,7 @@ void main(uint2 DTid : SV_DispatchThreadID, uint2 Gid : SV_GroupID, uint2 GTid :
     projPos /= projPos.w;
     
     //insert box if it is outside of perspective camera
-    if (any(abs(projPos.xy) > 1.1f))
+    if (any(abs(projPos.xy) > 1.1f) || projPos.z > 1.f || projPos.z < 0.f)
     {
         int3 cell = int3(floor(pos.xyz * gHashScaleFactor));
         uint h = hash(cell) & (gHashSize - 1);
