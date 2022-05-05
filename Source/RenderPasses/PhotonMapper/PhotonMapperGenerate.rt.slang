@@ -183,7 +183,7 @@ bool cullingTest(float3 origin)
     uint h = hash(cell) & (gCullingHashSize - 1);
     uint2 hIdx = uint2(h % gCullingYExtent, h / gCullingYExtent);
 
-    return gCullingHashBuffer[hIdx] == 1 ? true : false;
+    return gCullingHashBuffer[hIdx] == 1 ? false : true;
 }
 
 [shader("miss")]
