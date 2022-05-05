@@ -10,7 +10,7 @@ import Scene.Material.BasicMaterialData;
 import Scene.Material.MaterialSystem;
 import Rendering.Materials.InteriorList;
 import Rendering.Materials.InteriorListHelpers;
-//import Rendering.Volumes.HomogeneousVolumeSampler; //Add maybe
+//import Rendering.Volumes.HomogeneousVolumeSampler; //Add maybe if dielectrics work
 import Rendering.Lights.LightHelpers;
 import Utils.Geometry.GeometryHelpers;
 
@@ -100,7 +100,7 @@ bool handleNestedDielectrics(inout ShadingData sd, inout RayData rayData)
     }
     
     // Compute index of refraction for medium on the outside.
-    //TODO: This does not work 
+    //TODO: This does not work, gpu stops working 
     //sd.IoR = computeOutsideIoR(rayData.interiorList, sd.materialID, sd.frontFacing);
     
     return true;

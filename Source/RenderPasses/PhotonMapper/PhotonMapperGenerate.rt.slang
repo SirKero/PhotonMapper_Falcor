@@ -9,34 +9,33 @@ import Scene.Material.ShadingUtils;
 import Rendering.Lights.LightHelpers;
 import Utils.Color.ColorHelpers;
 
+import PhotonCullingHash;
+
 
 cbuffer PerFrame
 {
     uint        gFrameCount;        // Frame count since scene was loaded.
     float       gCausticRadius;     // Radius for the caustic photons
     float       gGlobalRadius;      // Radius for the global photons
-    float       gCosFov;            //fov used for culling
+    float       gHashScaleFactor; //fov used for culling
 }
 
 cbuffer CB
 {
     //Max photon recursion depths
     uint gMaxRecursion; 
-    uint gMaxRecursionDiffuse;
-    uint gMaxRecursionSpecular;
-    uint gMaxRecusionTransmission;
-
     uint gPRNGDimension; // First available PRNG dimension.
     float gGlobalRejection; //Probability that a global photon is saved
     float gEmissiveScale;   //A scale for emissive lights
+    
     float gSpecRoughCutoff; //Cutoff for specular materials (are interpreted as diffuse if rougness is above this value)
-
     float gAnalyticInvPdf;  //Pdf for analytic lights
     bool gAdjustShadingNormals; //Adjusts shading normals
     bool gUseAlphaTest; //Enables alpha test
-    bool gEnablePhotonCulling;
     
-    uint gPhotonCullingMaxPhotons;
+    bool gEnablePhotonCulling;
+    uint gCullingHashSize;
+    uint gCullingYExtent;
 };
 
 // Inputs
@@ -62,8 +61,7 @@ Texture2D<uint> gRndSeedBuffer;
 RWStructuredBuffer<uint> gPhotonCounter; //idx 0 = caustic ; idx 1 = global
 
 //Culling (optional)
-StructuredBuffer<uint> gCullingAabbCounter;
-RaytracingAccelerationStructure gCullingTlas;
+Texture2D<uint> gCullingHashBuffer;
 
 // Static configuration based on defines set from the host.
 #define is_valid(name) (is_valid_##name != 0)
@@ -109,16 +107,6 @@ struct RayData
         d.direction = float3(0, 0, 0);
         return d;
     }
-};
-
-struct CullingRayPayload
-{
-    bool hit;
-};
-
-struct CullingAttribs
-{
-    uint pad;
 };
 
 //get the area of a triangle from the vectors a and b. 
@@ -181,47 +169,22 @@ AABB calcPhotonAABB(in float3 center, in float radius)
 bool cullingTest(float3 origin)
 {
     //Check if position is inside camera frustum
-    float3 camPos = gScene.camera.getPosition();
-    float3 camTarget = gScene.camera.data.target;
+    const float4 pos = float4(origin, 1);
 
-    float3 toTarget = normalize(camTarget - camPos);
-    float3 toPos = normalize(origin - camPos);
+    float4 projPos = mul(pos, gScene.camera.getViewProj());
+    projPos /= projPos.w;
 
     //if photon is inside camera frustum don't cull
-    if (dot(toTarget, toPos) >= gCosFov)
+    if (any(abs(projPos.xy) <= 1.1f))
         return false;
 
-    //Check if photon is visible through a reflection with a short ray
-    RayDesc ray;
-    ray.Direction = float3(0, 1, 0);
-    ray.Origin = origin;
-    ray.TMin = kRayTMinCulling;
-    ray.TMax = kRayTMaxCulling;
+    //Check if hash cell is set
+    int3 cell = int3(floor(origin * gHashScaleFactor));
+    uint h = hash(cell) & (gCullingHashSize - 1);
+    uint2 hIdx = uint2(h % gCullingYExtent, h / gCullingYExtent);
 
-    CullingRayPayload rayPayload;
-    rayPayload.hit = true;
-
-    TraceRay(gCullingTlas, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xff /* instanceInclusionMask */, 1 /* hitIdx */, rayTypeCount, 1 /* missIdx */, ray, rayPayload);
-    
-    return !rayPayload.hit; //If hit photon is not culled
+    return gCullingHashBuffer[hIdx] == 1 ? true : false;
 }
-
-//Culling
-[shader("miss")]
-void missCulling(inout CullingRayPayload rayPayload : SV_RayPayload)
-{
-    rayPayload.hit = false;
-}
-
-[shader("intersection")]
-void intersectionCulling()
-{
-    //Create a pad struct, as a struct is needed for report hit
-    CullingAttribs attribs;
-    attribs.pad = 0;
-    ReportHit(kRayTMinCulling, 0, attribs);
-}
-
 
 [shader("miss")]
 void miss(inout RayData rayData : SV_RayPayload)

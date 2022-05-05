@@ -138,15 +138,15 @@ private:
     */
     void createCollectionProgram();
 
-    /**
+    /** Inits the Hash buffer for the culling
     */
     void initPhotonCulling(RenderContext* pRenderContext, uint2 windowDim);
 
-    /**
+    /** resets the culling buffer to save gpu memory
     */
-    void resetCullingVars(RenderContext* pRenderContext);
+    void resetCullingVars();
 
-    /**
+    /**The culling compute pass which inserts a 1 in the hash for camera cells outside of the camera frustum
     */
     void photonCullingPass(RenderContext* pRenderContext, const RenderData& renderData);
 
@@ -204,7 +204,7 @@ private:
 
     //Photon Culling
     bool                        mEnablePhotonCulling = false;            //<Photon Culling with AS
-    uint                        mCullingMaxBoxesUI = 10000;
+    uint                        mCullingHashBufferSizeBytes = 18;
 
     //Stochasic Collect
     
@@ -227,6 +227,7 @@ private:
     uint                        mInfoTexFormat = 1;
     bool                        mPhotonBuffersReady = false;
 
+    uint                        mCullingYExtent = 512;
 
     //Light
     std::vector<uint> mActiveEmissiveTriangles;
@@ -294,14 +295,7 @@ private:
     //
     //Photon Culling vars
     //
-    uint                            mCullingMaxBoxes;
-    Buffer::SharedPtr               mCullingCounter; 
-    Buffer::SharedPtr               mCullingBufferAABB;
-    BlasData                        mCullingBlasData;
-    Buffer::SharedPtr               mCullingBlas;
-    TlasData                        mCullingTlas;
-    D3D12_RAYTRACING_INSTANCE_DESC  mCullingInstanceDesc;
-    D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO   mCullingTlasPrebuildInfo;
+    Texture::SharedPtr               mCullingBuffer;
 
     //
     //Photon Buffers

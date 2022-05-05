@@ -12,4 +12,7 @@
     <ShaderSource Include="PhotonCulling.cs.slang" />
     <ShaderSource Include="PhotonMapperStochasticCollect.rt.slang" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="PhotonCullingHash.slang" />
+  </ItemGroup>
 </Project>

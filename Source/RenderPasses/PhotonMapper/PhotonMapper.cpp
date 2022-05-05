@@ -221,12 +221,12 @@ void PhotonMapper::execute(RenderContext* pRenderContext, const RenderData& rend
         createLightSampleTexture(pRenderContext);
     }
 
-    if (mEnablePhotonCulling && !mCullingBufferAABB)
+    if (mEnablePhotonCulling && !mCullingBuffer)
         initPhotonCulling(pRenderContext, renderData.getDefaultTextureDims());
 
     //Reset culling buffer if deactivated to save memory
-    if (!mEnablePhotonCulling && mCullingBufferAABB)
-        resetCullingVars(pRenderContext);
+    if (!mEnablePhotonCulling && mCullingBuffer)
+        resetCullingVars();
 
     if (mRebuildAS)
         createAccelerationStructure(pRenderContext, { mCausticBuffers.maxSize, mGlobalBuffers.maxSize });
@@ -314,6 +314,7 @@ void PhotonMapper::generatePhotons(RenderContext* pRenderContext, const RenderDa
     var[nameBuf]["gFrameCount"] = mFrameCount;
     var[nameBuf]["gCausticRadius"] = mCausticRadius;
     var[nameBuf]["gGlobalRadius"] = mGlobalRadius;
+    var[nameBuf]["gHashScaleFactor"] = 1.0f/mGlobalRadius;
     
 
     //Upload constant buffer only if options changed
@@ -330,7 +331,8 @@ void PhotonMapper::generatePhotons(RenderContext* pRenderContext, const RenderDa
         var[nameBuf]["gUseAlphaTest"] = mUseAlphaTest;
 
         var[nameBuf]["gEnablePhotonCulling"] = mEnablePhotonCulling;
-        var[nameBuf]["gPhotonCullingMaxPhotons"] = mCullingMaxBoxes;
+        var[nameBuf]["gCullingHashSize"] = 1 << mCullingHashBufferSizeBytes;
+        var[nameBuf]["gCullingYExtent"] = mCullingYExtent;
     }
 
     //set the buffers
@@ -352,9 +354,7 @@ void PhotonMapper::generatePhotons(RenderContext* pRenderContext, const RenderDa
 
     //Set optinal culling variables
     if (mEnablePhotonCulling) {
-        FALCOR_ASSERT(mCullingCounter && mCullingTlas.pSrv);
-        var["gCullingAabbCounter"] = mCullingCounter;
-        var["gCullingTlas"].setSrv(mCullingTlas.pSrv);
+        var["gCullingHashBuffer"] = mCullingBuffer;
     }
 
     // Get dimensions of ray dispatch.
@@ -522,8 +522,8 @@ void PhotonMapper::renderUI(Gui::Widgets& widget)
     if (auto group = widget.group("Photon Culling")) {
         dirty |= widget.checkbox("Enable Photon Culling", mEnablePhotonCulling);
         widget.tooltip("Enables photon culling. For reflected pixels outside of the camera frustrum ray tracing is used.");
-        dirty |= widget.var("Culling Buffer Size", mCullingMaxBoxesUI, 0u, 100000u, 10u);
-        widget.tooltip("Determines the Buffer size. Is only applied on initialization (Disable and Enable again)");
+        dirty |= widget.slider("Culling Buffer Size", mCullingHashBufferSizeBytes, 10u, 32u);
+        widget.tooltip("Size of the hash buffer. 2^x");
     }
 
     if (auto group = widget.group("Acceleration Structure Settings")) {
@@ -624,12 +624,9 @@ void PhotonMapper::setScene(RenderContext* pRenderContext, const Scene::SharedPt
             auto& sbt = mTracerGenerate.pBindingTable;
             sbt->setRayGen(desc.addRayGen("rayGen"));
             sbt->setMiss(0, desc.addMiss("miss"));
-            sbt->setMiss(1, desc.addMiss("missCulling"));   //for optional culling
             if (mpScene->hasGeometryType(Scene::GeometryType::TriangleMesh)) {
                 sbt->setHitGroup(0, mpScene->getGeometryIDs(Scene::GeometryType::TriangleMesh), desc.addHitGroup("closestHit", "anyHit"));
             }
-            auto cullingHitShader = desc.addHitGroup("", "", "intersectionCulling");
-            sbt->setHitGroup(1, 0, cullingHitShader);
 
             mTracerGenerate.pProgram = RtProgram::create(desc, mpScene->getSceneDefines());
         }
@@ -970,10 +967,8 @@ void PhotonMapper::createAccelerationStructure(RenderContext* pContext, const st
         mTlasScratch = nullptr;
         mPhotonTlas.pInstanceDescs = nullptr; mPhotonTlas.pSrv = nullptr; mPhotonTlas.pTlas = nullptr;
     }
-    //If photon culling is deactivated reset scratch max size here
-    if (!mEnablePhotonCulling) {
-        mBlasScratchMaxSize = 0; mTlasScratchMaxSize = 0;
-    }
+    //Reset scratch max size here
+    mBlasScratchMaxSize = 0; mTlasScratchMaxSize = 0;
 
     createBottomLevelAS(pContext, aabbCount);
     createTopLevelAS(pContext);
@@ -1145,111 +1140,26 @@ void PhotonMapper::prepareRandomSeedBuffer(const uint2 screenDimensions)
 
 void PhotonMapper::initPhotonCulling(RenderContext* pRenderContext, uint2 windowDim)
 {
-    mCullingMaxBoxes = mCullingMaxBoxesUI;
-    //init culling AABB buffer
-    mCullingBufferAABB = Buffer::createStructured(sizeof(D3D12_RAYTRACING_AABB), mCullingMaxBoxes);
-    mCullingBufferAABB->setName("PhotonMapper::CullingAABB");
-    mCullingCounter = Buffer::create(sizeof(uint32_t));
-    mCullingCounter->setName("PhotonMapper::CullingCounter");
-
-    //Blas init
-    {
-        mBlasScratchMaxSize = 0;    //reset
-            //Prebuild
-        auto& blas = mCullingBlasData;
-
-        //Create geometry description
-        D3D12_RAYTRACING_GEOMETRY_DESC& desc = blas.geomDescs;
-        desc.Type = D3D12_RAYTRACING_GEOMETRY_TYPE_PROCEDURAL_PRIMITIVE_AABBS;
-        desc.Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_NO_DUPLICATE_ANYHIT_INVOCATION;
-        desc.AABBs.AABBCount = mCullingMaxBoxes;
-        desc.AABBs.AABBs.StartAddress = mCullingBufferAABB->getGpuAddress();
-        desc.AABBs.AABBs.StrideInBytes = sizeof(D3D12_RAYTRACING_AABB);
-
-        //Create input for blas
-        D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS& inputs = blas.buildInputs;
-        inputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL;
-        inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
-        inputs.NumDescs = 1;
-        inputs.pGeometryDescs = &blas.geomDescs;
-        inputs.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_BUILD;
-
-        //get prebuild Info
-        FALCOR_GET_COM_INTERFACE(gpDevice->getApiHandle(), ID3D12Device5, pDevice5);
-        pDevice5->GetRaytracingAccelerationStructurePrebuildInfo(&blas.buildInputs, &blas.prebuildInfo);
-
-        // Figure out the padded allocation sizes to have proper alignment.
-        FALCOR_ASSERT(blas.prebuildInfo.ResultDataMaxSizeInBytes > 0);
-        blas.blasByteSize = align_to((uint64_t)D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT, blas.prebuildInfo.ResultDataMaxSizeInBytes);
-
-        uint64_t scratchByteSize = std::max(blas.prebuildInfo.ScratchDataSizeInBytes, blas.prebuildInfo.UpdateScratchDataSizeInBytes);
-        blas.scratchByteSize = align_to((uint64_t)D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT, scratchByteSize);
-
-        mBlasScratchMaxSize = blas.scratchByteSize;
-
-        //Create Blas buffer
-        mCullingBlas = Buffer::create(mCullingBlasData.blasByteSize, Buffer::BindFlags::AccelerationStructure, Buffer::CpuAccess::None);
-        mCullingBlas->setName("PhotonMapper::CullingBlasBuffer");
-    }
-    
-
-    //Prepare TLAS
-    {
-        mTlasScratchMaxSize = 0;
-
-        //fill the instance description if empty
-        D3D12_RAYTRACING_INSTANCE_DESC desc = {};
-        desc.AccelerationStructure = mCullingBlas->getGpuAddress();
-        desc.Flags = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
-        desc.InstanceID = 0;
-        desc.InstanceMask = 0xFFFF;
-        desc.InstanceContributionToHitGroupIndex = 0;
-
-        //Create a identity matrix for the transform and copy it to the instance desc
-        glm::mat4 transform4x4 = glm::identity<glm::mat4>();
-        std::memcpy(desc.Transform, &transform4x4, sizeof(desc.Transform));
-        mCullingInstanceDesc = desc;
-
-
-        D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS inputs = {};
-        inputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL;
-        inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
-        inputs.NumDescs = 1;
-        inputs.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_BUILD;
-
-        //Get Tlas and scratch size and init tlas buffer
-        FALCOR_GET_COM_INTERFACE(gpDevice->getApiHandle(), ID3D12Device5, pDevice5);
-        pDevice5->GetRaytracingAccelerationStructurePrebuildInfo(&inputs, &mCullingTlasPrebuildInfo);
-
-        mCullingTlas.pTlas = Buffer::create(mCullingTlasPrebuildInfo.ResultDataMaxSizeInBytes, Buffer::BindFlags::AccelerationStructure, Buffer::CpuAccess::None);
-        mCullingTlas.pTlas->setName("PhotonMapper::Culling_TLAS");
-        mCullingTlas.pInstanceDescs = Buffer::create(sizeof(D3D12_RAYTRACING_INSTANCE_DESC), Buffer::BindFlags::None, Buffer::CpuAccess::Write, &mCullingInstanceDesc);
-        mCullingTlas.pInstanceDescs->setName("PhotonMapper::Culling_TLAS_Instance_Description");
-
-        mTlasScratchMaxSize = mCullingTlasPrebuildInfo.ScratchDataSizeInBytes;
-    }
-    
-
-    //Rebuild AS as scratch buff could have been changed
-    mRebuildAS = true;
+    //Build hash buffer
+    uint size= 1 << mCullingHashBufferSizeBytes;
+    size = static_cast<uint>(sqrt(size));
+    mCullingYExtent = size;
+    mCullingBuffer = Texture::create2D(size, size, ResourceFormat::R8Uint, 1, 1, nullptr, ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource);
+    mCullingBuffer->setName("Culling hash buffer");
 }
 
-void PhotonMapper::resetCullingVars(RenderContext* pRenderContext)
+void PhotonMapper::resetCullingVars()
 {
     //reset all buffers. This saves memory if the culling is deactivated
     mPhotonCullingPass.reset();
-    mCullingBufferAABB.reset();
-    mCullingCounter.reset();
-    mCullingTlas.pTlas.reset(); mCullingTlas.pSrv.reset(); mCullingTlas.pInstanceDescs.reset();
-    mCullingBlas.reset();
+    mCullingBuffer.reset();
 }
 
 void PhotonMapper::photonCullingPass(RenderContext* pRenderContext, const RenderData& renderData)
 {
     FALCOR_PROFILE("PhotonCulling");
     //Reset Counter and AABB
-    pRenderContext->clearUAV(mCullingBufferAABB.get()->getUAV().get(), uint4(0, 0, 0, 0));
-    pRenderContext->copyBufferRegion(mCullingCounter.get(), 0, mPhotonCounterBuffer.reset.get(), 0, sizeof(uint32_t));  //Reuse photon reset buffer to clear
+    pRenderContext->clearUAV(mCullingBuffer->getUAV().get(), float4(0));
 
     //Build shader
     if (!mPhotonCullingPass) {
@@ -1272,14 +1182,13 @@ void PhotonMapper::photonCullingPass(RenderContext* pRenderContext, const Render
     float fovY = focalLengthToFovY(mpScene->getCamera()->getFocalLength(), Camera::kDefaultFrameHeight);
     float fovX = static_cast<float>(2 * atan(tan(fovY * 0.5) * mpScene->getCamera()->getAspectRatio()));
 
-    var["PerFrame"]["gPhotonRadius"] = mGlobalRadius;
+    var["PerFrame"]["gHashScaleFactor"] = 1.0f/mGlobalRadius;
+    var["PerFrame"]["gHashSize"] = 1 << mCullingHashBufferSizeBytes;
+    var["PerFrame"]["gYExtend"] = mCullingYExtent;
     var["PerFrame"]["gCurrentFrame"] = mFrameCount;
-    var["PerFrame"]["gCosFov"] = cos(std::max(fovY, fovX)); //take the bigger fov for cutoff
-    var["PerFrame"]["gMaxBoxes"] = mCullingMaxBoxes;
 
     var[kInputChannels[0].texname] = renderData[kInputChannels[0].name]->asTexture();    //VBuffer
-    var["gAabbCounter"] = mCullingCounter;
-    var["gAabbOut"] = mCullingBufferAABB;
+    var["gHashBuffer"] = mCullingBuffer;
 
 
     const uint2 targetDim = renderData.getDefaultTextureDims();
@@ -1287,50 +1196,6 @@ void PhotonMapper::photonCullingPass(RenderContext* pRenderContext, const Render
 
     mPhotonCullingPass->execute(pRenderContext, uint3(targetDim, 1));
     
-    //Build blas
-    {
-        //barriers for the scratch and blas buffer
-        pRenderContext->uavBarrier(mCullingBufferAABB.get());
-        pRenderContext->uavBarrier(mBlasScratch.get());
-        pRenderContext->uavBarrier(mCullingBlas.get());
-
-        D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC asDesc = {};
-        asDesc.Inputs = mCullingBlasData.buildInputs;
-        asDesc.ScratchAccelerationStructureData = mBlasScratch->getGpuAddress();
-        asDesc.DestAccelerationStructureData = mCullingBlas->getGpuAddress();
-
-        FALCOR_GET_COM_INTERFACE(pRenderContext->getLowLevelData()->getCommandList(), ID3D12GraphicsCommandList4, pList4);
-        pList4->BuildRaytracingAccelerationStructure(&asDesc, 0, nullptr);
-
-        //Barrier for the blas
-        pRenderContext->uavBarrier(mCullingBlas.get());
-    }
-
-    //Build Tlas
-    {
-
-        D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS inputs = {};
-        inputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL;
-        inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
-        inputs.NumDescs = 1;
-        inputs.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_BUILD;
-
-        D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC asDesc = {};
-        asDesc.Inputs = inputs;
-        asDesc.Inputs.InstanceDescs = mCullingTlas.pInstanceDescs->getGpuAddress();
-        asDesc.ScratchAccelerationStructureData = mTlasScratch->getGpuAddress();
-        asDesc.DestAccelerationStructureData = mCullingTlas.pTlas->getGpuAddress();
-
-        // Create TLAS
-        FALCOR_GET_COM_INTERFACE(pRenderContext->getLowLevelData()->getCommandList(), ID3D12GraphicsCommandList4, pList4);
-        pRenderContext->resourceBarrier(mCullingTlas.pInstanceDescs.get(), Resource::State::NonPixelShader);
-        pList4->BuildRaytracingAccelerationStructure(&asDesc, 0, nullptr);
-        pRenderContext->uavBarrier(mCullingTlas.pTlas.get());                   //barrier for the tlas so we can use it savely after creation
-
-        //Create TLAS Shader Ressource View
-        if (mCullingTlas.pSrv == nullptr) {
-            mCullingTlas.pSrv = ShaderResourceView::createViewForAccelerationStructure(mCullingTlas.pTlas);
-        }
-    }
+    pRenderContext->uavBarrier(mCullingBuffer.get());
 }
 

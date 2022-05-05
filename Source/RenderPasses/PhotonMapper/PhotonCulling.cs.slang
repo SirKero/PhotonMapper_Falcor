@@ -7,19 +7,21 @@ import Utils.Math.MathHelpers;
 import Rendering.Materials.StandardMaterial;
 import Rendering.Lights.LightHelpers;
 
+import PhotonCullingHash;
 
 cbuffer PerFrame
 {
-    float gPhotonRadius;    //Global photon radius
+    float gHashScaleFactor;    //Scale factor calculated from photon radius
+    uint gHashSize;            //Size of the hash
+    uint gYExtend;  
     uint gCurrentFrame;
-    float gCosFov;
-    uint gMaxBoxes;
+    
+    
 }
 
 Texture2D<PackedHitInfo> gVBuffer;
 
-RWStructuredBuffer<uint> gAabbCounter;
-RWStructuredBuffer<AABB> gAabbOut;
+RWTexture2D<uint> gHashBuffer;
 
 [numthreads(16, 16, 1)]
 void main(uint2 DTid : SV_DispatchThreadID, uint2 Gid : SV_GroupID, uint2 GTid : SV_GroupThreadID, uint GI : SV_GroupIndex)
@@ -32,25 +34,17 @@ void main(uint2 DTid : SV_DispatchThreadID, uint2 Gid : SV_GroupID, uint2 GTid :
     if (!hit.isValid())
         return;
     
-    const float3 pos = gScene.getVertexData(hit.getTriangleHit()).posW;
+    const float4 pos = float4(gScene.getVertexData(hit.getTriangleHit()).posW, 1);
+
+    float4 projPos = mul(pos, gScene.camera.getViewProj());
+    projPos /= projPos.w;
     
-    float3 camPos = gScene.camera.getPosition();
-    float3 camTarget = gScene.camera.data.target;
-
-    float3 toTarget = normalize(camTarget - camPos);
-    float3 toPos = normalize(pos - camPos);
-
     //insert box if it is outside of perspective camera
-    if (dot(toTarget, toPos) < gCosFov)
+    if (any(abs(projPos.xy) > 1.1f))
     {
-        uint aabbCount;
-        InterlockedAdd(gAabbCounter[0], 1u, aabbCount);
-        if (aabbCount < gMaxBoxes)
-        {
-            AABB aabb = AABB(pos - gPhotonRadius, pos + gPhotonRadius);
-            gAabbOut[aabbCount] = aabb;
-
-        }
-
-    }    
+        int3 cell = int3(floor(pos.xyz * gHashScaleFactor));
+        uint h = hash(cell) & (gHashSize - 1);
+        uint2 hIdx = uint2(h % gYExtend, h / gYExtend);
+        gHashBuffer[hIdx] = 1;  //it does not matter if multiple threads write to one hash
+    }
 }
