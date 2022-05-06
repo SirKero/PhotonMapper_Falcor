@@ -181,11 +181,12 @@ void PhotonMapper::execute(RenderContext* pRenderContext, const RenderData& rend
     }
 
     if (mResizePhotonBuffers) {
+        //Fits the buffer with the user defined offset percentage
         if (mFitBuffersToPhotonShot) {
             //if size of conter is 0 wait till next iteration
             if (mPhotonCount[0] > 0 && mPhotonCount[1] > 0) {
-                mCausticBufferSizeUI = static_cast<uint>(mPhotonCount[0] * 1.1);
-                mGlobalBufferSizeUI = static_cast<uint>(mPhotonCount[1] * 1.1);
+                mCausticBufferSizeUI = static_cast<uint>(mPhotonCount[0] * mPhotonBufferOverestimate);
+                mGlobalBufferSizeUI = static_cast<uint>(mPhotonCount[1] * mPhotonBufferOverestimate);
             }
             mFitBuffersToPhotonShot = false;
         }
@@ -229,7 +230,7 @@ void PhotonMapper::execute(RenderContext* pRenderContext, const RenderData& rend
         resetCullingVars();
 
     if (mRebuildAS)
-        createAccelerationStructure(pRenderContext, { mCausticBuffers.maxSize, mGlobalBuffers.maxSize });
+        createAccelerationStructure(pRenderContext);
 
     if (mEnablePhotonCulling)
         photonCullingPass(pRenderContext, renderData);
@@ -245,9 +246,13 @@ void PhotonMapper::execute(RenderContext* pRenderContext, const RenderData& rend
     pRenderContext->uavBarrier(mGlobalBuffers.aabb.get());
     pRenderContext->uavBarrier(mCausticBuffers.aabb.get());
 
-    buildBottomLevelAS(pRenderContext);
+    //Take photon count from last iteration as a basis for this iteration. For first iteration take max buffer size
+    mPhotonAccelSizeLastIt = {static_cast<uint>(mPhotonCount[0] * mPhotonBufferOverestimate), static_cast<uint>(mPhotonCount[1] * mPhotonBufferOverestimate)};
+    if (mFrameCount == 0) { mPhotonAccelSizeLastIt[0] = mCausticBuffers.maxSize; mPhotonAccelSizeLastIt[1] = mGlobalBuffers.maxSize; }
+
+    buildBottomLevelAS(pRenderContext, mPhotonAccelSizeLastIt);
     buildTopLevelAS(pRenderContext);
-         
+
     
     //Gather the photons with short rays
     collectPhotons(pRenderContext, renderData);
@@ -462,10 +467,10 @@ void PhotonMapper::renderUI(Gui::Widgets& widget)
 
     //Info
     widget.text("Iterations: " + std::to_string(mFrameCount));
-    widget.text("Caustic Photons: " + std::to_string(mPhotonCount[0]) + " / " + std::to_string(mCausticBuffers.maxSize));
-    widget.tooltip("Photons for current Iteration / Buffer Size");
-    widget.text("Global Photons: " + std::to_string(mPhotonCount[1]) + " / " + std::to_string(mGlobalBuffers.maxSize));
-    widget.tooltip("Photons for current Iteration / Buffer Size");
+    widget.text("Caustic Photons: " + std::to_string(mPhotonCount[0]) + " / " + std::to_string(mPhotonAccelSizeLastIt[0]) + " / " + std::to_string(mCausticBuffers.maxSize));
+    widget.tooltip("Photons for current Iteration / Build Size Acceleration Structure / Max Buffer Size");
+    widget.text("Global Photons: " + std::to_string(mPhotonCount[1]) + " / " + std::to_string(mPhotonAccelSizeLastIt[1]) + " / " + std::to_string(mGlobalBuffers.maxSize));
+    widget.tooltip("Photons for current Iteration / Build Size Acceleration Structure / Max Buffer Size");
 
     widget.text("Current Global Radius: " + std::to_string(mGlobalRadius));
     widget.text("Current Caustic Radius: " + std::to_string(mCausticRadius));
@@ -473,12 +478,14 @@ void PhotonMapper::renderUI(Gui::Widgets& widget)
     widget.dummy("", dummySpacing);
     widget.var("Number Photons", mNumPhotonsUI, 1000u, UINT_MAX, 1000u);
     widget.tooltip("The number of photons that are shot per iteration. Press \"Apply\" to apply the change");
-    widget.var("Size Caustic Buffer", mCausticBufferSizeUI, 1000u, UINT_MAX, 1000u);
-    widget.var("Size Global Buffer", mGlobalBufferSizeUI, 1000u, UINT_MAX, 1000u);
+    widget.var("Max Size Caustic Buffer", mCausticBufferSizeUI, 1000u, UINT_MAX, 1000u);
+    widget.var("Max Size Global Buffer", mGlobalBufferSizeUI, 1000u, UINT_MAX, 1000u);
+    widget.var("Overestimate size(%)", mPhotonBufferOverestimate, 1.0f, 5.0f, 0.0001f);
+    widget.tooltip("Percentage of overestimation for the acceleration structure build and photon buffer fitting");
     mNumPhotonsChanged |= widget.button("Apply");
     widget.dummy("", float2(15,0), true);
-    mFitBuffersToPhotonShot |= widget.button("Fit Buffers", true);
-    widget.tooltip("Fitts the Caustic and Global Buffer to current number of photons shot + 10 %");
+    mFitBuffersToPhotonShot |= widget.button("Fit Max Size", true);
+    widget.tooltip("Fitts the Caustic and Global Buffer to current number of photons shot *  Photon extra space.This is reccomended for better Performance when moving around");
     widget.dummy("", dummySpacing);
 
     //If fit buffers is triggered, also trigger the photon change routine
@@ -960,7 +967,7 @@ void PhotonMapper::preparePhotonCounters()
     mPhotonCounterBuffer.cpuCopy->setName("PhotonMapper::PhotonCounterCPU");
 }
 
-void PhotonMapper::createAccelerationStructure(RenderContext* pContext, const std::vector<uint>& aabbCount) {
+void PhotonMapper::createAccelerationStructure(RenderContext* pContext) {
 
     //clear all previous data
     if (mRebuildAS) {
@@ -972,7 +979,7 @@ void PhotonMapper::createAccelerationStructure(RenderContext* pContext, const st
     //Reset scratch max size here
     mBlasScratchMaxSize = 0; mTlasScratchMaxSize = 0;
 
-    createBottomLevelAS(pContext, aabbCount);
+    createBottomLevelAS(pContext);
     createTopLevelAS(pContext);
     if (mRebuildAS) mRebuildAS = false; //AS was rebuild so dont do that again
 
@@ -1043,7 +1050,7 @@ void PhotonMapper::buildTopLevelAS(RenderContext* pContext)
     pContext->uavBarrier(mPhotonTlas.pTlas.get());                   //barrier for the tlas so we can use it savely after creation
 }
 
-void PhotonMapper::createBottomLevelAS(RenderContext* pContext, const std::vector<uint>& aabbCount)
+void PhotonMapper::createBottomLevelAS(RenderContext* pContext)
 {
     mBlasData.resize(2);
     //Prebuild
@@ -1090,7 +1097,7 @@ void PhotonMapper::createBottomLevelAS(RenderContext* pContext, const std::vecto
     mGlobalBuffers.blas->setName("PhotonMapper::GlobalBlasBuffer");
 }
 
-void PhotonMapper::buildBottomLevelAS(RenderContext* pContext) {
+void PhotonMapper::buildBottomLevelAS(RenderContext* pContext, std::array<uint,2>& aabbCount) {
 
     FALCOR_PROFILE("buildPhotonBlas");
     if (!gpDevice->isFeatureSupported(Device::SupportedFeatures::Raytracing))
@@ -1109,11 +1116,18 @@ void PhotonMapper::buildBottomLevelAS(RenderContext* pContext) {
         pContext->uavBarrier(mBlasScratch.get());
         pContext->uavBarrier(i == 0 ? mCausticBuffers.blas.get() : mGlobalBuffers.blas.get());
 
+        //add the photon count for this iteration. geomDesc is saved as a pointer in blasInputs
+        uint maxPhotons = i == 0 ? mCausticBuffers.maxSize : mGlobalBuffers.maxSize;
+        aabbCount[i] = std::min(aabbCount[i], maxPhotons);
+        blas.geomDescs.AABBs.AABBCount = static_cast<UINT64>(aabbCount[i]);
+
+        //Fill the build desc struct
         D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC asDesc = {};
         asDesc.Inputs = blas.buildInputs;
         asDesc.ScratchAccelerationStructureData = mBlasScratch->getGpuAddress();
         asDesc.DestAccelerationStructureData = i == 0 ? mCausticBuffers.blas->getGpuAddress(): mGlobalBuffers.blas->getGpuAddress();
 
+        //Build the acceleration structure
         FALCOR_GET_COM_INTERFACE(pContext->getLowLevelData()->getCommandList(), ID3D12GraphicsCommandList4, pList4);
         pList4->BuildRaytracingAccelerationStructure(&asDesc, 0, nullptr);
 

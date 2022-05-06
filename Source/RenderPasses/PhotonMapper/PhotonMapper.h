@@ -102,7 +102,7 @@ private:
 
     /** Creates the AS. Calls the createTopLevelAS(..) and createBottomLevelAS(..) functions
     */
-    void createAccelerationStructure(RenderContext* pContext, const std::vector<uint>& aabbCount);
+    void createAccelerationStructure(RenderContext* pContext);
 
     /** Creates the TLAS for the Photon AABBs
     */
@@ -110,11 +110,13 @@ private:
 
     /** Creates the BLAS for the Photon AABBs
    */
-    void createBottomLevelAS(RenderContext* pContext, const std::vector<uint>& aabbCount);
+    void createBottomLevelAS(RenderContext* pContext);
 
-    /** Builds the Bottom Level Acceleration structure
+    /** Builds the Bottom Level Acceleration structure. aabbCount is the number of photon build for this acceleration structure
+    * 0 index is always caustic, 1 index is global, everything above is ignored.
+    * Photons counts above maxPhotons are ignored. 
     */
-    void buildBottomLevelAS(RenderContext* pContext);
+    void buildBottomLevelAS(RenderContext* pContext, std::array<uint, 2>& aabbCount);
 
     /**Builds the Top Level Acceleration structure
     */
@@ -168,6 +170,8 @@ private:
     float                       mSPPMAlphaGlobal = 0.7f;                 ///< Global Alpha for SPPM
     float                       mSPPMAlphaCaustic = 0.7f;                ///< Caustic Alpha for SPPM
 
+    float                       mPhotonBufferOverestimate = 1.1f;       ///< Percent the photon buffer is overestimated in compairison the the number of photons collected in the last iteration
+
     float                       mCausticRadiusStart = 0.01f;            ///< Start value for the caustic Radius
     float                       mGlobalRadiusStart = 0.05f;             ///< Start value for the caustic Radius
     float                       mCausticRadius = 1.f;                 ///< Current Radius for caustic Photons
@@ -219,6 +223,7 @@ private:
     
     uint                        mFrameCount = 0;            ///< Frame count since last Reset
     std::vector<uint>           mPhotonCount = { 0,0 };
+    std::array<uint, 2>         mPhotonAccelSizeLastIt{ 0,0 };
     bool                        mOptionsChanged = false;
     bool                        mResetConstantBuffers = true;
     bool                        mResizePhotonBuffers = true;    ///< If true resize the Photon Buffers
