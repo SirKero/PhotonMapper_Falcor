@@ -3,6 +3,7 @@
 
 import Scene.Raytracing;
 import Scene.Intersection;
+import Scene.Camera.CameraData;
 import Scene.Material.ShadingUtils;
 import Utils.Math.MathHelpers;
 import Utils.Sampling.SampleGenerator;
@@ -28,6 +29,7 @@ cbuffer CB
     bool gAdjustShadingNormals; //Adjusts the shading normals if activated
 
     bool gUseAlphaTest;     //uses alpha test if activated
+    bool gUseRandomPixelPosCamera;  //Uses a randomly generated pixel offset for camera direction sampeling instead of fixed jitter
 };
 
 // Outputs
@@ -57,7 +59,6 @@ struct RayData
     uint rejectedHits;       ///number of rejected hits (for dielectrics)
 
     InteriorList interiorList;  ///< interior list (8B)
-    uint2 pad;
     SampleGenerator sg; ///< Per-ray state for the sample generator (up to 16B).
 
     /** Create ray payload with default parameters.
@@ -104,6 +105,39 @@ bool handleNestedDielectrics(inout ShadingData sd, inout RayData rayData)
     //sd.IoR = computeOutsideIoR(rayData.interiorList, sd.materialID, sd.frontFacing);
     
     return true;
+}
+
+/** Computes a camera ray for a given pixel assuming a thin-lens camera model with a random instead of a fixed jitter. Based on computeRandomRayThinlens()
+        The camera jitter is taken into account to compute the sample position on the image plane.
+        \param[in] pixel Pixel coordinates with origin in top-left.
+        \param[in] frameDim Image plane dimensions in pixels.
+        \param[in] u Uniform 2D sample. Used for pixel pos.
+        \param[in] v Uniform 2D sample. Used for thin lens sample.
+        \param[in] data Camera data.
+        \return Returns the camera ray.
+    */
+Ray cameraComputeRandomRayThinlens(uint2 pixel, uint2 frameDim, float2 u , float2 v, in const CameraData data)
+{
+    Ray ray;
+
+    // Sample position in screen space in [0,1] with origin at the top-left corner.
+    // The camera jitter offsets the sample by +-0.5 pixels from the pixel center.
+    float2 p = (pixel + u) / frameDim;
+    float2 ndc = float2(2, -2) * p + float2(-1, 1);
+
+    // Compute the normalized ray direction assuming a thin-lens camera.
+    ray.origin = data.posW;
+    ray.dir = ndc.x * data.cameraU + ndc.y * data.cameraV + data.cameraW;
+    float2 apertureSample = sample_disk(u); // Sample lies in the unit disk [-1,1]^2
+    float3 rayTarget = ray.origin + ray.dir;
+    ray.origin += data.apertureRadius * (apertureSample.x * normalize(data.cameraU) + apertureSample.y * normalize(data.cameraV));
+    ray.dir = normalize(rayTarget - ray.origin);
+
+    float invCos = 1.f / dot(normalize(data.cameraW), ray.dir);
+    ray.tMin = data.nearZ * invCos;
+    ray.tMax = data.farZ * invCos;
+
+    return ray;
 }
 
 void writeHit(uint2 pixel, float3 rayDir, float3 thp, float3 emissive, const HitInfo hit)
@@ -216,7 +250,16 @@ void rayGen()
     float3 outColor = float3(0);
     float3 throughput = float3(1);
     RayData rayData = RayData(SampleGenerator(launchIndex, gFrameCount)); //lazy init for now
-    Ray ray = gScene.camera.computeRayThinlens(launchIndex, launchDim, sampleNext2D(rayData.sg)); //get a random jittered ray
+    Ray ray;
+    if (gUseRandomPixelPosCamera)
+    {
+        ray = cameraComputeRandomRayThinlens(launchIndex, launchDim, sampleNext2D(rayData.sg), sampleNext2D(rayData.sg), gScene.camera.data);
+    }
+    else
+    {
+        ray = gScene.camera.computeRayThinlens(launchIndex, launchDim, sampleNext2D(rayData.sg)); //get jittered ray
+    }
+   
     uint rayFlags = 0;
     
     //Trace recursive

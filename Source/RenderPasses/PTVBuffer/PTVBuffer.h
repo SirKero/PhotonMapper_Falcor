@@ -41,6 +41,7 @@ public:
         DirectX = 1,
         Halton = 2,
         Stratified = 3,
+        RandomUniform = 4
     };
 
     using SharedPtr = std::shared_ptr<PTVBuffer>;
@@ -97,7 +98,7 @@ private:
     uint                        mRecursionDepth = 10;                                            ///< Depth of recursion (0 = none).
     float                       mSpecRoughCutoff = 0.5f;                                       ///< Cutoff for when all hits are counted diffuse.
     float                       mEmissiveCutoff = 0.2f;                                         ///< When Emissive is over this value it is a emissive diffuse hit
-    uint32_t                    mSamplePattern = SamplePattern::Stratified;                     ///< Which camera jitter sample pattern to use.
+    uint32_t                    mSamplePattern = SamplePattern::RandomUniform;                  ///< Which camera jitter sample pattern to use.
     uint32_t                    mSampleCount = 64;                                              ///< Sample count for camera jitter.
     bool                        mUseAlphaTest = true;                                           ///< Enable alpha test.
     bool                        mAdjustShadingNormals = true;                                   ///< Adjust shading normals.
@@ -107,8 +108,9 @@ private:
     uint                        mFrameCount = 0;            ///< Frame count since last Reset
     bool                        mOptionsChanged = false;
     bool                        mResetConstantBuffers = true;
-    bool                        mJitterGenChanged = false;
+    bool                        mJitterGenChanged = true;
     uint2                       mFrameDim = { 0,0 };
+    bool                        mCameraUseRandomSample = false;
 
     //Ray Tracing Program
     struct RayTraceProgramHelper

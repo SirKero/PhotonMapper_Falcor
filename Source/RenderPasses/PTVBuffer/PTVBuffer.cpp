@@ -78,6 +78,7 @@ namespace
         { PTVBuffer::SamplePattern::DirectX, "DirectX" },
         { PTVBuffer::SamplePattern::Halton, "Halton" },
         { PTVBuffer::SamplePattern::Stratified, "Stratified" },
+        { PTVBuffer::SamplePattern::RandomUniform, "RandomUniform"}
     };
 
     // Scripting options.
@@ -181,6 +182,10 @@ void PTVBuffer::execute(RenderContext* pRenderContext, const RenderData& renderD
     if (is_set(mpScene->getUpdates(), Scene::UpdateFlags::GeometryChanged))
         throw std::runtime_error("This render pass does not support scene geometry changes. Aborting.");
 
+    //On start set the jitters sample generator
+    if(mFrameCount == 0)
+        updateSamplePattern();
+
     //Check if camera jitter sample gen needs to be set
     if (mFrameDim != renderData.getDefaultTextureDims() || mJitterGenChanged) {
         setCameraJitter(renderData.getDefaultTextureDims());
@@ -211,6 +216,7 @@ void PTVBuffer::execute(RenderContext* pRenderContext, const RenderData& renderD
         var[bufName]["gEmissiveCutoff"] = mEmissiveCutoff;
         var[bufName]["gAdjustShadingNormals"] = mAdjustShadingNormals;
         var[bufName]["gUseAlphaTest"] = mUseAlphaTest;
+        var[bufName]["gUseRandomPixelPosCamera"] = mCameraUseRandomSample;
     }
    
 
@@ -244,6 +250,7 @@ void PTVBuffer::setScene(RenderContext* pRenderContext, const Scene::SharedPtr& 
     mTracer = RayTraceProgramHelper::create();
     mResetConstantBuffers = true;
     mpScene = pScene;
+    mFrameCount = 0;
 
     if (mpScene) {
         if (mpScene->hasGeometryType(Scene::GeometryType::Custom))
@@ -294,7 +301,7 @@ void PTVBuffer::renderUI(Gui::Widgets& widget)
     widget.tooltip("Selects sample pattern for anti-aliasing over multiple frames.\n\n"
                    "The camera jitter is set at the start of each frame based on the chosen pattern. All render passes should see the same jitter.\n"
                    "'Center' disables anti-aliasing by always sampling at the center of the pixel.", true);
-    if (mSamplePattern != SamplePattern::Center)
+    if (mSamplePattern != SamplePattern::Center && mSamplePattern != SamplePattern::RandomUniform)
     {
         updatePattern |= widget.var("Sample count", mSampleCount, 1u);
         widget.tooltip("Number of samples in the anti-aliasing sample pattern.", true);
@@ -302,7 +309,6 @@ void PTVBuffer::renderUI(Gui::Widgets& widget)
     if (updatePattern)
     {
         updateSamplePattern();
-        mJitterGenChanged = true;
     }
 
     mOptionsChanged |= widget.checkbox("Use Alpha Test", mUseAlphaTest);
@@ -334,6 +340,7 @@ static CPUSampleGenerator::SharedPtr createSamplePattern(uint32_t type, uint32_t
     switch (type)
     {
     case PTVBuffer::SamplePattern::Center:
+    case PTVBuffer::SamplePattern::RandomUniform:
         return nullptr;
     case PTVBuffer::SamplePattern::DirectX:
         return DxSamplePattern::create(sampleCount);
@@ -361,4 +368,9 @@ void PTVBuffer::updateSamplePattern()
 {
     mpCameraJitterSampleGenerator = createSamplePattern(mSamplePattern, mSampleCount);
     if (mpCameraJitterSampleGenerator) mSampleCount = mpCameraJitterSampleGenerator->getSampleCount();
+
+    //Set the random sample boolean
+    mCameraUseRandomSample = (mSamplePattern == SamplePattern::RandomUniform);
+    mResetConstantBuffers = true;
+    mJitterGenChanged = true;
 }
