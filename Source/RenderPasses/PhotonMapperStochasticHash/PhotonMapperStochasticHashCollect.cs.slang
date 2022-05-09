@@ -105,6 +105,7 @@ float3 collectPhotons(in HitInfo hitInfo, in float3 dirVec, uint2 launchIndex, b
     float3 radiance = float3(0);
     let lod = ExplicitLodTextureSampler(0.f);
     ShadingData sd = loadShadingData(hitInfo, dirVec, lod);
+    adjustShadingNormal(sd, v);
     SampleGenerator sg = SampleGenerator(launchIndex, gFrameCount);
     
     float radius = isCaustic ? gCausticRadius : gGlobalRadius;

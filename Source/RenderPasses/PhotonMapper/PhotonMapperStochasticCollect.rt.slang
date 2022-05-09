@@ -3,6 +3,7 @@
 
 import Scene.Raytracing;
 import Scene.Intersection;
+import Scene.Material.ShadingUtils;
 import Utils.Math.MathHelpers;
 import Utils.Sampling.SampleGenerator;
 import Rendering.Materials.StandardMaterial;
@@ -232,6 +233,8 @@ void rayGen()
 
     let lod = ExplicitLodTextureSampler(0.f);
     ShadingData sd = gScene.materials.prepareShadingData(v, materialID, -viewW, lod);
+    adjustShadingNormal(sd, v);
+    
     let bsdf = gScene.materials.getBSDF(sd, lod);
     
     RayDesc ray;

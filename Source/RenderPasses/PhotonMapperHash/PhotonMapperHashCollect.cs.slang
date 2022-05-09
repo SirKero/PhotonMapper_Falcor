@@ -142,6 +142,7 @@ float3 collectPhotons(in HitInfo hitInfo, in float3 dirVec, uint2 launchIndex,bo
     float3 radiance = float3(0);
     let lod = ExplicitLodTextureSampler(0.f);
     ShadingData sd = loadShadingData(hitInfo, dirVec, lod);
+    adjustShadingNormal(sd, v);
     const IBSDF bsdf = gScene.materials.getBSDF(sd, lod);
     SampleGenerator sg = SampleGenerator(launchIndex, gFrameCount);
     float radius = isCaustic ? gCausticRadius : gGlobalRadius;

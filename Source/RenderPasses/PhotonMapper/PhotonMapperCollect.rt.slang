@@ -146,7 +146,8 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
     let lod = ExplicitLodTextureSampler(0.f);
     //World Direction is set to the viewDir we get from the vBuffer
     ShadingData sd = loadShadingData(hit, WorldRayDirection(), lod);
-        
+    adjustShadingNormal(sd, v);
+    
     let bsdf = gScene.materials.getBSDF(sd, lod);
             
     float3 f_r = bsdf.eval(sd, -photon.dir, rayData.sg);
