@@ -338,6 +338,7 @@ void PhotonMapper::generatePhotons(RenderContext* pRenderContext, const RenderDa
         var[nameBuf]["gEnablePhotonCulling"] = mEnablePhotonCulling;
         var[nameBuf]["gCullingHashSize"] = 1 << mCullingHashBufferSizeBytes;
         var[nameBuf]["gCullingYExtent"] = mCullingYExtent;
+        var[nameBuf]["gCullingProjTest"] = mPCullingrojectionTestOver;
     }
 
     
@@ -533,6 +534,8 @@ void PhotonMapper::renderUI(Gui::Widgets& widget)
         widget.tooltip("Enables photon culling. For reflected pixels outside of the camera frustrum ray tracing is used.");
         dirty |= widget.slider("Culling Buffer Size", mCullingHashBufferSizeBytes, 10u, 32u);
         widget.tooltip("Size of the hash buffer. 2^x");
+        dirty |= widget.var("Culling Projection Test Value", mPCullingrojectionTestOver, 1.0f, 1.5f, 0.001f);
+        widget.tooltip("Value used for the test with the projected postions. Any absolute value above is culled for the xy coordinate.");
     }
 
     if (auto group = widget.group("Acceleration Structure Settings")) {
@@ -1202,8 +1205,8 @@ void PhotonMapper::photonCullingPass(RenderContext* pRenderContext, const Render
     var["PerFrame"]["gHashScaleFactor"] = 1.0f/(mGlobalRadius*2);  //Radius needs to be double to ensure that all photons from the camera cell are in it
     var["PerFrame"]["gHashSize"] = 1 << mCullingHashBufferSizeBytes;
     var["PerFrame"]["gYExtend"] = mCullingYExtent;
+    var["PerFrame"]["gProjTest"] = mPCullingrojectionTestOver;
     
-
     var[kInputChannels[0].texname] = renderData[kInputChannels[0].name]->asTexture();    //VBuffer
     var["gHashBuffer"] = mCullingBuffer;
 

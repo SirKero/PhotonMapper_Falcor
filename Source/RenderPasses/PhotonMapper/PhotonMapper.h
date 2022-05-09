@@ -209,6 +209,7 @@ private:
     //Photon Culling
     bool                        mEnablePhotonCulling = true;            //<Photon Culling with AS
     uint                        mCullingHashBufferSizeBytes = 18;
+    float                       mPCullingrojectionTestOver = 1.01f;            ///< Value used for determining what is inside the projection  
 
     //Stochasic Collect
     

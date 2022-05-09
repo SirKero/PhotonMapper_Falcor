@@ -36,6 +36,7 @@ cbuffer CB
     bool gEnablePhotonCulling;
     uint gCullingHashSize;
     uint gCullingYExtent;
+    float gCullingProjTest;
 };
 
 
@@ -177,7 +178,7 @@ bool cullingTest(float3 origin)
     projPos /= projPos.w;
 
     //if photon is inside camera frustum don't cull
-    if (any(abs(projPos.xy) <= 1.05f) && projPos.z <= 1.f && projPos.z >= 0.f)
+    if (!any(abs(projPos.xy) >= gCullingProjTest) && projPos.z <= 1.f && projPos.z >= 0.f)
         return false;
     
     //Check if hash cell is set
