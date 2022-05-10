@@ -4,6 +4,7 @@
 import Scene.Raytracing;
 import Scene.Intersection;
 import Utils.Math.MathHelpers;
+import Scene.Material.ShadingUtils;
 import Utils.Sampling.SampleGenerator;
 import Rendering.Materials.StandardMaterial;
 import Rendering.Lights.LightHelpers;
@@ -94,8 +95,10 @@ ShadingData loadShadingData(const HitInfo hit, const float3 rayDir, const ITextu
     const TriangleHit triangleHit = hit.getTriangleHit();
     VertexData v = gScene.getVertexData(triangleHit);
     uint materialID = gScene.getMaterialID(triangleHit.instanceID);
-
-    return gScene.materials.prepareShadingData(v, materialID, -rayDir, lod);
+    ShadingData sd = gScene.materials.prepareShadingData(v, materialID, -rayDir, lod);
+    adjustShadingNormal(sd, v);
+    
+    return sd;
 }
 
 float3 photonContribution(in ShadingData sd,in const IBSDF bsdf, uint photonIndex, inout SampleGenerator sg , bool isCaustic)
@@ -142,7 +145,7 @@ float3 collectPhotons(in HitInfo hitInfo, in float3 dirVec, uint2 launchIndex,bo
     float3 radiance = float3(0);
     let lod = ExplicitLodTextureSampler(0.f);
     ShadingData sd = loadShadingData(hitInfo, dirVec, lod);
-    adjustShadingNormal(sd, v);
+    
     const IBSDF bsdf = gScene.materials.getBSDF(sd, lod);
     SampleGenerator sg = SampleGenerator(launchIndex, gFrameCount);
     float radius = isCaustic ? gCausticRadius : gGlobalRadius;

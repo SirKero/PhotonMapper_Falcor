@@ -5,6 +5,7 @@ import Scene.Raytracing;
 import Scene.Intersection;
 import Utils.Math.MathHelpers;
 import Utils.Sampling.SampleGenerator;
+import Scene.Material.ShadingUtils;
 import Rendering.Materials.StandardMaterial;
 //import Experimental.Scene.Material.MaterialHelpers;
 import Rendering.Lights.LightHelpers;
@@ -105,8 +106,10 @@ ShadingData loadShadingData(const HitInfo hit, const float3 rayDir, const ITextu
     const TriangleHit triangleHit = hit.getTriangleHit();
     VertexData v = gScene.getVertexData(triangleHit);
     uint materialID = gScene.getMaterialID(triangleHit.instanceID);
-
-    return gScene.materials.prepareShadingData(v, materialID, -rayDir, lod);
+    ShadingData sd = gScene.materials.prepareShadingData(v, materialID, -rayDir, lod);
+    adjustShadingNormal(sd, v);
+    
+    return sd;
 }
 
 [shader("miss")]
@@ -146,7 +149,6 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
     let lod = ExplicitLodTextureSampler(0.f);
     //World Direction is set to the viewDir we get from the vBuffer
     ShadingData sd = loadShadingData(hit, WorldRayDirection(), lod);
-    adjustShadingNormal(sd, v);
     
     let bsdf = gScene.materials.getBSDF(sd, lod);
             
