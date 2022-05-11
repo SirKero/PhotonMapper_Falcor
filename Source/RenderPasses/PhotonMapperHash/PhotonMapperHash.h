@@ -28,6 +28,7 @@
 #pragma once
 #include "Falcor.h"
 #include "Utils/Sampling/SampleGenerator.h"
+#include <chrono>
 
 using namespace Falcor;
 
@@ -119,6 +120,10 @@ private:
     */
     void getActiveEmissiveTriangles(RenderContext* pRenderContext);
 
+    /** Checks the timer. This is to stop the renderer for performance tests
+    */
+    void checkTimer();
+
     // Internal state
     Scene::SharedPtr            mpScene;                    ///< Current scene.
     SampleGenerator::SharedPtr  mpSampleGenerator;          ///< GPU sample generator.
@@ -201,6 +206,16 @@ private:
     uint mAnalyticEndIndex = 0;
     uint mNumLights = 0;
     float mAnalyticInvPdf = 0.0f;
+
+    //Clock/Timer
+    bool                        mUseTimer = false;                          //<Activates the timer
+    bool                        mResetTimer = false;                        //<Resets the timer
+    bool                        mTimerStopRenderer = false;                  //<Stops rendering (via return)
+    double                      mTimerDurationSec = 60.0;                   //<How long the timer is running
+    uint                        mTimerMaxIterations = 0;                    //< Stop at certain iterations
+    double                      mCurrentElapsedTime = 0.0;                    //<Elapsed time for UI
+    std::chrono::time_point<std::chrono::steady_clock> mTimerStartTime;     //<Start time for the timer
+
 
     // Ray tracing program.
     struct RayTraceProgramHelper

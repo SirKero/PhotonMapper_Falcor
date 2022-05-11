@@ -531,8 +531,6 @@ void PhotonMapper::renderUI(Gui::Widgets& widget)
             mTimerDurationSec = static_cast<double>(sec);
             resetTimer |= widget.button("Reset Timer");
         }
-        
-
         mResetTimer |= resetTimer;
         dirty |= resetTimer;
     }

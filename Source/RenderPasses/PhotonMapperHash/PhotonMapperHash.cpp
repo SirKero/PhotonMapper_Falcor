@@ -129,6 +129,7 @@ void PhotonMapperHash::execute(RenderContext* pRenderContext, const RenderData& 
         mResetIterations = true;
         mSetConstantBuffers = true;
         mOptionsChanged = false;
+        mResetTimer = true;
     }
 
     //If we have no scene just return
@@ -136,6 +137,17 @@ void PhotonMapperHash::execute(RenderContext* pRenderContext, const RenderData& 
     {
         return;
     }
+
+    //Reset Frame Count if conditions are met
+    if (mResetIterations || mAlwaysResetIterations || is_set(mpScene->getUpdates(), Scene::UpdateFlags::CameraMoved)) {
+        mFrameCount = 0;
+        mResetIterations = false;
+        mResetTimer = true;
+    }
+
+    //Check timer and return if render time is over
+    checkTimer();
+    if (mUseTimer && mTimerStopRenderer) return;
 
     //Copy Photon Counter for UI
     copyPhotonCounter(pRenderContext);
@@ -145,13 +157,6 @@ void PhotonMapperHash::execute(RenderContext* pRenderContext, const RenderData& 
         mNumPhotonsChanged = false;
     }
         
-
-    //Reset Frame Count if conditions are met
-    if (mResetIterations || mAlwaysResetIterations || is_set(mpScene->getUpdates(), Scene::UpdateFlags::CameraMoved)) {
-        mFrameCount = 0;
-        mResetIterations = false;
-    }
-
     //reset radius
     if (mFrameCount == 0) {
         mCausticRadius = mCausticRadiusStart;
@@ -467,6 +472,27 @@ void PhotonMapperHash::renderUI(Gui::Widgets& widget)
     widget.tooltip("Maximum path length for Photon Bounces");
 
     widget.dummy("", dummySpacing);
+
+    //Timer
+    if (auto group = widget.group("Timer")) {
+        bool resetTimer = false;
+        resetTimer |= widget.checkbox("Enable Timer", mUseTimer);
+        widget.tooltip("Enables the timer");
+        if (mUseTimer) {
+            uint sec = static_cast<uint>(mTimerDurationSec);
+            if (sec != 0) widget.text("Elapsed seconds: " + std::to_string(mCurrentElapsedTime) + " / " + std::to_string(sec));
+            if (mTimerMaxIterations != 0) widget.text("Iterations: " + std::to_string(mFrameCount) + " / " + std::to_string(mTimerMaxIterations));
+            resetTimer |= widget.var("Timer Seconds", sec, 0u, UINT_MAX, 1u);
+            widget.tooltip("Time in seconds needed to stop rendering. When 0 time is not used");
+            resetTimer |= widget.var("Max Iterations", mTimerMaxIterations, 0u, UINT_MAX, 1u);
+            widget.tooltip("Max iterations until stop. When 0 iterations are not used");
+            mTimerDurationSec = static_cast<double>(sec);
+            resetTimer |= widget.button("Reset Timer");
+        }
+        mResetTimer |= resetTimer;
+        dirty |= resetTimer;
+    }
+
     //Radius settings
     if (auto group = widget.group("Radius Options")) {
         dirty |= widget.var("Caustic Radius Start", mCausticRadiusStart, kMinPhotonRadius, FLT_MAX, 0.001f);
@@ -920,3 +946,38 @@ void PhotonMapperHash::prepareRandomSeedBuffer(const uint2 screenDimensions)
 
     FALCOR_ASSERT(mRandNumSeedBuffer);
 }
+
+void PhotonMapperHash::checkTimer()
+{
+    if (!mUseTimer) return;
+
+    //reset timer
+    if (mResetTimer) {
+        mCurrentElapsedTime = 0.0;
+        mTimerStartTime = std::chrono::steady_clock::now();
+        mTimerStopRenderer = false;
+        mResetTimer = false;
+        return;
+    }
+
+    if (mTimerStopRenderer) return;
+
+    //check time
+    if (mTimerDurationSec != 0) {
+        auto currentTime = std::chrono::steady_clock::now();
+        std::chrono::duration<double> elapsedSec = currentTime - mTimerStartTime;
+        mCurrentElapsedTime = elapsedSec.count();
+
+        if (mTimerDurationSec <= mCurrentElapsedTime) {
+            mTimerStopRenderer = true;
+        }
+    }
+
+    //check iterations
+    if (mTimerMaxIterations != 0) {
+        if (mTimerMaxIterations <= mFrameCount) {
+            mTimerStopRenderer = true;
+        }
+    }
+}
+

@@ -153,7 +153,7 @@ private:
     */
     void photonCullingPass(RenderContext* pRenderContext, const RenderData& renderData);
 
-    /** Checks the timer. 
+    /** Checks the timer. This is to stop the renderer for performance tests
     */
     void checkTimer();
 
