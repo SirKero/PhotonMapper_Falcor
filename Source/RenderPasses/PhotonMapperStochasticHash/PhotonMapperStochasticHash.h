@@ -138,13 +138,13 @@ private:
     bool                        mUseAlphaTest = true;                   ///<Uses alpha test (Generate)
     bool                        mAdjustShadingNormals = true;           ///<Adjusts the shading normals (Generate)
 
-    uint                        mNumBucketBits = 18;                    ///< 2^NumBucketBits is the total amount of possible buckets
+    uint                        mNumBucketBits = 20;                    ///< 2^NumBucketBits is the total amount of possible buckets
 
     // Generate only
-    uint                        mMaxBounces = 5;                        ///< Depth of recursion (0 = none).
+    uint                        mMaxBounces = 10;                        ///< Depth of recursion (0 = none).
     float                       mRussianRoulette = 0.3f;                ///< Probabilty that a Global photon is saved
 
-    uint                        mNumPhotons = 1000000;                   ///< Number of Photons shot
+    uint                        mNumPhotons = 2000000;                   ///< Number of Photons shot
     uint                        mNumPhotonsUI = mNumPhotons;            ///< For UI. It is decopled from the runtime var because changes have to be confirmed
     uint                        mGlobalBufferSizeUI = mNumPhotons / 2;    ///< Size of the Global Photon Buffer
     uint                        mCausticBufferSizeUI = mNumPhotons / 4;   ///< Size of the Caustic Photon Buffer
