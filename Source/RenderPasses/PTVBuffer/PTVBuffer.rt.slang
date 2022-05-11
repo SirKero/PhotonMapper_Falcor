@@ -18,7 +18,7 @@ import Rendering.Lights.LightHelpers;
 cbuffer PerFrame
 {
     uint gFrameCount; // Frame count since scene was loaded.
-}
+};
 
 cbuffer CB
 {
@@ -192,8 +192,8 @@ bool generateNewRay(const ShadingData sd, const IBSDF bsdf, float3 rayOrigin, in
         rayData.direction = bsdfSample.wo;
         if (bsdfSample.isLobe(LobeType::Transmission))
         {
-            //rayData.origin = computeRayOrigin(sd.posW, dot(sd.faceN, bsdfSample.wo) <= 0.f ? -sd.faceN : sd.faceN);
-            rayData.origin = sd.posW;
+            rayData.origin = computeRayOrigin(sd.posW, dot(sd.faceN, bsdfSample.wo) <= 0.f ? -sd.faceN : sd.faceN);
+            //rayData.origin = sd.posW;
         }
         
         rayData.thp *= bsdfSample.weight;
@@ -296,5 +296,9 @@ void rayGen()
         //update ray for next iteration
         ray.Origin = rayData.origin;
         ray.Direction = rayData.direction;
+        if(i==0){
+            ray.TMin = 0.f;
+        }
+        
     }
 }
