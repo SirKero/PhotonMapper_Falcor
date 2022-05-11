@@ -354,7 +354,7 @@ void rayGen()
                 float probability = 1.f / (photonIndex + 1);
                 if (rnd <= probability)
                 {
-                    uint2 texIdx = uint2(bucketIdx % gBucketYExtent, bucketIdx / gBucketYExtent);
+                    uint2 texIdx = uint2(bucketIdx / gBucketYExtent, bucketIdx % gBucketYExtent);
                     gHashBucketPos[mapIdx][texIdx] = photon.pos;
                     gHashBucketDir[mapIdx][texIdx] = photon.dir;
                     gHashBucketFlux[mapIdx][texIdx] = photon.flux;

@@ -83,7 +83,7 @@ float3 photonContribution(in ShadingData sd, uint hash , inout SampleGenerator s
     //get caustic or global photon
     float radius = isCaustic ? gCausticRadius : gGlobalRadius;
     uint mapIdx = isCaustic ? 0 : 1;
-    uint2 texIdx = uint2(hash % gBucketYExtent, hash / gBucketYExtent);
+    uint2 texIdx = uint2(hash / gBucketYExtent, hash % gBucketYExtent);
     float4 photonPos = gHashBucketPos[mapIdx][texIdx];
     float4 photonDir = gHashBucketDir[mapIdx][texIdx];
     float4 photonFlux = gHashBucketFlux[mapIdx][texIdx];
