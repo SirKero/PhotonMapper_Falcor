@@ -4,16 +4,15 @@
 import Scene.Raytracing;
 import Scene.Intersection;
 import Scene.Camera.CameraData;
-import Scene.Material.ShadingUtils;
 import Utils.Math.MathHelpers;
 import Utils.Sampling.SampleGenerator;
-import Scene.Material.BasicMaterialData;
-import Scene.Material.MaterialSystem;
+import Utils.Geometry.GeometryHelpers;
+import Scene.Material.ShadingUtils;
 import Rendering.Materials.InteriorList;
 import Rendering.Materials.InteriorListHelpers;
 //import Rendering.Volumes.HomogeneousVolumeSampler; //Add maybe if dielectrics work
 import Rendering.Lights.LightHelpers;
-import Utils.Geometry.GeometryHelpers;
+
 
 
 cbuffer PerFrame
@@ -184,55 +183,70 @@ void anyHit(inout RayData rayData : SV_RayPayload, BuiltInTriangleIntersectionAt
     }
 }
 
+bool generateNewRay(const ShadingData sd, const IBSDF bsdf, float3 rayOrigin, inout BSDFSample bsdfSample, inout RayData rayData)
+{
+    // Sample material.
+    if (bsdf.sample(sd, rayData.sg, bsdfSample, true /*Importance Sampeling*/))
+    {
+        rayData.origin = rayOrigin;
+        rayData.direction = bsdfSample.wo;
+        if (bsdfSample.isLobe(LobeType::Transmission))
+        {
+            //rayData.origin = computeRayOrigin(sd.posW, dot(sd.faceN, bsdfSample.wo) <= 0.f ? -sd.faceN : sd.faceN);
+            rayData.origin = sd.posW;
+        }
+        
+        rayData.thp *= bsdfSample.weight;
+        return any(rayData.thp > 0.f);
+    }
+
+    return false;
+}
+
 [shader("closesthit")]
 void closestHit(inout RayData rayData : SV_RayPayload, BuiltInTriangleIntersectionAttributes attribs : SV_IntersectionAttributes)
 {
     uint2 launchIndex = DispatchRaysIndex().xy;
    // Evaluate Falcor's material parameters at the hit point.
-    GeometryInstanceID instanceID = getGeometryInstanceID();
-    VertexData v = getVertexData(instanceID, PrimitiveIndex(), attribs);
-    const uint materialID = gScene.getMaterialID(instanceID);
+    TriangleHit triangleHit;
+    triangleHit.instanceID = getGeometryInstanceID();
+    triangleHit.primitiveIndex = PrimitiveIndex();
+    triangleHit.barycentrics = attribs.barycentrics;
+    VertexData v = gScene.getVertexData(triangleHit);
+    uint materialID = gScene.getMaterialID(triangleHit.instanceID);
+    
     let lod = ExplicitLodTextureSampler(0.f);
-    ShadingData sd = gScene.materials.prepareShadingData(v, materialID, -WorldRayDirection(), lod);
+    ShadingData sd = gScene.materials.prepareShadingData(v, materialID, -rayData.direction, lod);
 
+    
     if (gAdjustShadingNormals)
     {
         adjustShadingNormal(sd, v);
     }
-
+    
+    
     // Reject false hits in nested dielectrics.
     //if (!handleNestedDielectrics(sd, rayData)) return;
+    float3 thpStart = rayData.thp;
     
     BSDFSample bsdfSample;
     let bsdf = gScene.materials.getBSDF(sd, lod);
-    
-    bool valid = bsdf.sample(sd, rayData.sg, bsdfSample, true /*ImportanceSampling*/);    
-    
-    float3 thpStart = rayData.thp;
-    
-    bool transmission = bsdfSample.isLobe(LobeType::Transmission);
-    rayData.origin = sd.computeNewRayOrigin(!transmission); //false is for transmissions
-    rayData.thp *= valid ? bsdfSample.weight : float3(0);
-    rayData.direction = bsdfSample.wo;
+        
+    if (!generateNewRay(sd, bsdf, sd.computeNewRayOrigin(), bsdfSample, rayData))
+    {
+        rayData.terminated = true;
+        return;
+    }
 
     //get material properties
     let bsdfProperties = bsdf.getProperties(sd);
 
     bool isDiffuse = bsdfProperties.roughness > gSpecularRougnessCutoff;
     isDiffuse |= any(bsdfProperties.emission > gEmissiveCutoff);
-
-    //if ray is invalid terminate
-    rayData.terminated = !valid;
-    
+       
     //save hit if lobe is diffuse
     if ((bsdfSample.isLobe(LobeType::DiffuseReflection) || (bsdfSample.isLobe(LobeType::Reflection) && isDiffuse)) && (!rayData.terminated || isDiffuse))
-    {
-        //Get hit information for vbuffer
-        TriangleHit triangleHit;
-        triangleHit.instanceID = getGeometryInstanceID();
-        triangleHit.primitiveIndex = PrimitiveIndex();
-        triangleHit.barycentrics = attribs.barycentrics;
-        
+    {        
         writeHit(launchIndex, WorldRayDirection(), thpStart, bsdfProperties.emission * bsdfSample.weight, HitInfo(triangleHit));
         
         rayData.terminated = true;
@@ -250,29 +264,37 @@ void rayGen()
     float3 outColor = float3(0);
     float3 throughput = float3(1);
     RayData rayData = RayData(SampleGenerator(launchIndex, gFrameCount)); //lazy init for now
-    Ray ray;
+    Ray camRay;
     if (gUseRandomPixelPosCamera)
     {
-        ray = cameraComputeRandomRayThinlens(launchIndex, launchDim, sampleNext2D(rayData.sg), sampleNext2D(rayData.sg), gScene.camera.data);
+        camRay = cameraComputeRandomRayThinlens(launchIndex, launchDim, sampleNext2D(rayData.sg), sampleNext2D(rayData.sg), gScene.camera.data);
     }
     else
     {
-        ray = gScene.camera.computeRayThinlens(launchIndex, launchDim, sampleNext2D(rayData.sg)); //get jittered ray
+        camRay = gScene.camera.computeRayThinlens(launchIndex, launchDim, sampleNext2D(rayData.sg)); //get jittered ray
     }
    
     uint rayFlags = 0;
+    RayDesc ray;
+    ray.Origin = camRay.origin;
+    ray.Direction = camRay.dir;
+    ray.TMax = camRay.tMax;
+    ray.TMin = camRay.tMin;
+
+    rayData.origin = ray.Origin;
+    rayData.direction = ray.Direction;
     
     //Trace recursive
     for (uint i = 0; i < gMaxRecursion; i++)
     {
-        TraceRay(gScene.rtAccel, rayFlags, 0xff /* instanceInclusionMask */, 0 /* hitIdx */, rayTypeCount, 0 /* missIdx */, ray.toRayDesc(), rayData);
+        TraceRay(gScene.rtAccel, 0, 0xff /* instanceInclusionMask */, 0 /* hitIdx */, rayTypeCount, 0 /* missIdx */, ray, rayData);
 
         //if ray is invalid return
         if (rayData.terminated)
             return;
       
         //update ray for next iteration
-        ray.origin = rayData.origin;
-        ray.dir = rayData.direction;
+        ray.Origin = rayData.origin;
+        ray.Direction = rayData.direction;
     }
 }

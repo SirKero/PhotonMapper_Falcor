@@ -49,7 +49,6 @@ namespace
 
     //Ray Tracing Program data
     const uint32_t kMaxPayloadSizeBytes = 80u;
-    const uint32_t kMaxAttributeSizeBytes = 8u;
     const uint32_t kMaxRecursionDepth = 2u;
 
 
@@ -192,8 +191,6 @@ void PTVBuffer::execute(RenderContext* pRenderContext, const RenderData& renderD
         mJitterGenChanged = false;
     }
 
-    
-
     // Specialize the program
     // These defines should not modify the program vars. Do not trigger program vars re-creation.
     mTracer.pProgram->addDefines(getValidResourceDefines(kExtraOutputChannels, renderData));    //Valid defines for extra channels
@@ -201,7 +198,8 @@ void PTVBuffer::execute(RenderContext* pRenderContext, const RenderData& renderD
     // Prepare program vars. This may trigger shader compilation.
     // The program should have all necessary defines set at this point.
 
-    if (!mTracer.pVars) prepareVars();
+    if (!mTracer.pVars)
+        prepareVars();
     FALCOR_ASSERT(mTracer.pVars);
 
     // Set constants.
@@ -262,16 +260,32 @@ void PTVBuffer::setScene(RenderContext* pRenderContext, const Scene::SharedPtr& 
         RtProgram::Desc desc;
         desc.addShaderLibrary(kShader);
         desc.setMaxPayloadSize(kMaxPayloadSizeBytes);
-        desc.setMaxAttributeSize(kMaxAttributeSizeBytes);
+        desc.setMaxAttributeSize(pScene->getRaytracingMaxAttributeSize());
         desc.setMaxTraceRecursionDepth(kMaxRecursionDepth);
 
         mTracer.pBindingTable = RtBindingTable::create(1, 1, mpScene->getGeometryCount());
         auto& sbt = mTracer.pBindingTable;
+        //sbt->setRayGen(desc.addRayGen("rayGen", mpScene->getMaterialSystem()->getTypeConformances()));
         sbt->setRayGen(desc.addRayGen("rayGen"));
         sbt->setMiss(0, desc.addMiss("miss"));
+
+        /*
+        auto materialTypes = pScene->getMaterialSystem()->getMaterialTypes();
+        for (const auto materialType : materialTypes)
+        {
+            auto typeConformances = pScene->getMaterialSystem()->getTypeConformances(materialType);
+            if (mpScene->hasGeometryType(Scene::GeometryType::TriangleMesh)) {
+                auto shaderID = desc.addHitGroup("closestHit", "anyHit", "", typeConformances, to_string(materialType));
+                sbt->setHitGroup(0, mpScene->getGeometryIDs(Scene::GeometryType::TriangleMesh, materialType), shaderID);
+            }
+        }
+        */
+        
         if (mpScene->hasGeometryType(Scene::GeometryType::TriangleMesh)) {
             sbt->setHitGroup(0, mpScene->getGeometryIDs(Scene::GeometryType::TriangleMesh), desc.addHitGroup("closestHit", "anyHit"));
         }
+        
+        
 
         mTracer.pProgram = RtProgram::create(desc, mpScene->getSceneDefines());
     }
