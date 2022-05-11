@@ -382,12 +382,7 @@ void PhotonMapperStochasticHash::renderUI(Gui::Widgets& widget)
     widget.dummy("", dummySpacing);
     widget.var("Number Photons", mNumPhotonsUI, 1000u, UINT_MAX, 1000u);
     widget.tooltip("The number of photons that are shot per iteration. Press \"Apply\" to apply the change");
-    widget.var("Size Caustic Buffer", mCausticBufferSizeUI, 1000u, UINT_MAX, 1000u);
-    widget.var("Size Global Buffer", mGlobalBufferSizeUI, 1000u, UINT_MAX, 1000u);
     mNumPhotonsChanged |= widget.button("Apply");
-    widget.dummy("", float2(15,0), true);
-    mFitBuffersToPhotonShot |= widget.button("Fit Buffers", true);
-    widget.tooltip("Fitts the Caustic and Global Buffer to current number of photons shot + 10 %");
     widget.dummy("", dummySpacing);
 
     //If fit buffers is triggered, also trigger the photon change routine
