@@ -28,6 +28,7 @@
 #pragma once
 #include "Falcor.h"
 #include "Utils/Sampling/SampleGenerator.h"
+#include <chrono>
 
 using namespace Falcor;
 
@@ -152,6 +153,10 @@ private:
     */
     void photonCullingPass(RenderContext* pRenderContext, const RenderData& renderData);
 
+    /** Checks the timer. 
+    */
+    void checkTimer();
+
     // Internal state
     Scene::SharedPtr            mpScene;                    ///< Current scene.
     SampleGenerator::SharedPtr  mpSampleGenerator;          ///< GPU sample generator.
@@ -234,6 +239,16 @@ private:
     bool                        mPhotonBuffersReady = false;
 
     uint                        mCullingYExtent = 512;
+
+    //Clock/Timer
+    bool                        mUseTimer = false;                          //<Activates the timer
+    bool                        mResetTimer = false;                        //<Resets the timer
+    bool                        mTimerStopRenderer = false;                  //<Stops rendering (via return)
+    double                      mTimerDurationSec = 60.0;                   //<How long the timer is running
+    uint                        mTimerMaxIterations = 0;                    //< Stop at certain iterations
+    double                      mCurrentElapsedTime = 0.0;                    //<Elapsed time for UI
+    std::chrono::time_point<std::chrono::steady_clock> mTimerStartTime;     //<Start time for the timer
+
 
     //Light
     std::vector<uint> mActiveEmissiveTriangles;
