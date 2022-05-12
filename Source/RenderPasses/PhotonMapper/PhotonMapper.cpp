@@ -865,6 +865,7 @@ void PhotonMapper::resetPhotonMapper()
     mResizePhotonBuffers = true; mPhotonBuffersReady = false;
     mCausticBuffers.maxSize = 0; mGlobalBuffers.maxSize = 0;
     mPhotonCount[0] = 0; mPhotonCount[1] = 0;
+    mCullingBuffer.reset();
 
     //reset light sample tex
     mLightSampleTex = nullptr;
