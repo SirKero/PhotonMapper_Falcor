@@ -61,6 +61,11 @@ public:
         _32Bit = 2u
     };
 
+    enum LightTexMode : uint32_t {
+        power = 0u,
+        area = 1u
+    };
+
 private:
     PhotonMapper();
 
@@ -254,6 +259,8 @@ private:
 
     //Light
     std::vector<uint> mActiveEmissiveTriangles;
+    bool            mRebuildLightTex = false;
+    LightTexMode mLightTexMode = LightTexMode::power;
     Texture::SharedPtr mLightSampleTex;
     Buffer::SharedPtr mPhotonsPerTriangle;
     const uint mMaxDispatchY = 512;

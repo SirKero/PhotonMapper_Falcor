@@ -86,6 +86,11 @@ namespace
         {3 , "3"},{7 , "7"}, {11 , "11"},{15 , "15"},
         {19 , "19"},{23 , "23"},{27 , "27"}
     };
+
+    const Gui::DropdownList kLightTexModeList{
+        {PhotonMapper::LightTexMode::power , "Power"},
+        {PhotonMapper::LightTexMode::area , "Area"}
+    };
 }
 
 PhotonMapper::SharedPtr PhotonMapper::create(RenderContext* pRenderContext, const Dictionary& dict)
@@ -221,6 +226,11 @@ void PhotonMapper::execute(RenderContext* pRenderContext, const RenderData& rend
 
     if (!mRandNumSeedBuffer) {
         prepareRandomSeedBuffer(renderData.getDefaultTextureDims());
+    }
+
+    if (mRebuildLightTex) {
+        mLightSampleTex.reset();
+        mRebuildLightTex = false;
     }
 
     //Create light sample tex if empty
@@ -583,6 +593,13 @@ void PhotonMapper::renderUI(Gui::Widgets& widget)
         widget.tooltip("Enables Fast Build for Acceleration Structure. If enabled tracing time is worse");
     }
 
+    if (auto group = widget.group("Light Sample Tex")) {
+        mRebuildLightTex |= widget.dropdown("Sample mode", kLightTexModeList, (uint32_t&)mLightTexMode);
+        widget.tooltip("Changes photon distribution for the light sampling texture. Also rebuilds the texture.");
+        mRebuildLightTex |= widget.button("Rebuild Light Tex");
+        dirty |= mRebuildLightTex;
+    }
+
     //Disable Photon Collection
     if (auto group = widget.group("Collect Options")) {
         dirty |= widget.checkbox("Disable Global Photons", mDisableGlobalCollection);
@@ -738,19 +755,43 @@ void PhotonMapper::createLightSampleTexture(RenderContext* pRenderContext)
         getActiveEmissiveTriangles(pRenderContext);
         auto meshLightTriangles = lightCollection->getMeshLightTriangles();
         //Get total area to distribute to get the number of photons per area.
-        float totalArea = 0;
+        float totalMode = 0;
         for (uint i = 0; i < (uint) mActiveEmissiveTriangles.size(); i++) {
             uint triIdx = mActiveEmissiveTriangles[i];
-            totalArea += meshLightTriangles[triIdx].area;
+
+            switch(mLightTexMode){
+            case LightTexMode::power:
+                totalMode += meshLightTriangles[triIdx].flux;
+                break;
+            case LightTexMode::area:
+                totalMode += meshLightTriangles[triIdx].area;
+                break;
+            default:
+                totalMode += meshLightTriangles[triIdx].flux;
+            }
+            
         }
-        float photonsPerArea = numEmissivePhotons / totalArea;
+        float photonsPerMode = numEmissivePhotons / totalMode;
 
         //Calculate photons on a per triangle base
         uint tmpNumEmissivePhotons = 0; //Real count will change due to rounding
         numPhotonsPerTriangle.reserve(mActiveEmissiveTriangles.size());
         for (uint i = 0; i < (uint)mActiveEmissiveTriangles.size(); i++) {
             uint triIdx = mActiveEmissiveTriangles[i];
-            uint photons = static_cast<uint>(std::ceil(meshLightTriangles[triIdx].area * photonsPerArea));
+            uint photons = 0;
+
+            switch (mLightTexMode) {
+            case LightTexMode::power:
+                photons = static_cast<uint>(std::ceil(meshLightTriangles[triIdx].flux * photonsPerMode));
+                break;
+            case LightTexMode::area:
+                photons = static_cast<uint>(std::ceil(meshLightTriangles[triIdx].area * photonsPerMode));
+                break;
+            default:
+                photons = static_cast<uint>(std::ceil(meshLightTriangles[triIdx].flux * photonsPerMode));
+            }
+
+            
             if (photons == 0) photons = 1;  //shoot at least one photon
             tmpNumEmissivePhotons += photons;
             numPhotonsPerTriangle.push_back(photons);
