@@ -77,6 +77,7 @@ static const float kRayTMax = RAY_TMAX;
 static const uint kMaxPhotonIndexGLB = MAX_PHOTON_INDEX_GLOBAL;
 static const uint kMaxPhotonIndexCAU = MAX_PHOTON_INDEX_CAUSTIC;
 static const uint kInfoTexHeight = INFO_TEXTURE_HEIGHT;
+static const bool kUseProjMatrixCulling = CULLING_USE_PROJECTION;
 
 static const float kRayTMinCulling = RAY_TMIN_CULLING;
 static const float kRayTMaxCulling = RAY_TMAX_CULLING;
@@ -173,14 +174,16 @@ bool cullingTest(float3 origin)
 {
     //Check if position is inside camera frustum
     const float4 pos = float4(origin, 1);
-    
-    float4 projPos = mul(pos, gScene.camera.getViewProj());
-    projPos /= projPos.w;
 
-    //if photon is inside camera frustum don't cull
-    if (!any(abs(projPos.xy) >= gCullingProjTest) && projPos.z <= 1.f && projPos.z >= 0.f)
-        return false;
-    
+    if(kUseProjMatrixCulling){
+         float4 projPos = mul(pos, gScene.camera.getViewProj());
+        projPos /= projPos.w;
+
+        //if photon is inside camera frustum don't cull
+        if (!any(abs(projPos.xy) >= gCullingProjTest) && projPos.z <= 1.f && projPos.z >= 0.f)
+            return false;
+    }
+       
     //Check if hash cell is set
     int3 cell = int3(floor(origin * gHashScaleFactor));
     uint h = hash(cell) & (gCullingHashSize - 1);
@@ -208,6 +211,7 @@ void closestHit(inout RayData rayData : SV_RayPayload, BuiltInTriangleIntersecti
     ShadingData sd = gScene.materials.prepareShadingData(v, materialID, -WorldRayDirection(), lod);
 
     //Adjust shading normals if desired
+    
     if (gAdjustShadingNormals)
     {
         adjustShadingNormal(sd, v);

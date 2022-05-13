@@ -17,6 +17,7 @@ cbuffer PerFrame
     float gProjTest;            //Factor for the projection test 
 }
 
+static const bool kUseProjMatrixCulling = CULLING_USE_PROJECTION;
 
 Texture2D<PackedHitInfo> gVBuffer;
 
@@ -34,16 +35,24 @@ void main(uint2 DTid : SV_DispatchThreadID, uint2 Gid : SV_GroupID, uint2 GTid :
         return;
     
     const float4 pos = float4(gScene.getVertexData(hit.getTriangleHit()).posW, 1);
-    
-    float4 projPos = mul(pos, gScene.camera.getViewProj());
-    projPos /= projPos.w;
-    
-    //insert box if it is outside of perspective camera
-    if (any(abs(projPos.xy) > gProjTest) || projPos.z > 1.f || projPos.z < 0.f)
-    {
+
+    if(!kUseProjMatrixCulling){
         int3 cell = int3(floor(pos.xyz * gHashScaleFactor));
         uint h = hash(cell) & (gHashSize - 1);
         uint2 hIdx = uint2(h % gYExtend, h / gYExtend);
         gHashBuffer[hIdx] = 1;  //it does not matter if multiple threads write to one hash
+    }
+    else{
+        float4 projPos = mul(pos, gScene.camera.getViewProj());
+        projPos /= projPos.w;
+    
+        //insert box if it is outside of perspective camera
+        if (any(abs(projPos.xy) > gProjTest) || projPos.z > 1.f || projPos.z < 0.f)
+        {
+            int3 cell = int3(floor(pos.xyz * gHashScaleFactor));
+            uint h = hash(cell) & (gHashSize - 1);
+            uint2 hIdx = uint2(h % gYExtend, h / gYExtend);
+            gHashBuffer[hIdx] = 1;  //it does not matter if multiple threads write to one hash
+        }
     }
 }

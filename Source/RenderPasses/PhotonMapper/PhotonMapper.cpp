@@ -228,6 +228,11 @@ void PhotonMapper::execute(RenderContext* pRenderContext, const RenderData& rend
         createLightSampleTexture(pRenderContext);
     }
 
+    if (mRebuildCullingBuffer) {
+        mCullingBuffer.reset();
+        mRebuildCullingBuffer = false;
+    }
+
     if (mEnablePhotonCulling && !mCullingBuffer)
         initPhotonCulling(pRenderContext, renderData.getDefaultTextureDims());
 
@@ -309,6 +314,7 @@ void PhotonMapper::generatePhotons(RenderContext* pRenderContext, const RenderDa
     mTracerGenerate.pProgram->addDefine("RAY_TMAX", std::to_string(1000.f));    //TODO: Set as variable
     mTracerGenerate.pProgram->addDefine("RAY_TMIN_CULLING", std::to_string(kCollectTMin));
     mTracerGenerate.pProgram->addDefine("RAY_TMAX_CULLING", std::to_string(kCollectTMax));
+    mTracerGenerate.pProgram->addDefine("CULLING_USE_PROJECTION", std::to_string(mUseProjectionMatrixCulling));
 
     // Prepare program vars. This may trigger shader compilation.
     // The program should have all necessary defines set at this point.
@@ -558,10 +564,18 @@ void PhotonMapper::renderUI(Gui::Widgets& widget)
     if (auto group = widget.group("Photon Culling")) {
         dirty |= widget.checkbox("Enable Photon Culling", mEnablePhotonCulling);
         widget.tooltip("Enables photon culling. For reflected pixels outside of the camera frustrum ray tracing is used.");
-        dirty |= widget.slider("Culling Buffer Size", mCullingHashBufferSizeBytes, 10u, 32u);
+        mRebuildCullingBuffer |= widget.slider("Culling Buffer Size", mCullingHashBufferSizeBytes, 10u, 32u);
         widget.tooltip("Size of the hash buffer. 2^x");
-        dirty |= widget.var("Culling Projection Test Value", mPCullingrojectionTestOver, 1.0f, 1.5f, 0.001f);
-        widget.tooltip("Value used for the test with the projected postions. Any absolute value above is culled for the xy coordinate.");
+        bool projMatrix = widget.checkbox("Use Projection Matrix", mUseProjectionMatrixCulling);
+        widget.tooltip("Uses Projection Matrix additionally for culling");
+        if (mUseProjectionMatrixCulling) {
+            dirty |= widget.var("Culling Projection Test Value", mPCullingrojectionTestOver, 1.0f, 1.5f, 0.001f);
+            widget.tooltip("Value used for the test with the projected postions. Any absolute value above is culled for the xy coordinate.");
+        }
+        if (projMatrix)
+            mPhotonCullingPass.reset();
+
+        dirty |= mRebuildCullingBuffer | projMatrix;
     }
 
     if (auto group = widget.group("Acceleration Structure Settings")) {
@@ -1215,6 +1229,7 @@ void PhotonMapper::photonCullingPass(RenderContext* pRenderContext, const Render
 
         Program::DefineList defines;
         defines.add(mpScene->getSceneDefines());
+        defines.add("CULLING_USE_PROJECTION", std::to_string(mUseProjectionMatrixCulling));
 
         mPhotonCullingPass = ComputePass::create(desc, defines, true);
     }
