@@ -391,6 +391,7 @@ void PhotonMapperStochasticHash::renderUI(Gui::Widgets& widget)
     float2 dummySpacing = float2(0, 10);
     bool dirty = false;
 
+    widget.text("Iterations: " + std::to_string(mFrameCount));
     widget.text("Current Global Radius: " + std::to_string(mGlobalRadius));
     widget.text("Current Caustic Radius: " + std::to_string(mCausticRadius));
 
