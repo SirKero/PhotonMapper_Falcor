@@ -320,8 +320,8 @@ void PhotonMapperHash::generatePhotons(RenderContext* pRenderContext, const Rend
         var[nameBuf]["gSpecRoughCutoff"] = mSpecRoughCutoff;
 
         var[nameBuf]["gMaxRecursion"] = mMaxBounces;
-        var[nameBuf]["gSpecRoughCutoff"] = mUseAlphaTest;
-        var[nameBuf]["gSpecRoughCutoff"] = mAdjustShadingNormals;
+        var[nameBuf]["gUseAlphaTest"] = mUseAlphaTest;
+        var[nameBuf]["gAdjustShadingNormals"] = mAdjustShadingNormals;
         var[nameBuf]["gQuadProbeIt"] = mQuadraticProbeIterations;
     }
     
