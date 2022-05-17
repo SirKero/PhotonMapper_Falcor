@@ -341,7 +341,7 @@ void PhotonMapper::generatePhotons(RenderContext* pRenderContext, const RenderDa
     var[nameBuf]["gFrameCount"] = mFrameCount;
     var[nameBuf]["gCausticRadius"] = mCausticRadius;
     var[nameBuf]["gGlobalRadius"] = mGlobalRadius;
-    var[nameBuf]["gHashScaleFactor"] = 1.0f / (mGlobalRadius * 2);  //Radius needs to be double to ensure that all photons from the camera cell are in it
+    var[nameBuf]["gHashScaleFactor"] = 1.0f / ((mGlobalRadius * 1.5f));  //Radius needs to be double to ensure that all photons from the camera cell are in it
     
 
     //Upload constant buffer only if options changed
@@ -1284,7 +1284,7 @@ void PhotonMapper::photonCullingPass(RenderContext* pRenderContext, const Render
     float fovY = focalLengthToFovY(mpScene->getCamera()->getFocalLength(), Camera::kDefaultFrameHeight);
     float fovX = static_cast<float>(2 * atan(tan(fovY * 0.5) * mpScene->getCamera()->getAspectRatio()));
 
-    var["PerFrame"]["gHashScaleFactor"] = 1.0f/(mGlobalRadius*2);  //Radius needs to be double to ensure that all photons from the camera cell are in it
+    var["PerFrame"]["gHashScaleFactor"] = 1.0f/((mGlobalRadius* 1.5f));  //Radius needs to be double to ensure that all photons from the camera cell are in it
     var["PerFrame"]["gHashSize"] = 1 << mCullingHashBufferSizeBytes;
     var["PerFrame"]["gYExtend"] = mCullingYExtent;
     var["PerFrame"]["gProjTest"] = mPCullingrojectionTestOver;
