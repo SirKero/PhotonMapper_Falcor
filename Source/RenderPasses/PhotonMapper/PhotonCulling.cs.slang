@@ -61,14 +61,13 @@ void main(uint2 DTid : SV_DispatchThreadID, uint2 Gid : SV_GroupID, uint2 GTid :
         //Insert one for every hash where a photon can be
         int3 cells[8];
         getArrayOfCells(pos.xyz, cells);
-
+                
         [unroll]
         for(uint i = 0; i<8 ; i++){
             uint h = hash(cells[i]) & (gHashSize - 1);
             uint2 hIdx = uint2(h % gYExtend, h / gYExtend);
             gHashBuffer[hIdx] = 1;  //it does not matter if multiple threads write to one hash
         }
-        
     }
     else{
         float4 projPos = mul(pos, gScene.camera.getViewProj());
