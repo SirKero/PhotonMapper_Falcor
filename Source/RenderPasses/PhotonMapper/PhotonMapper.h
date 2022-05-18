@@ -219,7 +219,7 @@ private:
     //Photon Culling
     bool                        mEnablePhotonCulling = true;            //<Photon Culling with AS
     bool                        mRebuildCullingBuffer = false;
-    uint                        mCullingHashBufferSizeBytes = 20;
+    uint                        mCullingHashBufferSizeBytes = 22;
     bool                        mUseProjectionMatrixCulling = false;
     float                       mPCullingrojectionTestOver = 1.01f;            ///< Value used for determining what is inside the projection  
 
