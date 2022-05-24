@@ -689,7 +689,7 @@ void PhotonMapper::setScene(RenderContext* pRenderContext, const Scene::SharedPt
             
 
 
-            mTracerGenerate.pBindingTable = RtBindingTable::create(2, 2, mpScene->getGeometryCount());
+            mTracerGenerate.pBindingTable = RtBindingTable::create(1, 1, mpScene->getGeometryCount());
             auto& sbt = mTracerGenerate.pBindingTable;
             sbt->setRayGen(desc.addRayGen("rayGen"));
             sbt->setMiss(0, desc.addMiss("miss"));
