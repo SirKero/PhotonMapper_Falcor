@@ -277,6 +277,7 @@ void PhotonMapper::execute(RenderContext* pRenderContext, const RenderData& rend
     
     //Gather the photons with short rays
     collectPhotons(pRenderContext, renderData);
+
     mFrameCount++;
 
     if (mUseStatisticProgressivePM) {
@@ -398,47 +399,73 @@ void PhotonMapper::generatePhotons(RenderContext* pRenderContext, const RenderDa
 void PhotonMapper::collectPhotons(RenderContext* pRenderContext, const RenderData& renderData)
 {
     //Check if stochastic collect variables have changed
-    if (mEnableStochasticCollect != mEnableStochasticCollectUI || mMaxNumberPhotonsSC != mMaxNumberPhotonsSCUI) {
+    if (mMaxNumberPhotonsSC != mMaxNumberPhotonsSCUI) {
         //Rebuild program
-        mEnableStochasticCollect = mEnableStochasticCollectUI;
         mMaxNumberPhotonsSC = mMaxNumberPhotonsSCUI;
         createCollectionProgram();
     }
 
+    bool useStochasticCollect = ((mFrameCount < mStochasticIterations) || mStochasticIterations == 0) && mEnableStochasticCollect;
+    bool shadersSwitched = mFrameCount == mStochasticIterations && mEnableStochasticCollect;
+
     // Trace the photons
     FALCOR_PROFILE("collect photons");
-    // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
-    // TODO: This should be moved to a more general mechanism using Slang.
+
+    
+    // Full Collect
+    //************************************
     mTracerCollect.pProgram->addDefines(getValidResourceDefines(kInputChannels, renderData));
     mTracerCollect.pProgram->addDefines(getValidResourceDefines(kOutputChannels, renderData));
-
     mTracerCollect.pProgram->addDefine("RAY_TMIN", std::to_string(kCollectTMin));
     mTracerCollect.pProgram->addDefine("RAY_TMAX", std::to_string(kCollectTMax));
     mTracerCollect.pProgram->addDefine("INFO_TEXTURE_HEIGHT", std::to_string(kInfoTexHeight));
-    mTracerCollect.pProgram->addDefine("NUM_PHOTONS", std::to_string(mMaxNumberPhotonsSC));
 
-
-    // Prepare program vars. This may trigger shader compilation.
+    // Prepare program for full collect vars. This may trigger shader compilation.
     if (!mTracerCollect.pVars) {
         FALCOR_ASSERT(mTracerCollect.pProgram);
         mTracerCollect.pProgram->addDefines(mpSampleGenerator->getDefines());
         mTracerCollect.pProgram->setTypeConformances(mpScene->getTypeConformances());
         mTracerCollect.pVars = RtProgramVars::create(mTracerCollect.pProgram, mTracerCollect.pBindingTable);
         // Bind utility classes into shared data.
-        auto var = mTracerGenerate.pVars->getRootVar();
+        auto var = mTracerCollect.pVars->getRootVar();
         mpSampleGenerator->setShaderData(var);
     }
     FALCOR_ASSERT(mTracerCollect.pVars);
+    //************************************
+
+    //Stochastic Collect
+    //************************************
+    mTracerStochasticCollect.pProgram->addDefines(getValidResourceDefines(kInputChannels, renderData));
+    mTracerStochasticCollect.pProgram->addDefines(getValidResourceDefines(kOutputChannels, renderData));
+    mTracerStochasticCollect.pProgram->addDefine("RAY_TMIN", std::to_string(kCollectTMin));
+    mTracerStochasticCollect.pProgram->addDefine("RAY_TMAX", std::to_string(kCollectTMax));
+    mTracerStochasticCollect.pProgram->addDefine("INFO_TEXTURE_HEIGHT", std::to_string(kInfoTexHeight));
+    mTracerStochasticCollect.pProgram->addDefine("NUM_PHOTONS", std::to_string(mMaxNumberPhotonsSC));
+
+    // Prepare program for full collect vars. This may trigger shader compilation.
+    if (!mTracerStochasticCollect.pVars) {
+        FALCOR_ASSERT(mTracerStochasticCollect.pProgram);
+        mTracerStochasticCollect.pProgram->addDefines(mpSampleGenerator->getDefines());
+        mTracerStochasticCollect.pProgram->setTypeConformances(mpScene->getTypeConformances());
+        mTracerStochasticCollect.pVars = RtProgramVars::create(mTracerStochasticCollect.pProgram, mTracerStochasticCollect.pBindingTable);
+        // Bind utility classes into shared data.
+        auto var = mTracerStochasticCollect.pVars->getRootVar();
+        mpSampleGenerator->setShaderData(var);
+    }
+    FALCOR_ASSERT(mTracerStochasticCollect.pVars);
+    //************************************
 
     // Set constants.
-    auto var = mTracerCollect.pVars->getRootVar();
+    auto& collectPass = useStochasticCollect ? mTracerStochasticCollect : mTracerCollect;
+    auto var = collectPass.pVars->getRootVar();
+
     std::string nameBuf = "PerFrame";
     var[nameBuf]["gFrameCount"] = mFrameCount;
     var[nameBuf]["gCausticRadius"] = mCausticRadius;
     var[nameBuf]["gGlobalRadius"] = mGlobalRadius;
     
 
-    if (mResetConstantBuffers) {
+    if (mResetConstantBuffers || shadersSwitched) {
         nameBuf = "CB";
         var[nameBuf]["gEmissiveScale"] = mIntensityScalar;
         var[nameBuf]["gCollectGlobalPhotons"] = !mDisableGlobalCollection;
@@ -470,9 +497,7 @@ void PhotonMapper::collectPhotons(RenderContext* pRenderContext, const RenderDat
     const uint2 targetDim = renderData.getDefaultTextureDims();
     FALCOR_ASSERT(targetDim.x > 0 && targetDim.y > 0);
 
-    
-
-    FALCOR_ASSERT(pRenderContext && mTracerCollect.pProgram && mTracerCollect.pVars);
+    FALCOR_ASSERT(pRenderContext && collectPass.pProgram && collectPass.pVars);
 
     //bind TLAS
     bool tlasValid = var["gPhotonAS"].setSrv(mPhotonTlas.pSrv);
@@ -480,7 +505,7 @@ void PhotonMapper::collectPhotons(RenderContext* pRenderContext, const RenderDat
     
     //pRenderContext->raytrace(mTracerCollect.pProgram.get(), mTracerCollect.pVars.get(), targetDim.x, targetDim.y, 1);
     // Trace the photons
-    mpScene->raytrace(pRenderContext, mTracerCollect.pProgram.get(), mTracerCollect.pVars, uint3(targetDim, 1));    //TODO: Check if scene defines can be set manually
+    mpScene->raytrace(pRenderContext, collectPass.pProgram.get(), collectPass.pVars, uint3(targetDim, 1));    //TODO: Check if scene defines can be set manually
 }
 
 void PhotonMapper::renderUI(Gui::Widgets& widget)
@@ -588,6 +613,24 @@ void PhotonMapper::renderUI(Gui::Widgets& widget)
         dirty |= mRebuildCullingBuffer | projMatrix;
     }
 
+    if (auto group = widget.group("Stochastic Collect")) {
+        dirty |= widget.checkbox("Use Stochastic Collection", mEnableStochasticCollect);
+        widget.tooltip("Enables Stochastic Collection. Photon indices are saved in payload and collected later");
+        if (mEnableStochasticCollect) {
+            float4 colorRed = float4(1, 0, 0, 1);
+            float4 colorGreen = float4(0, 1, 0, 1);
+            bool isUsed = ((mFrameCount < mStochasticIterations) || mStochasticIterations == 0);
+            widget.text("Is Used: ");
+            widget.rect(float2(17.5f), isUsed ? colorGreen : colorRed, true, true);
+            widget.text("");
+            dirty |= widget.var("Stochastic Iterations", mStochasticIterations, 0u, UINT32_MAX, 1u);
+            widget.tooltip("Number of stochastic iterations. When exeeded full Collection is used");
+            dirty |= widget.dropdown("Max Photons", kStochasticCollectList, mMaxNumberPhotonsSCUI);
+            widget.tooltip("Size of the photon buffer in payload");
+
+        }
+    }
+
     if (auto group = widget.group("Acceleration Structure Settings")) {
         dirty |= widget.checkbox("Fast Build", mAccelerationStructureFastBuildUI);
         widget.tooltip("Enables Fast Build for Acceleration Structure. If enabled tracing time is worse");
@@ -601,18 +644,11 @@ void PhotonMapper::renderUI(Gui::Widgets& widget)
     }
 
     //Disable Photon Collection
-    if (auto group = widget.group("Collect Options")) {
+    if (auto group = widget.group("Disable Photon Collect")) {
         dirty |= widget.checkbox("Disable Global Photons", mDisableGlobalCollection);
         widget.tooltip("Disables the collection of Global Photons. However they will still be generated");
         dirty |= widget.checkbox("Disable Caustic Photons", mDisableCausticCollection);
         widget.tooltip("Disables the collection of Caustic Photons. However they will still be generated");
-
-        dirty |= widget.checkbox("Use Stochastic Collection", mEnableStochasticCollectUI);
-        widget.tooltip("Enables Stochastic Collection. Photon indices are saved in payload and collected later");
-        if (mEnableStochasticCollectUI) {
-            dirty |= widget.dropdown("Max Photons", kStochasticCollectList, mMaxNumberPhotonsSCUI);
-            widget.tooltip("Size of the photon buffer in payload");
-        }
     }
 
     mPhotonInfoFormatChanged |= widget.dropdown("Photon Info size", kInfoTexDropdownList, mInfoTexFormat);
@@ -637,26 +673,51 @@ void PhotonMapper::createCollectionProgram()
 {
     //reset program
     mTracerCollect = RayTraceProgramHelper::create();
+    mTracerStochasticCollect = RayTraceProgramHelper::create();
     mResetConstantBuffers = true;
 
-    //payload size is num photons + a counter + sampleGenerator(16B)
-    uint maxPayloadSize = mEnableStochasticCollect ? (mMaxNumberPhotonsSC + 5) * sizeof(uint) : kMaxPayloadSizeBytesCollect;
+    //Full Collect
+    {
+        //payload size is num photons + a counter + sampleGenerator(16B)
+        uint maxPayloadSize = kMaxPayloadSizeBytesCollect;
 
-    RtProgram::Desc desc;
-    desc.addShaderLibrary(mEnableStochasticCollect ? kShaderCollectStochasticPhoton : kShaderCollectPhoton);
-    desc.setMaxPayloadSize(maxPayloadSize);
-    desc.setMaxAttributeSize(kMaxAttributeSizeBytes);
-    desc.setMaxTraceRecursionDepth(kMaxRecursionDepth);
+        RtProgram::Desc desc;
+        desc.addShaderLibrary(kShaderCollectPhoton);
+        desc.setMaxPayloadSize(maxPayloadSize);
+        desc.setMaxAttributeSize(kMaxAttributeSizeBytes);
+        desc.setMaxTraceRecursionDepth(kMaxRecursionDepth);
 
-    mTracerCollect.pBindingTable = RtBindingTable::create(1, 1, mpScene->getGeometryCount());   //TODO: Check if that can be removed
-    auto& sbt = mTracerCollect.pBindingTable;
-    sbt->setRayGen(desc.addRayGen("rayGen"));
-    sbt->setMiss(0, desc.addMiss("miss"));
-    auto hitShader = desc.addHitGroup("closestHit", "anyHit", "intersection");
-    sbt->setHitGroup(0, 0, hitShader);
+        mTracerCollect.pBindingTable = RtBindingTable::create(1, 1, mpScene->getGeometryCount());   //TODO: Check if that can be removed
+        auto& sbt = mTracerCollect.pBindingTable;
+        sbt->setRayGen(desc.addRayGen("rayGen"));
+        sbt->setMiss(0, desc.addMiss("miss"));
+        auto hitShader = desc.addHitGroup("closestHit", "anyHit", "intersection");
+        sbt->setHitGroup(0, 0, hitShader);
 
 
-    mTracerCollect.pProgram = RtProgram::create(desc, mpScene->getSceneDefines());
+        mTracerCollect.pProgram = RtProgram::create(desc, mpScene->getSceneDefines());
+    }
+    //Enable Stochastic Collect if it was enabled
+    {
+        //payload size is num photons + a counter + sampleGenerator(16B)
+        uint maxPayloadSize = (mMaxNumberPhotonsSC + 5) * sizeof(uint);
+
+        RtProgram::Desc desc;
+        desc.addShaderLibrary(kShaderCollectStochasticPhoton);
+        desc.setMaxPayloadSize(maxPayloadSize);
+        desc.setMaxAttributeSize(kMaxAttributeSizeBytes);
+        desc.setMaxTraceRecursionDepth(kMaxRecursionDepth);
+
+        mTracerStochasticCollect.pBindingTable = RtBindingTable::create(1, 1, mpScene->getGeometryCount());   //TODO: Check if that can be removed
+        auto& sbt = mTracerStochasticCollect.pBindingTable;
+        sbt->setRayGen(desc.addRayGen("rayGen"));
+        sbt->setMiss(0, desc.addMiss("miss"));
+        auto hitShader = desc.addHitGroup("closestHit", "anyHit", "intersection");
+        sbt->setHitGroup(0, 0, hitShader);
+
+        mTracerStochasticCollect.pProgram = RtProgram::create(desc, mpScene->getSceneDefines());
+    }
+    
 }
 
 void PhotonMapper::setScene(RenderContext* pRenderContext, const Scene::SharedPtr& pScene)

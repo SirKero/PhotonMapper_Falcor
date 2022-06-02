@@ -226,9 +226,9 @@ private:
     //Stochasic Collect
     
     bool                        mEnableStochasticCollect = true;       //< Stochastic collect
-    bool                        mEnableStochasticCollectUI = mEnableStochasticCollect;
     uint                        mMaxNumberPhotonsSC = 3;                 //< Max number of photons that can get collected. (4 * x) - 1 for best fit
     uint                        mMaxNumberPhotonsSCUI = mMaxNumberPhotonsSC;
+    uint                        mStochasticIterations = 1000;
 
     //*******************************************************
     // Runtime data
@@ -319,7 +319,8 @@ private:
     }mPhotonCounterBuffer;
 
     RayTraceProgramHelper mTracerGenerate;          ///<Description for the Generate Photon pass 
-    RayTraceProgramHelper mTracerCollect;           ///<Collect pass collects the photons that where shot
+    RayTraceProgramHelper mTracerCollect;                       ///<Collect pass collects the photons that where shot
+    RayTraceProgramHelper mTracerStochasticCollect;           ///<Collect pass with stochastic collect shader instead of the normal one
     ComputePass::SharedPtr mPhotonCullingPass;      ///< Pass to create AABB's used for photon culling
 
     //
