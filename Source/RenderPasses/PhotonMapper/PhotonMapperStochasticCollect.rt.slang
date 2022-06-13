@@ -61,6 +61,7 @@ StructuredBuffer<AABB> gGlobalAABB;
 static const float3 kDefaultBackgroundColor = float3(0, 0, 0);
 
 static const uint kInfoTexHeight = INFO_TEXTURE_HEIGHT;
+static const bool kUsePhotonFaceNormal = PHOTON_FACE_NORMAL;
 
 static const float kRayTMin = RAY_TMIN;
 static const float kRayTMax = RAY_TMAX;
@@ -151,6 +152,7 @@ void intersection()
     //Check for Sphere intersection
     const float3 origin = ObjectRayOrigin();
     const uint primIndex = PrimitiveIndex();
+    float3 photonFaceN; //Only used if photon face normal is enabled
     
     AABB photonAABB;
     float radius = 0;
@@ -159,15 +161,34 @@ void intersection()
     {
         photonAABB = gCausticAABB[primIndex];
         radius = gCausticRadius;
+        if(kUsePhotonFaceNormal){
+            const uint2 idx = uint2(primIndex / kInfoTexHeight, primIndex % kInfoTexHeight);
+            const float theta = gCausticFlux[idx].w;
+            const float phi = gCausticDir[idx].w;
+            float sinTheta = sin(theta);
+            photonFaceN = float3(cos(phi) * sinTheta, cos(theta), sin(phi) * sinTheta);
+        }
     }
     else
     {
         photonAABB = gGlobalAABB[primIndex];
         radius = gGlobalRadius;
+        if(kUsePhotonFaceNormal){
+            const uint2 idx = uint2(primIndex / kInfoTexHeight, primIndex % kInfoTexHeight);
+            const float theta = gGlobalFlux[idx].w;
+            const float phi = gGlobalDir[idx].w;
+            float sinTheta = sin(theta);
+            photonFaceN = float3(cos(phi) * sinTheta, cos(theta), sin(phi) * sinTheta);
+        }
     }
         
     bool tHit = hitSphere(photonAABB.center(), radius, origin);
+    if(kUsePhotonFaceNormal){
+        if(dot(WorldRayDirection(), photonFaceN) < 0.9f)
+            tHit = false;
+    }
 
+    
     SphereAttribs attribs;
     attribs.pad = float2(0);
     
@@ -236,12 +257,14 @@ void rayGen()
     adjustShadingNormal(sd, v);
     
     let bsdf = gScene.materials.getBSDF(sd, lod);
+
+    float3 faceN = dot(-viewW, sd.faceN) > 0 ? sd.faceN : -sd.faceN;
     
     RayDesc ray;
     ray.Origin = v.posW;
     ray.TMin = RAY_TMIN;
     ray.TMax = RAY_TMAX;
-    ray.Direction = viewW.xyz; //we take the view dir as direction
+    ray.Direction = faceN; //take face normal as direction for face normal rejection
     
     uint rayFlags = RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | RAY_FLAG_SKIP_TRIANGLES;
     float3 radiance = float3(0);

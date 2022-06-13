@@ -42,10 +42,8 @@ RaytracingAccelerationStructure gPhotonAS;
 
 struct PhotonInfo
 {
-    float3 dir;
-    float faceNTheta;
-    float3 flux;
-    float faceNPhi;
+    float4 dir;
+    float4 flux;
 };
 
  //Internal Buffer Structs
@@ -61,6 +59,7 @@ StructuredBuffer<AABB> gGlobalAABB;
 static const float3 kDefaultBackgroundColor = float3(0, 0, 0);
 
 static const uint kInfoTexHeight = INFO_TEXTURE_HEIGHT;
+static const bool kUsePhotonFaceNormal = PHOTON_FACE_NORMAL;
 
 static const float kRayTMin = RAY_TMIN;
 static const float kRayTMax = RAY_TMAX;
@@ -80,21 +79,6 @@ struct RayData
         this.pad = 0;
     }
 };
-
-//Encode Normal + Face Normal
-uint3 encodeNormalFaceNormal(in float3 normal, in float3 faceNormal)
-{
-    uint3 normal16 = f32tof16(normal) << 16;
-    uint3 faceNormal16 = f32tof16(faceNormal);
-    return (normal16 | faceNormal16);
-}
-
-//Decode Normal + Face Normal
-void decodeNormalFaceNormal(in uint3 encodedNormal, out float3 normal, out float3 faceNormal)
-{
-    faceNormal = f16tof32(encodedNormal & 0xffff);
-    normal = f16tof32(encodedNormal >> 16);
-}
 
 struct SphereAttribs
 {
@@ -135,13 +119,13 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
      //Instance 0 is always the caustic buffer
     if (InstanceIndex() == 0)
     {
-        photon.flux = gCausticFlux[primIndex2D].xyz;
-        photon.dir = gCausticDir[primIndex2D].xyz;
+        photon.flux = gCausticFlux[primIndex2D];
+        photon.dir = gCausticDir[primIndex2D];
     }
     else
     {
-        photon.flux = gGlobalFlux[primIndex2D].xyz;
-        photon.dir = gGlobalDir[primIndex2D].xyz;
+        photon.flux = gGlobalFlux[primIndex2D];
+        photon.dir = gGlobalDir[primIndex2D];
     }
 
     //get hit
@@ -149,12 +133,25 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
     let lod = ExplicitLodTextureSampler(0.f);
     //World Direction is set to the viewDir we get from the vBuffer
     ShadingData sd = loadShadingData(hit, WorldRayDirection(), lod);
+
+    //Do face normal test if enabled
+    if(kUsePhotonFaceNormal){
+        //Sperical to cartesian
+        float sinTheta = sin(photon.flux.w);
+        float3 photonFaceN = float3(cos(photon.dir.w) * sinTheta, cos(photon.flux.w), sin(photon.dir.w) * sinTheta);
+        photonFaceN = normalize(photonFaceN);
+        float3 faceN = dot(-WorldRayDirection(), sd.faceN) > 0 ? sd.faceN : -sd.faceN;
+        //Dot product has to be negative (View dir points to surface)
+        if(dot(faceN, photonFaceN) < 0.9f)
+            return;
+    }
+
     
     let bsdf = gScene.materials.getBSDF(sd, lod);
             
-    float3 f_r = bsdf.eval(sd, -photon.dir, rayData.sg);
+    float3 f_r = bsdf.eval(sd, -photon.dir.xyz, rayData.sg);
        
-    rayData.radiance += f_r * photon.flux;
+    rayData.radiance += f_r * photon.flux.xyz;
 }
 
 //Checks if the ray start point is inside the sphere. 0 is returned if it is not in sphere and 1 if it is

@@ -197,6 +197,7 @@ private:
 
     bool                        mUseAlphaTest = true;                   ///<Uses alpha test (Generate)
     bool                        mAdjustShadingNormals = true;           ///<Adjusts the shading normals (Generate)
+    bool                        mUseFaceNormalToReject = false;          ///< Face normal is encoded in photon data and used to reject photons that contribute nothing
 
     // Generate only
     uint                        mMaxBounces = 10;                        ///< Depth of recursion (0 = none).

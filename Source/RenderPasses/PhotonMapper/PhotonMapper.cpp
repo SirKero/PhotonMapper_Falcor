@@ -58,7 +58,7 @@ namespace
     // Ray tracing settings that affect the traversal stack size.
    // These should be set as small as possible.
    //TODO: set them later to the right vals
-    const uint32_t kMaxPayloadSizeBytes = 64u;
+    const uint32_t kMaxPayloadSizeBytes = 80u;
     const uint32_t kMaxPayloadSizeBytesCollect = 48u;
     const uint32_t kMaxAttributeSizeBytes = 8u;
     const uint32_t kMaxRecursionDepth = 2u;
@@ -326,6 +326,7 @@ void PhotonMapper::generatePhotons(RenderContext* pRenderContext, const RenderDa
     mTracerGenerate.pProgram->addDefine("RAY_TMIN_CULLING", std::to_string(kCollectTMin));
     mTracerGenerate.pProgram->addDefine("RAY_TMAX_CULLING", std::to_string(kCollectTMax));
     mTracerGenerate.pProgram->addDefine("CULLING_USE_PROJECTION", std::to_string(mUseProjectionMatrixCulling));
+    mTracerGenerate.pProgram->addDefine("PHOTON_FACE_NORMAL", mUseFaceNormalToReject ? "1" : "0");
 
     // Prepare program vars. This may trigger shader compilation.
     // The program should have all necessary defines set at this point.
@@ -419,6 +420,7 @@ void PhotonMapper::collectPhotons(RenderContext* pRenderContext, const RenderDat
     mTracerCollect.pProgram->addDefine("RAY_TMIN", std::to_string(kCollectTMin));
     mTracerCollect.pProgram->addDefine("RAY_TMAX", std::to_string(kCollectTMax));
     mTracerCollect.pProgram->addDefine("INFO_TEXTURE_HEIGHT", std::to_string(kInfoTexHeight));
+    mTracerCollect.pProgram->addDefine("PHOTON_FACE_NORMAL", mUseFaceNormalToReject ? "1" : "0");
 
     // Prepare program for full collect vars. This may trigger shader compilation.
     if (!mTracerCollect.pVars) {
@@ -441,6 +443,7 @@ void PhotonMapper::collectPhotons(RenderContext* pRenderContext, const RenderDat
     mTracerStochasticCollect.pProgram->addDefine("RAY_TMAX", std::to_string(kCollectTMax));
     mTracerStochasticCollect.pProgram->addDefine("INFO_TEXTURE_HEIGHT", std::to_string(kInfoTexHeight));
     mTracerStochasticCollect.pProgram->addDefine("NUM_PHOTONS", std::to_string(mMaxNumberPhotonsSC));
+    mTracerStochasticCollect.pProgram->addDefine("PHOTON_FACE_NORMAL", mUseFaceNormalToReject ? "1" : "0");
 
     // Prepare program for full collect vars. This may trigger shader compilation.
     if (!mTracerStochasticCollect.pVars) {
@@ -554,6 +557,8 @@ void PhotonMapper::renderUI(Gui::Widgets& widget)
     //miscellaneous
     dirty |= widget.slider("Max Recursion Depth", mMaxBounces, 1u, 32u);
     widget.tooltip("Maximum path length for Photon Bounces");
+    dirty |= widget.checkbox("Use Photon Face Normal Rejection", mUseFaceNormalToReject);
+    widget.tooltip("Uses encoded Face Normal to reject photon hits on different surfaces (corners / other side of wall). Is around 2% slower");
 
     widget.dummy("", dummySpacing);
     //Timer
