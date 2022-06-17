@@ -162,6 +162,10 @@ private:
     */
     void checkTimer();
 
+    /** Writes the output times to file in mTimesOutputFilePath
+    */
+    void outputTimes();
+
     // Internal state
     Scene::SharedPtr            mpScene;                    ///< Current scene.
     SampleGenerator::SharedPtr  mpSampleGenerator;          ///< GPU sample generator.
@@ -256,6 +260,9 @@ private:
     uint                        mTimerMaxIterations = 0;                    //< Stop at certain iterations
     double                      mCurrentElapsedTime = 0.0;                    //<Elapsed time for UI
     std::chrono::time_point<std::chrono::steady_clock> mTimerStartTime;     //<Start time for the timer
+    bool                        mTimerRecordTimes = false;                   //< Enable Records times
+    std::vector<double>         mTimesList;                                 //< List with render times
+    std::string                 mTimesOutputFilePath;                       //< Output file path for the times
 
 
     //Light

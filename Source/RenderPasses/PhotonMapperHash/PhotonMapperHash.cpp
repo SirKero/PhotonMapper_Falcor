@@ -496,7 +496,20 @@ void PhotonMapperHash::renderUI(Gui::Widgets& widget)
             resetTimer |= widget.var("Max Iterations", mTimerMaxIterations, 0u, UINT_MAX, 1u);
             widget.tooltip("Max iterations until stop. When 0 iterations are not used");
             mTimerDurationSec = static_cast<double>(sec);
+            resetTimer |= widget.checkbox("Record Times", mTimerRecordTimes);
             resetTimer |= widget.button("Reset Timer");
+            if (mTimerRecordTimes) {
+                if (widget.button("Store Times", true)) {
+                    FileDialogFilterVec filters;
+                    filters.push_back({ "csv", "CSV Files" });
+                    std::filesystem::path path;
+                    if (saveFileDialog(filters, path))
+                    {
+                        mTimesOutputFilePath = path.string();
+                        outputTimes();
+                    }
+                }
+            }
         }
         mResetTimer |= resetTimer;
         dirty |= resetTimer;
@@ -996,6 +1009,10 @@ void PhotonMapperHash::checkTimer()
         mTimerStartTime = std::chrono::steady_clock::now();
         mTimerStopRenderer = false;
         mResetTimer = false;
+        if (mTimerRecordTimes) {
+            mTimesList.clear();
+            mTimesList.reserve(10000);
+        }
         return;
     }
 
@@ -1018,5 +1035,31 @@ void PhotonMapperHash::checkTimer()
             mTimerStopRenderer = true;
         }
     }
+
+    //Add to times list
+    if (mTimerRecordTimes) {
+        mTimesList.push_back(mCurrentElapsedTime);
+    }
 }
 
+void PhotonMapperHash::outputTimes()
+{
+    if (mTimesOutputFilePath.empty() || mTimesList.empty()) return;
+
+    std::ofstream file = std::ofstream(mTimesOutputFilePath, std::ios::trunc);
+
+    if (!file) {
+        reportError(fmt::format("Failed to open file '{}'.", mTimesOutputFilePath));
+        mTimesOutputFilePath.clear();
+        return;
+    }
+
+    //Write into file
+    file << "Hash_Times" << std::endl;
+    file << std::fixed << std::setprecision(16);
+    for (size_t i = 0; i < mTimesList.size(); i++) {
+        file << mTimesList[i];
+        file << std::endl;
+    }
+    file.close();
+}
