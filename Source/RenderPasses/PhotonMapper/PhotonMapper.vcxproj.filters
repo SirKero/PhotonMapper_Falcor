@@ -11,6 +11,7 @@
     <ShaderSource Include="PhotonMapperGenerate.rt.slang" />
     <ShaderSource Include="PhotonCulling.cs.slang" />
     <ShaderSource Include="PhotonMapperStochasticCollect.rt.slang" />
+    <ShaderSource Include="showPhotonAccelerationStructure.rt.slang" />
   </ItemGroup>
   <ItemGroup>
     <None Include="PhotonCullingHash.slang" />

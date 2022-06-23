@@ -166,6 +166,10 @@ private:
     */
     void outputTimes();
 
+    /** Visualizes the photon acceleration structure
+    */
+    void photonASDebugPass(RenderContext* pRenderContext, const RenderData& renderData);
+
     // Internal state
     Scene::SharedPtr            mpScene;                    ///< Current scene.
     SampleGenerator::SharedPtr  mpSampleGenerator;          ///< GPU sample generator.
@@ -202,6 +206,10 @@ private:
     bool                        mUseAlphaTest = true;                   ///<Uses alpha test (Generate)
     bool                        mAdjustShadingNormals = true;           ///<Adjusts the shading normals (Generate)
     bool                        mUseFaceNormalToReject = false;          ///< Face normal is encoded in photon data and used to reject photons that contribute nothing
+
+    bool                        mUsePhotonASDebugPass = false;               ///< Render debug acceleration visualization
+    CameraData                  mDebugCameraData;
+    bool                        mCopyToDebugCamera = true;                   ///< copies camera data from main camera
 
     // Generate only
     uint                        mMaxBounces = 10;                        ///< Depth of recursion (0 = none).
@@ -329,6 +337,7 @@ private:
     RayTraceProgramHelper mTracerGenerate;          ///<Description for the Generate Photon pass 
     RayTraceProgramHelper mTracerCollect;                       ///<Collect pass collects the photons that where shot
     RayTraceProgramHelper mTracerStochasticCollect;           ///<Collect pass with stochastic collect shader instead of the normal one
+    RayTraceProgramHelper mPhotonASDebugPass;
     ComputePass::SharedPtr mPhotonCullingPass;      ///< Pass to create AABB's used for photon culling
 
     //
