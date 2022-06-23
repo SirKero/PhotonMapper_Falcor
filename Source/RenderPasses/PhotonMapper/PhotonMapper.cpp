@@ -54,7 +54,7 @@ namespace
     const char kShaderCollectPhoton[] = "RenderPasses/PhotonMapper/PhotonMapperCollect.rt.slang";
     const char kShaderCollectStochasticPhoton[] = "RenderPasses/PhotonMapper/PhotonMapperStochasticCollect.rt.slang";
     const char kShaderPhotonCulling[] = "RenderPasses/PhotonMapper/PhotonCulling.cs.slang";
-
+    const char kShaderDebugShowPhotonAS[] = "RenderPasses/PhotonMapper/showPhotonAccelerationStructure.rt.slang";
     // Ray tracing settings that affect the traversal stack size.
    // These should be set as small as possible.
    //TODO: set them later to the right vals
@@ -274,6 +274,11 @@ void PhotonMapper::execute(RenderContext* pRenderContext, const RenderData& rend
     buildBottomLevelAS(pRenderContext, mPhotonAccelSizeLastIt);
     buildTopLevelAS(pRenderContext);
 
+    if (mUsePhotonASDebugPass) {
+        //Use debug pass and skip the rest of the program
+        photonASDebugPass(pRenderContext, renderData);
+        return;
+    }
     
     //Gather the photons with short rays
     collectPhotons(pRenderContext, renderData);
@@ -669,6 +674,12 @@ void PhotonMapper::renderUI(Gui::Widgets& widget)
         widget.tooltip("Disables the collection of Caustic Photons. However they will still be generated");
     }
 
+    if (auto group = widget.group("Debug View AS")) {
+        dirty |= widget.checkbox("Activate", mUsePhotonASDebugPass);
+
+        mCopyToDebugCamera = widget.button("Copy main camera");
+    }
+
     mPhotonInfoFormatChanged |= widget.dropdown("Photon Info size", kInfoTexDropdownList, mInfoTexFormat);
     widget.tooltip("Determines the resolution of each element of the photon info struct.");
 
@@ -715,7 +726,7 @@ void PhotonMapper::createCollectionProgram()
 
         mTracerCollect.pProgram = RtProgram::create(desc, mpScene->getSceneDefines());
     }
-    //Enable Stochastic Collect if it was enabled
+    //Stochastic collect
     {
         //payload size is num photons + a counter + sampleGenerator(16B)
         uint maxPayloadSize = (mMaxNumberPhotonsSC + 5) * sizeof(uint);
@@ -745,6 +756,7 @@ void PhotonMapper::setScene(RenderContext* pRenderContext, const Scene::SharedPt
 
     // After changing scene, the raytracing program should to be recreated.
     mTracerGenerate = RayTraceProgramHelper::create();
+    mPhotonASDebugPass = RayTraceProgramHelper::create();
     mResetConstantBuffers = true;
     if (mEnablePhotonCulling) mRebuildCullingBuffer = true;
     // Set new scene.
@@ -1446,3 +1458,93 @@ void PhotonMapper::outputTimes()
     file.close();
 }
 
+void PhotonMapper::photonASDebugPass(RenderContext* pRenderContext, const RenderData& renderData)
+{
+    //create program if not initialized
+    if (!mPhotonASDebugPass.pProgram)
+    {
+        RtProgram::Desc desc;
+        desc.addShaderLibrary(kShaderDebugShowPhotonAS);
+        desc.setMaxPayloadSize(16u);
+        desc.setMaxAttributeSize(kMaxAttributeSizeBytes);
+        desc.setMaxTraceRecursionDepth(kMaxRecursionDepth);
+
+        mPhotonASDebugPass.pBindingTable = RtBindingTable::create(1, 1, mpScene->getGeometryCount());
+        auto& sbt = mPhotonASDebugPass.pBindingTable;
+        sbt->setRayGen(desc.addRayGen("rayGen"));
+        sbt->setMiss(0, desc.addMiss("miss"));
+        auto hitShader = desc.addHitGroup("closestHit", "", "intersection");
+        sbt->setHitGroup(0, 0, hitShader);
+
+        mPhotonASDebugPass.pProgram = RtProgram::create(desc, mpScene->getSceneDefines());
+    }
+    bool resetCamera = false;
+    //Copy Camera
+    if (mCopyToDebugCamera) {
+        mDebugCameraData = mpScene->getCamera()->getData();
+        resetCamera = true;
+        mCopyToDebugCamera = false;
+    }
+
+    // Trace the photons
+    FALCOR_PROFILE("debugPhotonAS");
+
+
+    
+    // Prepare program for full collect vars. This may trigger shader compilation.
+    if (!mPhotonASDebugPass.pVars) {
+        FALCOR_ASSERT(mPhotonASDebugPass.pProgram);
+        mPhotonASDebugPass.pProgram->setTypeConformances(mpScene->getTypeConformances());
+        mPhotonASDebugPass.pVars = RtProgramVars::create(mPhotonASDebugPass.pProgram, mPhotonASDebugPass.pBindingTable);
+        // Bind utility classes into shared data.
+        auto var = mPhotonASDebugPass.pVars->getRootVar();
+    }
+    FALCOR_ASSERT(mPhotonASDebugPass.pVars);
+
+    // Set constants.
+    auto var = mPhotonASDebugPass.pVars->getRootVar();
+
+    std::string nameBuf = "PerFrame";
+    var[nameBuf]["gCausticRadius"] = mCausticRadius;
+    var[nameBuf]["gGlobalRadius"] = mGlobalRadius;
+
+    if (resetCamera) {
+        nameBuf = "CB";
+        var[nameBuf]["gCamPosW"] = mDebugCameraData.posW;
+        var[nameBuf]["gCameraU"] = mDebugCameraData.cameraU;
+        var[nameBuf]["gCameraV"] = mDebugCameraData.cameraV;
+        var[nameBuf]["gCameraW"] = mDebugCameraData.cameraW;
+    }
+
+    for (uint32_t i = 0; i <= 1; i++)
+    {
+        var["gPhotonAABB"][i] = i == 0 ? mCausticBuffers.aabb : mGlobalBuffers.aabb;
+    }
+
+    // Lamda for binding textures. These needs to be done per-frame as the buffers may change anytime.
+    auto bindAsTex = [&](const ChannelDesc& desc)
+    {
+        if (!desc.texname.empty())
+        {
+            var[desc.texname] = renderData[desc.name]->asTexture();
+        }
+    };
+
+    //Bind input and output textures
+    bindAsTex(kOutputChannels[0]);
+
+    // Get dimensions of ray dispatch.
+    const uint2 targetDim = renderData.getDefaultTextureDims();
+    FALCOR_ASSERT(targetDim.x > 0 && targetDim.y > 0);
+
+    FALCOR_ASSERT(pRenderContext && mPhotonASDebugPass.pProgram && mPhotonASDebugPass.pVars);
+
+    //bind TLAS
+    bool tlasValid = var["gPhotonAS"].setSrv(mPhotonTlas.pSrv);
+    FALCOR_ASSERT(tlasValid);
+
+    //pRenderContext->raytrace(mTracerCollect.pProgram.get(), mTracerCollect.pVars.get(), targetDim.x, targetDim.y, 1);
+    // Trace the photons
+    mpScene->raytrace(pRenderContext, mPhotonASDebugPass.pProgram.get(), mPhotonASDebugPass.pVars, uint3(targetDim, 1));    //TODO: Check if scene defines can be set manually
+
+}
