@@ -54,10 +54,8 @@ struct PhotonBucket
 
 struct PhotonInfo
 {
-    float3 dir;
-    float faceNTheta;
-    float3 flux;
-    float faceNPhi;
+    float4 dir;
+    float4 flux;
 };
 
  //Internal Buffer Structs
@@ -77,6 +75,7 @@ static const float3 kDefaultBackgroundColor = float3(0, 0, 0);
     
 static const uint kInfoTexHeight = INFO_TEXTURE_HEIGHT;
 static const uint kNumBuckets = NUM_BUCKETS; //Total number of buckets in 2^x
+static const bool kUsePhotonFaceNormal = PHOTON_FACE_NORMAL;
 
 
 //Checks if the ray start point is inside the sphere. 0 is returned if it is not in sphere and 1 if it is
@@ -112,24 +111,35 @@ float3 photonContribution(in ShadingData sd,in const IBSDF bsdf, uint photonInde
     if (isCaustic)
     {
         photonPos = gCausticPos[photonIndex2D].xyz;
-        photon.flux = gCausticFlux[photonIndex2D].xyz;
-        photon.dir = gCausticDir[photonIndex2D].xyz;
+        photon.flux = gCausticFlux[photonIndex2D];
+        photon.dir = gCausticDir[photonIndex2D];
     }
     else
     {
         photonPos = gGlobalPos[photonIndex2D].xyz;
-        photon.flux = gGlobalFlux[photonIndex2D].xyz;
-        photon.dir = gGlobalDir[photonIndex2D].xyz;
+        photon.flux = gGlobalFlux[photonIndex2D];
+        photon.dir = gGlobalDir[photonIndex2D];
     }
 
-    //Radius test
+    //Do face normal test if enabled
+    if(kUsePhotonFaceNormal){
+        //Sperical to cartesian
+        float sinTheta = sin(photon.flux.w);
+        float3 photonFaceN = float3(cos(photon.dir.w) * sinTheta, cos(photon.flux.w), sin(photon.dir.w) * sinTheta);
+        photonFaceN = normalize(photonFaceN);
+        float3 faceN = dot(sd.V, sd.faceN) > 0 ? sd.faceN : -sd.faceN;
+        //Dot product has to be negative (View dir points to surface)
+        if(dot(faceN, photonFaceN) < 0.9f)
+            return float3(0);
+    }
     
+    //Radius test
     if (!hitSphere(photonPos, radius, sd.posW))
         return float3(0);
                 
-    float3 f_r = bsdf.eval(sd, -photon.dir,sg);
+    float3 f_r = bsdf.eval(sd, -photon.dir.xyz,sg);
      
-    return f_r * photon.flux;
+    return f_r * photon.flux.xyz;
 }
 
 //returns geometrically distributed random number generator

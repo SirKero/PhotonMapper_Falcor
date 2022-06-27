@@ -169,7 +169,9 @@ private:
 
     uint                        mNumBucketBits = 20;                    ///< 2^NumBucketBits is the total amount of possible buckets
     uint                        mNumPhotonsPerBucket = 12;              ///< Max Photons per hash grid.
-    uint                        mQuadraticProbeIterations = 10;         ///< Number of quadartic probe iteratons per hash. 
+    uint                        mQuadraticProbeIterations = 10;         ///< Number of quadartic probe iteratons per hash.
+
+    bool                        mEnableFaceNormalRejection = false;
 
     // Generate only
     uint                        mMaxBounces = 10;                        ///< Depth of recursion (0 = none).
