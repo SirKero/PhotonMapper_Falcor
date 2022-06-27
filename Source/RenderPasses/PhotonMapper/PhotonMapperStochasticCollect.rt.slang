@@ -76,21 +76,6 @@ struct RayData
     SampleGenerator sg; ///< Per-ray state for the sample generator (up to 16B).
 };
 
-//Encode Normal + Face Normal
-uint3 encodeNormalFaceNormal(in float3 normal, in float3 faceNormal)
-{
-    uint3 normal16 = f32tof16(normal) << 16;
-    uint3 faceNormal16 = f32tof16(faceNormal);
-    return (normal16 | faceNormal16);
-}
-
-//Decode Normal + Face Normal
-void decodeNormalFaceNormal(in uint3 encodedNormal, out float3 normal, out float3 faceNormal)
-{
-    faceNormal = f16tof32(encodedNormal & 0xffff);
-    normal = f16tof32(encodedNormal >> 16);
-}
-
 struct SphereAttribs
 {
     float2 pad;
