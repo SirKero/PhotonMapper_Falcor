@@ -123,16 +123,7 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
 {
     const uint primIndex = PrimitiveIndex();
     //Face normal test
-    if (kUsePhotonFaceNormal)
-    {
-        const uint2 index2D = uint2(primIndex / kInfoTexHeight, primIndex % kInfoTexHeight);
-        const float theta = InstanceIndex() == 0 ? gCausticFlux[index2D].w : gGlobalFlux[index2D].w;
-        const float phi = InstanceIndex() == 0 ? gCausticDir[index2D].w : gGlobalDir[index2D].w;
-        float sinTheta = sin(theta);
-        float3 photonFaceN = float3(cos(phi) * sinTheta, cos(theta), sin(phi) * sinTheta);
-        if(dot(WorldRayDirection(), photonFaceN) < 0.9f)
-            return;
-    }
+    
     rayData.counter++;
     uint idx = rayData.counter -1;
     //If idx is bigger get a random index between 0 and idx
@@ -163,7 +154,18 @@ void intersection()
     //Check for Sphere intersection
     const float3 origin = ObjectRayOrigin();
     const uint primIndex = PrimitiveIndex();
-    float3 photonFaceN; //Only used if photon face normal is enabled
+
+    //Reject hits if face normal of the surfaces is not the same
+    if (kUsePhotonFaceNormal)
+    {
+        const uint2 index2D = uint2(primIndex / kInfoTexHeight, primIndex % kInfoTexHeight);
+        const float theta = InstanceIndex() == 0 ? gCausticFlux[index2D].w : gGlobalFlux[index2D].w;
+        const float phi = InstanceIndex() == 0 ? gCausticDir[index2D].w : gGlobalDir[index2D].w;
+        float sinTheta = sin(theta);
+        float3 photonFaceN = float3(cos(phi) * sinTheta, cos(theta), sin(phi) * sinTheta);
+        if(dot(WorldRayDirection(), photonFaceN) < 0.9f)    //Face N is stored in WorldRayDirection
+            return;
+    }
     
     AABB photonAABB;
     float radius = 0;
