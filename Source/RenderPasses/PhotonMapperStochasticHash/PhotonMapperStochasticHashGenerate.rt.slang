@@ -55,6 +55,7 @@ static const float kRayTMax = FLT_MAX;
 static const float kAnalyticInvPdf = ANALYTIC_INV_PDF;              //Inverse analytic pdf 
 static const uint kInfoTexHeight = INFO_TEXTURE_HEIGHT;
 static const uint kNumBuckets = NUM_BUCKETS;                        //Total number of buckets in 2^x
+static const bool kUsePhotonFaceNormal = PHOTON_FACE_NORMAL;
 
 static const float k_2Pi = 6.28318530717958647692;
 static const float k_4Pi = 12.5663706143591729538;
@@ -66,7 +67,7 @@ static const float Inv4Pi = 0.07957747154594766788;
 struct RayData
 {
     float3  thp;            ///< Current path throughput. This is updated at each path vertex.
-    float    cosTheta;     ///< Cos Theta
+    uint   encodedFaceNormal;   ///< Face normal encoded in 16 bit polar coordinates
     float3  origin;         ///< Next path segment origin.
     bool terminated; ///< Set to true when path is terminated.
     float3  direction;      ///< Next path segment direction.
@@ -80,7 +81,7 @@ struct RayData
     {
         RayData d;
         d.terminated = false;
-        d.cosTheta = 1.f;
+        d.encodedFaceNormal = 0;
         d.thp = float3(1, 1, 1);
         d.origin = float3(0, 0, 0);
         d.direction = float3(0, 0, 0);
@@ -91,18 +92,16 @@ struct RayData
 struct Photon
 {
     float4 pos;
-    float4 flux;
-    float4 dir;
+    float3 flux;
+    float faceNTheta;
+    float3 dir;
+    float faceNPhi;
 };
 
-//get the area of a triangle from the vectors a and b. 
-float triangleArea(float3 a, float3 b)
+//cartesian to polar coodinate. Assumes p is normalized
+float2 toSphericalCoordinate(float3 p)
 {
-    float2 len = float2(length(a), length(b));
-    float cosT = dot(a / len.x, b / len.y);
-    float sinT = sqrt(1 - cosT * cosT);
-
-    return 0.5 * len.x * len.y * sinT;
+    return float2(acos(p.y), atan2(p.z, p.x));
 }
 
 //transforms direction from local to world space
@@ -163,12 +162,13 @@ void miss(inout RayData rayData : SV_RayPayload)
 [shader("closesthit")]
 void closestHit(inout RayData rayData : SV_RayPayload, BuiltInTriangleIntersectionAttributes attribs : SV_IntersectionAttributes)
 {
+    const float3 incomingRayDir = -WorldRayDirection();
     // Evaluate Falcor's material parameters at the hit point.
     GeometryInstanceID instanceID = getGeometryInstanceID();
     VertexData v = getVertexData(instanceID, PrimitiveIndex(), attribs);
     const uint materialID = gScene.getMaterialID(instanceID);
     let lod = ExplicitLodTextureSampler(0.f);
-    ShadingData sd = gScene.materials.prepareShadingData(v, materialID, -WorldRayDirection(), lod);
+    ShadingData sd = gScene.materials.prepareShadingData(v, materialID, incomingRayDir, lod);
 
     //Adjust shading normals if desired
     if (gAdjustShadingNormals)
@@ -190,7 +190,14 @@ void closestHit(inout RayData rayData : SV_RayPayload, BuiltInTriangleIntersecti
     rayData.thp *= valid ? bsdfSample.weight : float3(0);
     rayData.direction = bsdfSample.wo;
     rayData.diffuseHit = bsdfSample.isLobe(LobeType::Diffuse) || (bsdfSample.isLobe(LobeType::Reflection) && (bsdfProperties.roughness > gSpecRoughCutoff));
-    //rayData.cosTheta = abs(dot(sd.N, rayData.direction));
+
+      if(kUsePhotonFaceNormal){
+        //Flip face normal to point in photon hit direction
+        sd.faceN = dot(incomingRayDir, sd.faceN) > 0 ? sd.faceN : -sd.faceN;
+        float2 sph = toSphericalCoordinate(sd.faceN);
+        //convert to two float16 and store in payload
+        rayData.encodedFaceNormal = (f32tof16(sph.x)<<16) | f32tof16(sph.y);
+    }
     
     //if throughput is 0, return
     if (!valid || any(rayData.thp < 0))
@@ -298,9 +305,11 @@ void rayGen()
 
     //create photon
     Photon photon;
-    photon.dir = float4(0);
-    photon.flux = float4(0);
     photon.pos = float4(0);
+    photon.flux = float3(0);
+    photon.dir = float3(0);
+    photon.faceNTheta = 1.f;
+    photon.faceNPhi = 1.f;
         
     //light flux
     float3 lightFlux = lightIntensity * invPdf;
@@ -318,7 +327,7 @@ void rayGen()
     //recursion where the photons are shot
     for (uint i = 0; i < gMaxRecursion && !rayData.terminated; i++)
     {
-        photon.flux = float4(lightFlux * rayData.thp, 0);
+        photon.flux = lightFlux * rayData.thp;
         TraceRay(gScene.rtAccel, rayFlags, 0xff /* instanceInclusionMask */, 0 /* hitIdx */, rayTypeCount, 0 /* missIdx */, ray, rayData);
 
         if(rayData.terminated)
@@ -326,12 +335,20 @@ void rayGen()
 
         
         photon.pos = float4(rayData.origin, 0);
-        photon.dir = float4(ray.Direction, 0);
+        photon.dir = ray.Direction;
         reflectedDiffuse = rayData.diffuseHit;
 
         //save photon        
         if (reflectedDiffuse)
         {
+            //Get face normal and store
+            if(kUsePhotonFaceNormal){
+                uint encTheta = (rayData.encodedFaceNormal >> 16) & 0xFFFF;
+                uint encPhi = rayData.encodedFaceNormal & 0xFFFF;
+                photon.faceNTheta = f16tof32(encTheta);
+                photon.faceNPhi = f16tof32(encPhi);
+            }
+            
             uint photonIndex = 0;
             uint photonBucketIndex = 0;
             //rejection
@@ -356,8 +373,8 @@ void rayGen()
                 {
                     uint2 texIdx = uint2(bucketIdx / gBucketYExtent, bucketIdx % gBucketYExtent);
                     gHashBucketPos[mapIdx][texIdx] = photon.pos;
-                    gHashBucketDir[mapIdx][texIdx] = photon.dir;
-                    gHashBucketFlux[mapIdx][texIdx] = photon.flux;
+                    gHashBucketFlux[mapIdx][texIdx] = float4(photon.flux, photon.faceNTheta);
+                    gHashBucketDir[mapIdx][texIdx] = float4(photon.dir, photon.faceNPhi);
                 }
             }              
         }

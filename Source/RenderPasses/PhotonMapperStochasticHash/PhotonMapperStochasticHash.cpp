@@ -249,6 +249,7 @@ void PhotonMapperStochasticHash::generatePhotons(RenderContext* pRenderContext, 
     mTracerGenerate.pProgram->addDefine("ANALYTIC_INV_PDF", std::to_string(mAnalyticInvPdf));
     mTracerGenerate.pProgram->addDefine("INFO_TEXTURE_HEIGHT", std::to_string(kInfoTexHeight));
     mTracerGenerate.pProgram->addDefine("NUM_BUCKETS", std::to_string(mNumBuckets));
+    mTracerGenerate.pProgram->addDefine("PHOTON_FACE_NORMAL", mEnableFaceNormalRejection ? "1" : "0");
     
     // Prepare program vars. This may trigger shader compilation.
     // The program should have all necessary defines set at this point.
@@ -326,6 +327,7 @@ void PhotonMapperStochasticHash::collectPhotons(RenderContext* pRenderContext, c
 
         defines.add("INFO_TEXTURE_HEIGHT", std::to_string(kInfoTexHeight));
         defines.add("NUM_BUCKETS", std::to_string(mNumBuckets));
+        defines.add("PHOTON_FACE_NORMAL", mEnableFaceNormalRejection ? "1" : "0");
 
         mpCSCollect = ComputePass::create(desc, defines, true);
     }
@@ -419,6 +421,9 @@ void PhotonMapperStochasticHash::renderUI(Gui::Widgets& widget)
     //miscellaneous
     dirty |= widget.slider("Max Recursion Depth", mMaxBounces, 1u, 32u);
     widget.tooltip("Maximum path length for Photon Bounces");
+    mResetCS |= widget.checkbox("Use Photon Face Normal Rejection", mEnableFaceNormalRejection);
+    widget.tooltip("Uses encoded Face Normal to reject photon hits on different surfaces (corners / other side of wall).");
+    dirty |= mResetCS;
 
     widget.dummy("", dummySpacing);
 

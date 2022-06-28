@@ -151,7 +151,9 @@ private:
     bool                        mUseAlphaTest = true;                   ///<Uses alpha test (Generate)
     bool                        mAdjustShadingNormals = true;           ///<Adjusts the shading normals (Generate)
 
-    uint                        mNumBucketBits = 16;                    ///< 2^NumBucketBits is the total amount of possible buckets
+    uint                        mNumBucketBits = 18;                    ///< 2^NumBucketBits is the total amount of possible buckets
+
+    bool                        mEnableFaceNormalRejection = false;
 
     // Generate only
     uint                        mMaxBounces = 10;                        ///< Depth of recursion (0 = none).

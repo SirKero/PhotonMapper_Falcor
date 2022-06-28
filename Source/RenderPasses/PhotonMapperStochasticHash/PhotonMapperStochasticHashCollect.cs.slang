@@ -54,6 +54,7 @@ static const float3 kDefaultBackgroundColor = float3(0, 0, 0);
     
 static const uint kInfoTexHeight = INFO_TEXTURE_HEIGHT;
 static const uint kNumBuckets = NUM_BUCKETS; //Total number of buckets in 2^x
+static const bool kUsePhotonFaceNormal = PHOTON_FACE_NORMAL;
 
 
 //Checks if the ray start point is inside the sphere. 0 is returned if it is not in sphere and 1 if it is
@@ -89,8 +90,19 @@ float3 photonContribution(in ShadingData sd, uint hash , inout SampleGenerator s
     float4 photonFlux = gHashBucketFlux[mapIdx][texIdx];
     uint photonCount = gHashCounter[mapIdx][hash];
 
-    //Radius test
+    //Do face normal test if enabled
+    if(kUsePhotonFaceNormal){
+        //Sperical to cartesian
+        float sinTheta = sin(photonFlux.w);
+        float3 photonFaceN = float3(cos(photonDir.w) * sinTheta, cos(photonFlux.w), sin(photonDir.w) * sinTheta);
+        photonFaceN = normalize(photonFaceN);
+        float3 faceN = dot(sd.V, sd.faceN) > 0 ? sd.faceN : -sd.faceN;
+        //Dot product has to be negative (View dir points to surface)
+        if(dot(faceN, photonFaceN) < 0.9f)
+            return float3(0);
+    }
     
+    //Radius test
     if (!hitSphere(photonPos.xyz, radius, sd.posW) || photonCount == 0)
         return float3(0);
     
