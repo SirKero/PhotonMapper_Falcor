@@ -47,9 +47,9 @@ StructuredBuffer<uint> gNumPhotonsPerEmissive;
 //Internal Buffer Structs
 
 struct PhotonInfo {
-        float3 dir;
-        float faceNTheta;
         float3 flux;
+        float faceNTheta;
+        float3 dir;
         float faceNPhi;
 };
 
