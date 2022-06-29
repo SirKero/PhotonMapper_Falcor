@@ -241,7 +241,7 @@ private:
     bool                        mEnableStochasticCollect = true;       //< Stochastic collect
     uint                        mMaxNumberPhotonsSC = 3;                 //< Max number of photons that can get collected. (4 * x) - 1 for best fit
     uint                        mMaxNumberPhotonsSCUI = mMaxNumberPhotonsSC;
-    uint                        mStochasticIterations = 5000;
+    uint                        mStochasticIterations = 10000;
 
     //*******************************************************
     // Runtime data
